@@ -1,7 +1,18 @@
 {
   "version": "1.0.1",
   "releaseNotes": "Improved cleanup reliability and added safer scan reporting.",
-  "packageUrl": "https://github.com/your-org/cleanmachine/releases/download/v1.0.1/CleanMachine-x64-v1.0.1.msix",
-  "sha256": "REPLACE_WITH_SHA256_OF_SIGNED_PACKAGE",
-  "architecture": "x64"
+  "packages": {
+    "x64": {
+      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.1/CleanMachine-x64-v1.0.1.zip",
+      "sha256": "64_CHARACTER_SHA256_OF_SIGNED_PACKAGE",
+      "architecture": "x64",
+      "publisher": "CN=CleanMachine Publisher"
+    },
+    "ARM64": {
+      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.1/CleanMachine-ARM64-v1.0.1.zip",
+      "sha256": "64_CHARACTER_SHA256_OF_SIGNED_PACKAGE",
+      "architecture": "ARM64",
+      "publisher": "CN=CleanMachine Publisher"
+    }
+  }
 }

@@ -8,12 +8,19 @@ on:
 permissions:
   contents: write
 
+env:
+  PROJECT: CleanMachine.Windows/CleanMachine.Windows.csproj
+
 jobs:
   build:
     runs-on: windows-latest
     strategy:
       matrix:
-        platform: [x64, ARM64]
+        include:
+          - platform: x64
+            runtime: win-x64
+          - platform: ARM64
+            runtime: win-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,17 +29,23 @@ jobs:
         with:
           dotnet-version: "8.0.x"
       - name: Restore
-        run: dotnet restore CleanMachine.Windows/CleanMachine.Windows.csproj
+        run: dotnet restore $env:PROJECT
       - name: Publish
-        run: dotnet publish CleanMachine.Windows/CleanMachine.Windows.csproj --configuration Release --runtime win-${{ matrix.platform == 'x64' && 'x64' || 'arm64' }} --self-contained true --output artifacts/${{ matrix.platform }} -p:Platform=${{ matrix.platform }}
-      - name: Create archive
+        shell: pwsh
+        run: dotnet publish $env:PROJECT --configuration Release --runtime ${{ matrix.runtime }} --self-contained true --output artifacts/${{ matrix.platform }} -p:Platform=${{ matrix.platform }}
+      - name: Package published app
         shell: pwsh
         run: Compress-Archive -Path artifacts/${{ matrix.platform }}/* -DestinationPath CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.zip
+      - name: Hash package
+        shell: pwsh
+        run: (Get-FileHash CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.zip -Algorithm SHA256).Hash | Out-File -NoNewline CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.sha256
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: CleanMachine-${{ matrix.platform }}
-          path: CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.zip
+          path: |
+            CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.zip
+            CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.sha256
 
   release:
     needs: build
@@ -42,8 +55,34 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release
+      - name: Build release manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          x64_hash=$(tr -d '[:space:]' < "release/CleanMachine-x64/CleanMachine-x64-${GITHUB_REF_NAME}.sha256")
+          arm64_hash=$(tr -d '[:space:]' < "release/CleanMachine-ARM64/CleanMachine-ARM64-${GITHUB_REF_NAME}.sha256")
+          export version x64_hash arm64_hash
+          python3 - <<'PY'
+          import json, os
+          tag = os.environ['GITHUB_REF_NAME']
+          data = {
+            'version': os.environ['version'],
+            'releaseNotes': 'See the GitHub release notes.',
+            'packages': {
+              'x64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-x64-{tag}.zip', 'sha256': os.environ['x64_hash'], 'architecture': 'x64'},
+              'ARM64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-ARM64-{tag}.zip', 'sha256': os.environ['arm64_hash'], 'architecture': 'ARM64'}
+            }
+          }
+          with open('update-manifest.json', 'w', encoding='utf-8') as handle: json.dump(data, handle, indent=2)
+          PY
+      - name: Validate release manifest
+        run: python3 -m json.tool update-manifest.json
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/**/*.zip
+          files: |
+            release/**/*.zip
+            release/**/*.sha256
+            update-manifest.json
           generate_release_notes: true
