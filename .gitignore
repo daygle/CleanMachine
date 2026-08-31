@@ -1,0 +1,35 @@
+# JavaScript / Vite
+node_modules/
+dist/
+.cache/
+.vite/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and local tooling
+*.log
+.DS_Store
+
+# .NET / Visual Studio
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Native build and packaging output
+artifacts/
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+*.pfx
+
+# Local CleanMachine state
+CleanMachine.Backups/
+CleanMachine.Updates/
