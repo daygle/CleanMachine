@@ -13,7 +13,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 
 ## Safety model
 
-All destructive workflows are review-first. Browser cleaning is limited to recreatable cache directories and requires supported browsers to be closed. Cookies, passwords, bookmarks, history, and sessions are not targeted. Windows Cleanup only executes `Safe` categories and rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin and Windows Update cleanup remain review-only until native Windows validation is complete.
+All destructive workflows are review-first. Browser cleaning is limited to recreatable cache directories and requires supported browsers to be closed. Cookies, passwords, bookmarks, history, and sessions are not targeted. Windows Cleanup only executes `Safe` categories without additional confirmation and rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup is available only after explicit confirmation and reports Windows API failures. Windows Update cleanup requires explicit confirmation plus administrator elevation, but remains disabled until a safe Windows service/API implementation is validated.
 
 Registry Care scans read-only and does not delete registry entries. Selected high-confidence low-risk findings can produce a real current-user uninstall-key `.reg` export; restore is explicit and uses Windows `reg.exe`. Registry mutation remains disabled pending Windows backup/restore and rollback testing.
 
