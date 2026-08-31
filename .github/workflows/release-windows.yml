@@ -1,0 +1,49 @@
+name: Release Windows app
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        platform: [x64, ARM64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore
+        run: dotnet restore CleanMachine.Windows/CleanMachine.Windows.csproj
+      - name: Publish
+        run: dotnet publish CleanMachine.Windows/CleanMachine.Windows.csproj --configuration Release --runtime win-${{ matrix.platform == 'x64' && 'x64' || 'arm64' }} --self-contained true --output artifacts/${{ matrix.platform }} -p:Platform=${{ matrix.platform }}
+      - name: Create archive
+        shell: pwsh
+        run: Compress-Archive -Path artifacts/${{ matrix.platform }}/* -DestinationPath CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.zip
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CleanMachine-${{ matrix.platform }}
+          path: CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/**/*.zip
+          generate_release_notes: true

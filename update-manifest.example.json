@@ -1,0 +1,7 @@
+{
+  "version": "1.0.1",
+  "releaseNotes": "Improved cleanup reliability and added safer scan reporting.",
+  "packageUrl": "https://github.com/your-org/cleanmachine/releases/download/v1.0.1/CleanMachine-x64-v1.0.1.msix",
+  "sha256": "REPLACE_WITH_SHA256_OF_SIGNED_PACKAGE",
+  "architecture": "x64"
+}
