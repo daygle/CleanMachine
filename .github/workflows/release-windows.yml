@@ -10,6 +10,7 @@ permissions:
 
 env:
   PROJECT: CleanMachine.Windows/CleanMachine.Windows.csproj
+  PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
 
 jobs:
   build:
@@ -29,22 +30,54 @@ jobs:
         with:
           dotnet-version: "8.0.x"
       - name: Restore
+        shell: pwsh
         run: dotnet restore $env:PROJECT
-      - name: Publish
+      - name: Publish native app
         shell: pwsh
         run: dotnet publish $env:PROJECT --configuration Release --runtime ${{ matrix.runtime }} --self-contained true --output artifacts/${{ matrix.platform }} -p:Platform=${{ matrix.platform }}
-      - name: Package published app
+      - name: Install signing certificate
+        if: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 != '' }}
         shell: pwsh
-        run: Compress-Archive -Path artifacts/${{ matrix.platform }}/* -DestinationPath CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.zip
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          New-Item -ItemType Directory -Force -Path signing | Out-Null
+          [IO.File]::WriteAllBytes("signing/CleanMachine.pfx", [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          $secure = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
+          Import-PfxCertificate -FilePath signing/CleanMachine.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure | Out-Null
+      - name: Fail if production signing is not configured
+        if: ${{ github.ref_type == 'tag' && (secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 == '' || secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD == '' || vars.WINDOWS_PUBLISHER == '') }}
+        shell: pwsh
+        run: throw "Tagged production releases require WINDOWS_SIGNING_CERTIFICATE_BASE64, WINDOWS_SIGNING_CERTIFICATE_PASSWORD, and WINDOWS_PUBLISHER."
+      - name: Package MSIX
+        shell: pwsh
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $version = "${env:GITHUB_REF_NAME}".TrimStart('v') + ".0"
+          dotnet msbuild $env:PROJECT /t:Publish /p:Platform=${{ matrix.platform }} /p:RuntimeIdentifier=${{ matrix.runtime }} /p:AppxPackageSigningEnabled=true /p:PackageCertificateKeyFile="$pwd/signing/CleanMachine.pfx" /p:PackageCertificatePassword="$env:CERTIFICATE_PASSWORD" /p:ApplicationDisplayVersion="$version"
+          $package = Get-ChildItem -Path CleanMachine.Windows/bin -Recurse -Filter *.msix | Select-Object -First 1
+          if ($null -eq $package) { throw "MSIX package was not generated." }
+          Copy-Item $package.FullName "CleanMachine-${{ matrix.platform }}-${env:GITHUB_REF_NAME}.msix"
+      - name: Validate package publisher
+        shell: pwsh
+        env:
+          EXPECTED_PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
+        run: |
+          $package = Resolve-Path "CleanMachine-${{ matrix.platform }}-${env:GITHUB_REF_NAME}.msix"
+          $signature = Get-AuthenticodeSignature $package
+          if ($signature.Status -ne 'Valid') { throw "Invalid Authenticode signature: $($signature.Status)" }
+          if (-not $signature.SignerCertificate.Subject.Contains($env:EXPECTED_PUBLISHER, [StringComparison]::OrdinalIgnoreCase)) { throw "Unexpected package publisher." }
       - name: Hash package
         shell: pwsh
-        run: (Get-FileHash CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.zip -Algorithm SHA256).Hash | Out-File -NoNewline CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.sha256
+        run: (Get-FileHash "CleanMachine-${{ matrix.platform }}-${env:GITHUB_REF_NAME}.msix" -Algorithm SHA256).Hash | Out-File -NoNewline "CleanMachine-${{ matrix.platform }}-${env:GITHUB_REF_NAME}.sha256"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: CleanMachine-${{ matrix.platform }}
           path: |
-            CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.zip
+            CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.msix
             CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.sha256
 
   release:
@@ -55,13 +88,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release
-      - name: Build release manifest
+      - name: Build and validate release manifest
         shell: bash
+        env:
+          PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           x64_hash=$(tr -d '[:space:]' < "release/CleanMachine-x64/CleanMachine-x64-${GITHUB_REF_NAME}.sha256")
           arm64_hash=$(tr -d '[:space:]' < "release/CleanMachine-ARM64/CleanMachine-ARM64-${GITHUB_REF_NAME}.sha256")
+          test "${#x64_hash}" -eq 64
+          test "${#arm64_hash}" -eq 64
           export version x64_hash arm64_hash
           python3 - <<'PY'
           import json, os
@@ -70,19 +107,18 @@ jobs:
             'version': os.environ['version'],
             'releaseNotes': 'See the GitHub release notes.',
             'packages': {
-              'x64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-x64-{tag}.zip', 'sha256': os.environ['x64_hash'], 'architecture': 'x64'},
-              'ARM64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-ARM64-{tag}.zip', 'sha256': os.environ['arm64_hash'], 'architecture': 'ARM64'}
+              'x64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-x64-{tag}.msix', 'sha256': os.environ['x64_hash'], 'architecture': 'x64', 'publisher': os.environ['PUBLISHER']},
+              'ARM64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-ARM64-{tag}.msix', 'sha256': os.environ['arm64_hash'], 'architecture': 'ARM64', 'publisher': os.environ['PUBLISHER']}
             }
           }
           with open('update-manifest.json', 'w', encoding='utf-8') as handle: json.dump(data, handle, indent=2)
           PY
-      - name: Validate release manifest
-        run: python3 -m json.tool update-manifest.json
+          python3 -m json.tool update-manifest.json >/dev/null
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/**/*.zip
+            release/**/*.msix
             release/**/*.sha256
             update-manifest.json
           generate_release_notes: true
