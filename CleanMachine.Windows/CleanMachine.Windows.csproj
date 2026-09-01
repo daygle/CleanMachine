@@ -12,7 +12,6 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
     <AppxPackageDir>$(OutputPath)\AppPackages\</AppxPackageDir>
-    <PackageCertificateKeyFile>$(MSBuildProjectDirectory)\Build\CleanMachine.pfx</PackageCertificateKeyFile>
     <AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
     <AppxBundle>Never</AppxBundle>
     <AppxPackage>@(AppxPackage)</AppxPackage>
