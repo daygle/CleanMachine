@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
         run: dotnet restore $env:PROJECT
       - name: Fail if production signing is not configured
-        if: ${{ github.ref_type == 'tag' }}
+        if: ${{ github.event_name == 'push' }}
         shell: pwsh
         env:
           SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
@@ -44,7 +44,7 @@ jobs:
             throw "Tagged production releases require WINDOWS_SIGNING_CERTIFICATE_BASE64, WINDOWS_SIGNING_CERTIFICATE_PASSWORD, and WINDOWS_PUBLISHER."
           }
       - name: Install signing certificate
-        if: ${{ github.ref_type != 'tag' || vars.WINDOWS_PUBLISHER != '' }}
+        if: ${{ github.event_name != 'push' || vars.WINDOWS_PUBLISHER != '' }}
         shell: pwsh
         env:
           CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
