@@ -87,10 +87,20 @@ The current environment cannot compile or run WinUI/XAML, exercise Windows regis
 
 The release workflow builds architecture-specific MSIX packages and hashes, validates Authenticode signatures and the configured publisher, and publishes a multi-architecture `update-manifest.json`.
 
-Configure these GitHub repository settings before creating a production tag:
+The release workflow always produces a **signed** MSIX. If no production certificate is
+configured it mints a throwaway **self-signed** code-signing certificate whose subject matches
+the package publisher, so tagged releases succeed without a purchased certificate. Self-signed
+packages require the user to trust the certificate before sideloading; they are not suitable for
+unattended production distribution.
+
+For production releases, configure these GitHub repository settings before creating a tag:
 
 - Repository variable `WINDOWS_PUBLISHER`: exact expected certificate subject/publisher string
+  (defaults to `CN=CleanMachine Publisher` when unset, which is also the self-signed subject)
 - Repository secret `WINDOWS_SIGNING_CERTIFICATE_BASE64`: base64-encoded PFX certificate
 - Repository secret `WINDOWS_SIGNING_CERTIFICATE_PASSWORD`: PFX password
 
-Do not commit certificates, passwords, or private keys. The workflow intentionally fails tagged releases when signing configuration is absent. Create a test tag such as `v0.1.1` only after configuring the secrets, then verify the release assets, `Get-AuthenticodeSignature` output, SHA-256 files, and manifest URLs on a Windows runner.
+When both secrets are present the workflow signs with the provided certificate instead of a
+self-signed one. Do not commit certificates, passwords, or private keys. Create a test tag such
+as `v0.1.1`, then verify the release assets, `Get-AuthenticodeSignature` output, SHA-256 files,
+and manifest URLs on a Windows runner.

@@ -13,7 +13,6 @@ const navItems: [View, typeof Activity][] = [['Overview', Activity], ['Cleaner',
 
 function App() {
   const [view, setView] = useState<View>('Overview'); const [browsers, setBrowsers] = useState(initialBrowsers); const [agentOn, setAgentOn] = useState(true); const [autoClean, setAutoClean] = useState(true); const [showSettings, setShowSettings] = useState(false); const [cleaning, setCleaning] = useState(false); const [cleaned, setCleaned] = useState(false); const [scanDone, setScanDone] = useState(false); const [method, setMethod] = useState('Simple zero-fill')
-  const total = browsers.filter(b => b.enabled).reduce((sum, b) => sum + (b.key === 'chrome' ? 1.84 : b.key === 'edge' ? .62 : .34), 0)
   const runCleanup = () => { setCleaning(true); setCleaned(false); window.setTimeout(() => { setCleaning(false); setCleaned(true) }, 900) }
   const toggleBrowser = (key: string) => setBrowsers(list => list.map(b => b.key === key ? { ...b, enabled: !b.enabled } : b))
   const title = view === 'Overview' ? <>Your privacy, <em>handled.</em></> : view

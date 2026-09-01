@@ -14,7 +14,6 @@
     <AppxPackageDir>$(OutputPath)\AppPackages\</AppxPackageDir>
     <AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
     <AppxBundle>Never</AppxBundle>
-    <AppxPackage>@(AppxPackage)</AppxPackage>
     <AppxManifest>Package.appxmanifest</AppxManifest>
     <EnableDefaultApplicationDefinitionItems>true</EnableDefaultApplicationDefinitionItems>
     <Nullable>enable</Nullable>

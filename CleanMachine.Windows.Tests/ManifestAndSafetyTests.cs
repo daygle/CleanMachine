@@ -103,7 +103,7 @@ public sealed class ManifestAndSafetyTests
         var options = new BrowserCleanupOptions();
         Assert.True(options.RequireBrowsersClosed);
         Assert.Null(options.ExcludedPaths);
-        Assert.Null(options.ExitionalProfileRoots);
+        Assert.Null(options.AdditionalProfileRoots);
     }
 
     [Fact]

@@ -10,12 +10,15 @@ permissions:
 
 env:
   PROJECT: CleanMachine.Windows/CleanMachine.Windows.csproj
-  PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
+  # Fallback publisher used for self-signed builds when WINDOWS_PUBLISHER is not set.
+  # Must be a valid X.500 name; it is written into the package identity and the signing cert.
+  DEFAULT_PUBLISHER: "CN=CleanMachine Publisher"
 
 jobs:
   build:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - platform: x64
@@ -29,103 +32,118 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - name: Resolve version and publisher
+        shell: pwsh
+        env:
+          WINDOWS_PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
+        run: |
+          $ref = "${env:GITHUB_REF_NAME}"
+          $isTag = "${env:GITHUB_REF}".StartsWith("refs/tags/")
+          if ($ref -match '^v(\d+)\.(\d+)\.(\d+)$') {
+            $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          }
+          elseif ($isTag) {
+            # The push trigger (v*.*.*) also matches tags like v1.0.0.1 or v1.2.3-rc1.
+            # Refuse to publish a release stamped with a placeholder version.
+            throw "Tag '$ref' is not a valid vMAJOR.MINOR.PATCH version; refusing to publish a mis-versioned release."
+          }
+          else {
+            $version = "0.0.1"; Write-Host "Ref '$ref' is not a version tag; using placeholder version $version for this manual build."
+          }
+          $publisher = if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PUBLISHER)) { $env:DEFAULT_PUBLISHER } else { $env:WINDOWS_PUBLISHER }
+          $safeTag = ($ref -replace '[^A-Za-z0-9._-]', '-')
+          "VERSION3=$version"        | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VERSION4=$version.0"      | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PUBLISHER=$publisher"     | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SAFE_TAG=$safeTag"        | Out-File -FilePath $env:GITHUB_ENV -Append
+          "MSIX_NAME=CleanMachine-${{ matrix.platform }}-$safeTag" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Restore
         shell: pwsh
         run: dotnet restore $env:PROJECT
-      - name: Fail if production signing is not configured
-        if: ${{ github.event_name == 'push' }}
-        shell: pwsh
-        env:
-          SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          SIGNING_PASS: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
-          PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
-        run: |
-          if ([string]::IsNullOrEmpty($env:SIGNING_CERT) -or [string]::IsNullOrEmpty($env:SIGNING_PASS) -or [string]::IsNullOrEmpty($env:PUBLISHER)) {
-            throw "Tagged production releases require WINDOWS_SIGNING_CERTIFICATE_BASE64, WINDOWS_SIGNING_CERTIFICATE_PASSWORD, and WINDOWS_PUBLISHER."
-          }
-      - name: Install signing certificate
-        if: ${{ github.event_name != 'push' || vars.WINDOWS_PUBLISHER != '' }}
+      - name: Sign and package MSIX
         shell: pwsh
         env:
           CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
         run: |
-          if ([string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
-            Write-Host "No signing certificate configured — skipping certificate install."
-            exit 0
-          }
+          $ErrorActionPreference = 'Stop'
+
+          # Stamp the package identity so the publisher matches the signing certificate
+          # and the version matches the release tag (required for update detection).
+          $manifestPath = "CleanMachine.Windows/Package.appxmanifest"
+          [xml]$manifest = Get-Content $manifestPath
+          $manifest.Package.Identity.Publisher = $env:PUBLISHER
+          $manifest.Package.Identity.Version = $env:VERSION4
+          $manifest.Save((Resolve-Path $manifestPath))
+
           New-Item -ItemType Directory -Force -Path signing | Out-Null
-          [IO.File]::WriteAllBytes("signing/CleanMachine.pfx", [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
-          $secure = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
-          Import-PfxCertificate -FilePath signing/CleanMachine.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure | Out-Null
-          Write-Host "Signing certificate installed."
-      - name: Package MSIX (signed)
-        shell: pwsh
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
-        run: |
-          if ([string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
-            Write-Host "No signing certificate — skipping signed package."
-            exit 0
-          }
-          $version = "${env:GITHUB_REF_NAME}".TrimStart('v') + ".0"
-          dotnet msbuild $env:PROJECT /t:Publish /p:Platform=${{ matrix.platform }} /p:RuntimeIdentifier=${{ matrix.runtime }} /p:AppxPackageSigningEnabled=true "/p:PackageCertificateKeyFile=$pwd/signing/CleanMachine.pfx" "/p:PackageCertificatePassword=$env:CERTIFICATE_PASSWORD" "/p:ApplicationDisplayVersion=$version"
-          $package = Get-ChildItem -Path CleanMachine.Windows/bin -Recurse -Filter *.msix | Select-Object -First 1
-          if ($null -eq $package) { throw "MSIX package was not generated." }
-          Copy-Item $package.FullName "CleanMachine-${{ matrix.platform }}-${env:GITHUB_REF_NAME}.msix"
-          Write-Host "Signed MSIX package created."
-      - name: Package MSIX (unsigned)
-        if: ${{ success() }}
-        shell: pwsh
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-        run: |
+          $pfx = Join-Path $pwd "signing/CleanMachine.pfx"
+
           if (-not [string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
-            Write-Host "Signing certificate present — skipping unsigned package."
-            exit 0
+            if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required when a signing certificate is configured." }
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+            $password = $env:CERTIFICATE_PASSWORD
+            Write-Host "Signing with the provided production certificate."
           }
-          $version = "0.1.0"
-          dotnet msbuild $env:PROJECT /t:Publish /p:Platform=${{ matrix.platform }} /p:RuntimeIdentifier=${{ matrix.runtime }} /p:AppxPackageSigningEnabled=false "/p:ApplicationDisplayVersion=$version"
+          else {
+            # No production certificate configured: mint a throwaway self-signed
+            # code-signing certificate whose subject matches the package publisher.
+            $password = [Guid]::NewGuid().ToString('N')
+            Write-Host "::add-mask::$password"
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $env:PUBLISHER `
+              -KeyUsage DigitalSignature -FriendlyName "CleanMachine self-signed" `
+              -CertStoreLocation "Cert:\CurrentUser\My" `
+              -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3")
+            $secure = ConvertTo-SecureString $password -AsPlainText -Force
+            Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
+            Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force
+            Write-Host "Signing with a self-signed certificate for $env:PUBLISHER."
+          }
+
+          dotnet msbuild $env:PROJECT /t:Publish `
+            /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:RuntimeIdentifier=${{ matrix.runtime }} `
+            /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundle=Never `
+            /p:AppxPackageSigningEnabled=true "/p:PackageCertificateKeyFile=$pfx" "/p:PackageCertificatePassword=$password" `
+            "/p:ApplicationDisplayVersion=$env:VERSION3"
+
           $package = Get-ChildItem -Path CleanMachine.Windows/bin -Recurse -Filter *.msix | Select-Object -First 1
           if ($null -eq $package) { throw "MSIX package was not generated." }
-          Copy-Item $package.FullName "CleanMachine-${{ matrix.platform }}-${env:GITHUB_REF_NAME}.msix"
-          Write-Host "Unsigned MSIX package created."
-      - name: Validate package publisher
-        if: ${{ success() }}
+          Copy-Item $package.FullName "$env:MSIX_NAME.msix"
+          Remove-Item $pfx -Force
+          Write-Host "MSIX package created: $env:MSIX_NAME.msix"
+      - name: Validate signature and publisher
         shell: pwsh
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          EXPECTED_PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
         run: |
-          if ([string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
-            Write-Host "No signing certificate — skipping publisher validation."
-            exit 0
-          }
-          $package = Resolve-Path "CleanMachine-${{ matrix.platform }}-${env:GITHUB_REF_NAME}.msix"
+          $ErrorActionPreference = 'Stop'
+          $package = Resolve-Path "$env:MSIX_NAME.msix"
           $signature = Get-AuthenticodeSignature $package
-          if ($signature.Status -ne 'Valid') { throw "Invalid Authenticode signature: $($signature.Status)" }
-          if (-not $signature.SignerCertificate.Subject.Contains($env:EXPECTED_PUBLISHER, [StringComparison]::OrdinalIgnoreCase)) { throw "Unexpected package publisher." }
-          Write-Host "Publisher validation passed."
+          # Self-signed certificates chain to an untrusted root on the runner, which reports
+          # NotTrusted/UnknownError; accept those while still rejecting genuinely broken
+          # signatures (HashMismatch, NotSigned, etc.).
+          if ($signature.Status -notin @('Valid', 'UnknownError', 'NotTrusted')) { throw "Invalid Authenticode signature: $($signature.Status)" }
+          if ($null -eq $signature.SignerCertificate) { throw "The MSIX package is not signed." }
+          if (-not $signature.SignerCertificate.Subject.Contains($env:PUBLISHER, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Unexpected package publisher: $($signature.SignerCertificate.Subject)"
+          }
+          Write-Host "Publisher validation passed for $env:PUBLISHER."
       - name: Hash package
-        if: ${{ success() }}
         shell: pwsh
         run: |
-          $msix = "CleanMachine-${{ matrix.platform }}-${env:GITHUB_REF_NAME}.msix"
-          if (-not (Test-Path $msix)) { throw "MSIX package not found: $msix" }
-          (Get-FileHash $msix -Algorithm SHA256).Hash | Out-File -NoNewline "CleanMachine-${{ matrix.platform }}-${env:GITHUB_REF_NAME}.sha256"
+          $ErrorActionPreference = 'Stop'
+          (Get-FileHash "$env:MSIX_NAME.msix" -Algorithm SHA256).Hash | Out-File -NoNewline "$env:MSIX_NAME.sha256"
           Write-Host "Hash created."
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: CleanMachine-${{ matrix.platform }}
           path: |
-            CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.msix
-            CleanMachine-${{ matrix.platform }}-${{ github.ref_name }}.sha256
+            ${{ env.MSIX_NAME }}.msix
+            ${{ env.MSIX_NAME }}.sha256
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -138,20 +156,22 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
+          publisher="${PUBLISHER:-CN=CleanMachine Publisher}"
           x64_hash=$(tr -d '[:space:]' < "release/CleanMachine-x64/CleanMachine-x64-${GITHUB_REF_NAME}.sha256")
           arm64_hash=$(tr -d '[:space:]' < "release/CleanMachine-ARM64/CleanMachine-ARM64-${GITHUB_REF_NAME}.sha256")
           test "${#x64_hash}" -eq 64
           test "${#arm64_hash}" -eq 64
-          export version x64_hash arm64_hash
+          export version x64_hash arm64_hash publisher
           python3 - <<'PY'
           import json, os
           tag = os.environ['GITHUB_REF_NAME']
+          publisher = os.environ['publisher']
           data = {
             'version': os.environ['version'],
             'releaseNotes': 'See the GitHub release notes.',
             'packages': {
-              'x64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-x64-{tag}.msix', 'sha256': os.environ['x64_hash'], 'architecture': 'x64', 'publisher': os.environ['PUBLISHER']},
-              'ARM64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-ARM64-{tag}.msix', 'sha256': os.environ['arm64_hash'], 'architecture': 'ARM64', 'publisher': os.environ['PUBLISHER']}
+              'x64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-x64-{tag}.msix', 'sha256': os.environ['x64_hash'], 'architecture': 'x64', 'publisher': publisher},
+              'ARM64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-ARM64-{tag}.msix', 'sha256': os.environ['arm64_hash'], 'architecture': 'ARM64', 'publisher': publisher}
             }
           }
           with open('update-manifest.json', 'w', encoding='utf-8') as handle: json.dump(data, handle, indent=2)

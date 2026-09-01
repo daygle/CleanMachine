@@ -9,7 +9,7 @@ public sealed class AppSettings
     public bool CheckForUpdatesAutomatically { get; set; } = true;
     public WipeMethod SecureDeleteMethod { get; set; } = WipeMethod.SimpleZeroFill;
     public int CustomWipePasses { get; set; } = 1;
-    public HashSet<string> ProtectedBrowsers { get; set; } = ["chrome", "msedge", "firefox"];
+    public HashSet<string> ProtectedBrowsers { get; set; } = ["chrome", "edge", "firefox"];
     public HashSet<string> ExcludedPaths { get; set; } = [];
 
     private static string FilePath => Path.Combine(

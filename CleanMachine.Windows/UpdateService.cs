@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -75,7 +74,16 @@ public sealed class UpdateService
     {
         var state = await _stateStore.LoadAsync(cancellationToken); var rollback = state?.RollbackPath ?? FindRollbackCopy();
         if (string.IsNullOrWhiteSpace(rollback) || !File.Exists(rollback) || !File.Exists(currentExecutable)) return false;
-        var backup = currentExecutable + ".failed"; File.Move(currentExecutable, backup, true); File.Copy(rollback, currentExecutable, true); TryDelete(backup);
+        // Stage the restored copy before touching the live executable so a mid-restore
+        // failure never leaves the application without a runnable binary.
+        var staged = currentExecutable + ".restore"; var backup = currentExecutable + ".failed";
+        try
+        {
+            File.Copy(rollback, staged, true);
+            File.Replace(staged, currentExecutable, backup, ignoreMetadataErrors: true);
+            TryDelete(backup);
+        }
+        catch { TryDelete(staged); throw; }
         await _stateStore.MarkAsync("rolled-back", null, rollback, cancellationToken); return true;
     }
 
@@ -84,12 +92,6 @@ public sealed class UpdateService
         cancellationToken.ThrowIfCancellationRequested(); if (!File.Exists(currentExecutable)) throw new FileNotFoundException("Current application was not found.", currentExecutable);
         var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Updates", "rollback"); Directory.CreateDirectory(directory);
         var copy = Path.Combine(directory, "CleanMachine.previous"); File.Copy(currentExecutable, copy, true); return Task.FromResult(copy);
-    }
-
-    public Task LaunchInstallerAsync(string packagePath, string? expectedPublisher = null)
-    {
-        if (!File.Exists(packagePath) || !packagePath.EndsWith(".msix", StringComparison.OrdinalIgnoreCase) || !HasExpectedPublisher(packagePath, expectedPublisher)) throw new InvalidDataException("Only a publisher-verified MSIX may be installed.");
-        return Task.Run(() => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{packagePath}\"") { UseShellExecute = true }));
     }
 
     public static string? FindRollbackCopy() { var copy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Updates", "rollback", "CleanMachine.previous"); return File.Exists(copy) ? copy : null; }
