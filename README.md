@@ -11,6 +11,56 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Explicit-file Secure Delete with selectable wipe methods
 - Architecture-aware update manifest and signed MSIX validation
 
+## Features
+
+### Browser Cleaner
+- Scans Chrome, Edge, and Firefox profiles including standard, custom, and portable installations
+- Multi-profile discovery across local and roaming application data
+- Configurable exclusion paths to skip specific directories
+- Interrupted-cleanup state persistence with recovery messaging
+- Process-lock detection requires browsers to be closed before cleaning
+- Cache-only cleanup; cookies, passwords, bookmarks, history, and sessions are excluded
+
+### Registry Care
+- Read-only scanning of current-user uninstall metadata and file associations
+- Confidence-based filtering (minimum 70%) for review eligibility
+- `.reg` backup export with validation of backup header integrity
+- Explicit restore flow using Windows `reg.exe`
+- Registry mutation remains disabled until transactional rollback tests pass
+
+### Windows Cleanup
+- Safe category scanning: user temporary files, thumbnail cache, error reports
+- Recycle Bin cleanup through native `SHEmptyRecycleBin` (requires explicit confirmation)
+- Windows Update cleanup disabled until safe API/service implementation is validated
+- Reparse-point and junction protection
+- Category-specific exclusion support
+- Progress and cancellation handling
+
+### Secure Delete
+- Native file picker for selecting explicit files
+- File eligibility review before deletion
+- Protected/read-only file detection
+- SSD acknowledgement requirement
+- Multi-pass overwrite: Simple zero-fill, US DoD 5220.22-M, ECE, Peter Gutmann, Custom
+- Progress bar, cancellation, and post-overwrite verification
+
+### Updates and Releases
+- HTTPS-only MSIX package validation
+- Architecture-specific package selection (x64, ARM64)
+- SHA-256 hash verification
+- Authenticode publisher verification
+- Atomic update state transitions (staged → installing → installed)
+- Rollback copy staging and executable restoration after failed installation
+- Pending-update recovery across sessions
+
+### Settings
+- Background agent startup toggle
+- Automatic cleanup on browser exit toggle
+- Update check frequency toggle
+- Default wipe method selection
+- Configurable exclusion paths
+- Persisted startup registration
+
 ## Safety model
 
 All destructive workflows are review-first. Browser cleaning is limited to recreatable cache directories and requires supported browsers to be closed. Cookies, passwords, bookmarks, history, and sessions are not targeted. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. Windows Update cleanup remains disabled until a safe Windows service/API implementation is validated.
