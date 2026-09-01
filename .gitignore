@@ -12,6 +12,7 @@ dist/
 # Logs and local tooling
 *.log
 .DS_Store
+.freebuff/
 
 # .NET / Visual Studio
 [Bb]in/
