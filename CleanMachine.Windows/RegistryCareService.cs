@@ -37,12 +37,13 @@ public sealed class RegistryCareService
             return false;
         if (backup.FilePath.EndsWith(".reg", StringComparison.OrdinalIgnoreCase))
         {
-            var info = new FileInfo(backup.FilePath);
-            if (info.Length == 0) return false;
-            await using var stream = File.OpenRead(backup.FilePath);
-            var header = new byte[10];
-            var read = await stream.ReadAsync(header.AsMemory(), token);
-            return read >= 5 && System.Text.Encoding.ASCII.GetString(header, 0, 5) == "REGED";
+            if (new FileInfo(backup.FilePath).Length == 0) return false;
+            // reg.exe writes UTF-16 (with BOM); older tools write ASCII "REGEDIT4".
+            // Detect the encoding from the BOM and confirm the standard header line.
+            using var reader = new StreamReader(backup.FilePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var header = ((await reader.ReadLineAsync(token)) ?? string.Empty).Trim('\uFEFF', ' ', '\t');
+            return header.StartsWith("Windows Registry Editor Version 5.00", StringComparison.OrdinalIgnoreCase)
+                || header.StartsWith("REGEDIT4", StringComparison.OrdinalIgnoreCase);
         }
         // .txt backups are also valid (text summary format)
         return new FileInfo(backup.FilePath).Length > 0;

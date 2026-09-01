@@ -80,20 +80,6 @@ public sealed class CleanupService
         return new CleanupReport(new CleanupResult(removed, recovered), skipped);
     }
 
-    public Task<RegistryBackup> CreateRegistryBackupAsync(
-        IEnumerable<RegistryFinding> findings,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CleanMachine", "Backups");
-        Directory.CreateDirectory(directory);
-        var backupPath = Path.Combine(directory, $"registry-review-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.txt");
-        File.WriteAllLines(backupPath, findings.Select(f => $"[{f.Hive}\\{f.Path}] {f.Reason}"));
-        return Task.FromResult(new RegistryBackup(backupPath, DateTimeOffset.UtcNow));
-    }
-
     public Task<IReadOnlyList<RegistryFinding>> ScanRegistrySafelyAsync(
         CancellationToken cancellationToken = default)
     {

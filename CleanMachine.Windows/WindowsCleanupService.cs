@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace CleanMachine.Windows;
@@ -30,9 +29,6 @@ public sealed class WindowsCleanupService
         ]);
     }
 
-    public Task<CleanupReport> CleanSelectedAsync(IEnumerable<WindowsCleanupFinding> findings, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
-        => CleanSelectedAsync(findings, new WindowsCleanupOptions(), progress, cancellationToken);
-
     public async Task<CleanupReport> CleanSelectedAsync(IEnumerable<WindowsCleanupFinding> findings, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         var selected = findings.Where(f => f.Selected).ToArray();
@@ -60,8 +56,6 @@ public sealed class WindowsCleanupService
         }
         return new CleanupReport(new CleanupResult(removed, recovered), issues);
     }
-
-    public Task<CleanupResult> CleanSelectedAsync(IEnumerable<WindowsCleanupFinding> findings, CancellationToken cancellationToken = default) => CleanSelectedAsync(findings, null, cancellationToken).ContinueWith(t => t.Result.Result, cancellationToken);
 
     private static void EmptyRecycleBin()
     {
