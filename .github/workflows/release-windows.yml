@@ -38,8 +38,18 @@ jobs:
           WINDOWS_PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
         run: |
           $ref = "${env:GITHUB_REF_NAME}"
-          if ($ref -match '^v(\d+)\.(\d+)\.(\d+)$') { $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])" }
-          else { $version = "0.0.1"; Write-Host "Ref '$ref' is not a version tag; using placeholder version $version." }
+          $isTag = "${env:GITHUB_REF}".StartsWith("refs/tags/")
+          if ($ref -match '^v(\d+)\.(\d+)\.(\d+)$') {
+            $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          }
+          elseif ($isTag) {
+            # The push trigger (v*.*.*) also matches tags like v1.0.0.1 or v1.2.3-rc1.
+            # Refuse to publish a release stamped with a placeholder version.
+            throw "Tag '$ref' is not a valid vMAJOR.MINOR.PATCH version; refusing to publish a mis-versioned release."
+          }
+          else {
+            $version = "0.0.1"; Write-Host "Ref '$ref' is not a version tag; using placeholder version $version for this manual build."
+          }
           $publisher = if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PUBLISHER)) { $env:DEFAULT_PUBLISHER } else { $env:WINDOWS_PUBLISHER }
           $safeTag = ($ref -replace '[^A-Za-z0-9._-]', '-')
           "VERSION3=$version"        | Out-File -FilePath $env:GITHUB_ENV -Append
