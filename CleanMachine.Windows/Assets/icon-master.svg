@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f4a3c"/>
+      <stop offset="1" stop-color="#173C35"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8fd6c0"/>
+      <stop offset="1" stop-color="#5bb59a"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="58" fill="url(#bg)"/>
+  <!-- Sweep-check mark: a check that turns into a sweep arc -->
+  <g transform="translate(128,128) scale(1,1)">
+    <!-- sweep tail (bottom-left to mid) -->
+    <path d="M -58 52 Q -58 52 -42 36 Q -26 20 -8 6"
+          fill="none" stroke="url(#mark)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- check upper stroke -->
+    <path d="M -8 6 L 18 -22 L 60 44"
+          fill="none" stroke="url(#mark)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- subtle dot at the sweep origin -->
+    <circle cx="-60" cy="54" r="7" fill="#bfe5d5" opacity="0.85"/>
+  </g>
+</svg>

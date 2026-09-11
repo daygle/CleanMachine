@@ -1,0 +1,70 @@
+name: Windows CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PROJECT: CleanMachine.Windows/CleanMachine.Windows.csproj
+  TESTS: CleanMachine.Windows.Tests/CleanMachine.Windows.Tests.csproj
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        shell: pwsh
+        run: |
+          dotnet restore $env:PROJECT
+          dotnet restore $env:TESTS
+
+      - name: Build app (x64)
+        shell: pwsh
+        run: dotnet build $env:PROJECT -c Release -p:Platform=x64 --no-restore
+
+      - name: Run tests (x64)
+        shell: pwsh
+        run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore
+
+      - name: Publish MSIX package (x64)
+        shell: pwsh
+        run: |
+          dotnet publish $env:PROJECT -c Release -p:Platform=x64 -p:PublishProfile=win-x64
+          # MSIX/Appx bundle lands under bin/Release/net8.0-windows10.0.26100.0/win-x64/AppPackages/
+
+      - name: Upload MSIX package artifact
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CleanMachine-x64-msix
+          path: CleanMachine.Windows/bin/Release/net8.0-windows10.0.26100.0/win-x64/AppPackages/**/*.msix
+          if-no-files-found: warn
+
+      - name: Build Inno Setup installer (x64)
+        shell: pwsh
+        run: |
+          $iss = CleanMachine.Windows\installer\cleanmachine.iss
+          if (-not (Test-Path $iss)) {
+            Write-Host 'Inno Setup script not found; skipping installer build.'
+            exit 0
+          }
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' $iss
+          # Installer lands in bin/installer/CleanMachine-Setup-<version>.exe
+
+      - name: Upload installer artifact
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CleanMachine-x64-setup
+          path: CleanMachine.Windows/bin/installer/*.exe
+          if-no-files-found: warn
