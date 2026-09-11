@@ -34,6 +34,11 @@ public static class NativeSafety
     public static bool IsWithin(string path, string parent)
     {
         if (!TryGetFullPath(path, out var full) || !TryGetFullPath(parent, out var root)) return false;
-        return full.Equals(root, StringComparison.OrdinalIgnoreCase) || full.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        // GetFullPath preserves a trailing separator, so normalize the parent before comparing;
+        // a path equal to the parent (e.g. the parent directory itself) is within it.
+        var rootTrimmed = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (rootTrimmed.Length == 0) return false;
+        return full.Equals(rootTrimmed, StringComparison.OrdinalIgnoreCase)
+            || full.StartsWith(rootTrimmed + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -57,9 +57,9 @@ public sealed class UpdateService
         try
         {
             var uri = new Uri(packagePath, UriKind.Absolute);
-            var manager = new Windows.Management.Deployment.PackageManager();
+            var manager = new global::Windows.Management.Deployment.PackageManager();
             var current = Package.Current.Id.FullName;
-            await manager.AddPackageAsync(uri, null, Windows.Management.Deployment.DeploymentOptions.ForceApplicationShutdown);
+            await manager.AddPackageAsync(uri, null, global::Windows.Management.Deployment.DeploymentOptions.ForceApplicationShutdown);
             await _stateStore.MarkAsync("installed", packagePath, rollback, cancellationToken);
             CleanupRollbackCopy();
         }

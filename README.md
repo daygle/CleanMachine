@@ -71,7 +71,8 @@ Secure Delete operates only on explicitly selected ordinary files after review. 
 
 ## Build and test on Windows
 
-Install Visual Studio 2022 with .NET Desktop Development, Windows App SDK/WinUI, and the Windows 10/11 SDK. Then run:
+Install the .NET 8 SDK (e.g. `winget install Microsoft.DotNet.SDK.8`) and the Windows App
+Runtime 1.6+ (installed automatically on first run if missing). Then run:
 
 ```powershell
 dotnet restore CleanMachine.Windows/CleanMachine.Windows.csproj
@@ -79,7 +80,10 @@ dotnet build CleanMachine.Windows/CleanMachine.Windows.csproj -p:Platform=x64
 dotnet test CleanMachine.Windows.Tests/CleanMachine.Windows.Tests.csproj -p:Platform=x64
 ```
 
-The current environment cannot compile or run WinUI/XAML, exercise Windows registry permissions, validate browser profile locks, create MSIX packages, or test Authenticode signatures.
+The unpackaged build is self-contained for the Windows App SDK
+(`WindowsAppSDKSelfContained=true`), so `CleanMachine.exe` runs without a separate runtime
+install. The app targets the Windows SDK 10.0.26100; adjust `TargetFramework` if building
+on a machine with an older SDK installed.
 
 ## Updates and signed releases
 

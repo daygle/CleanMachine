@@ -25,7 +25,7 @@ public sealed class BrowserCleanupService
     public Task<IReadOnlyList<BrowserCleanupTarget>> ScanAsync(
         IEnumerable<string> browsers,
         CancellationToken token = default)
-        => _cleanup.ScanBrowsersAsync(browsers, token: token);
+        => _cleanup.ScanBrowsersAsync(browsers, cancellationToken: token);
 
     public Task<IReadOnlyList<BrowserCleanupTarget>> ScanAsync(
         IEnumerable<string> browsers,
