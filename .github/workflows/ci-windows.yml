@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   PROJECT: CleanMachine.Windows/CleanMachine.Windows.csproj
   TESTS: CleanMachine.Windows.Tests/CleanMachine.Windows.Tests.csproj
