@@ -14,7 +14,10 @@
          without depending on the installed runtime/bootstrapper version. -->
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
-    <AppxPackageDir>$(OutputPath)\AppPackages\</AppxPackageDir>
+    <!-- Pinned (not $(OutputPath)-relative): with -t:Publish / single-project MSIX,
+         $(OutputPath) can be empty at evaluation time, which made the package land at
+         a drive root (e.g. D:\AppPackages). Keep it inside bin where CI globs for it. -->
+    <AppxPackageDir>$(MSBuildProjectDirectory)\bin\AppPackages\</AppxPackageDir>
     <AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
     <AppxBundle>Never</AppxBundle>
     <AppxManifest>Package.appxmanifest</AppxManifest>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10" IgnorableNamespaces="uap desktop">
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" IgnorableNamespaces="uap desktop rescap">
   <Identity Name="CleanMachine" Publisher="CN=CleanMachine Publisher" Version="1.0.0.0" />
   <Properties>
     <DisplayName>CleanMachine</DisplayName>
@@ -14,7 +14,11 @@
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements AppListEntry="default" DisplayName="CleanMachine" Description="Private, review-first Windows cleanup utility." Square44x44Logo="Assets\Square44x44Logo.png" Square150x150Logo="Assets\Square150x150Logo.png" BackgroundColor="#173C35" />
-      <Extensions><desktop:Extension Category="windows.fullTrustProcess" Executable="$targetnametoken$.exe" /></Extensions>
+      <Extensions><desktop:Extension Category="windows.fullTrustProcess" Executable="CleanMachine.exe" /></Extensions>
     </Application>
   </Applications>
+  <Capabilities>
+    <!-- Required by the desktop:Extension windows.fullTrustProcess entry above. -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
 </Package>

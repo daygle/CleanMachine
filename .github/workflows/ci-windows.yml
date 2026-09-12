@@ -39,16 +39,22 @@ jobs:
       - name: Publish MSIX package (x64)
         shell: pwsh
         run: |
-          dotnet publish $env:PROJECT -c Release -p:Platform=x64 -p:PublishProfile=win-x64
-          # MSIX/Appx bundle lands under bin/Release/net8.0-windows10.0.26100.0/win-x64/AppPackages/
+          # Plain `dotnet publish` builds the app but never produces an .msix; the
+          # packaging targets only run with GenerateAppxPackageOnBuild (as the
+          # release workflow does via dotnet msbuild -t:Publish).
+          dotnet msbuild $env:PROJECT -t:Publish `
+            -p:Configuration=Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 `
+            -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxBundle=Never `
+            -p:AppxPackageSigningEnabled=false -p:GenerateAppxPackageOnBuild=true
+          # Package lands in CleanMachine.Windows/bin/AppPackages/<name>_Test/
 
       - name: Upload MSIX package artifact
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: CleanMachine-x64-msix
-          path: CleanMachine.Windows/bin/x64/Release/net8.0-windows10.0.26100.0/win-x64/AppPackages/**/*.msix
-          if-no-files-found: warn
+          path: CleanMachine.Windows/bin/AppPackages/**/*.msix
+          if-no-files-found: error
 
       - name: Build Inno Setup installer (x64)
         shell: pwsh
