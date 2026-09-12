@@ -12,16 +12,25 @@ public sealed class RegistryCareService
 {
     private const string UninstallRoot = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
     private const string ClassesRoot = @"Software\Classes";
+    private const string MuiCacheRoot = @"Control Panel\Desktop\MuiCached";
+    private const string StartupRunRoot = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string StartupRunOnceRoot = @"Software\Microsoft\Windows\CurrentVersion\RunOnce";
+    private const string SoundAppsRoot = @"AppEvents\Schemes\Apps";
 
     private readonly CleanupService _cleanup = new();
 
     // The only locations a finding may be deleted from. The scanner only ever
     // produces paths under these roots; validating again at delete time means a
     // tampered or future finding can never point the cleaner somewhere else.
+    // All are per-user (HKCU) and self-healing or orphaned-reference safe.
     private static readonly string[] AllowedCleanupRoots =
     [
         @"Software\Microsoft\Windows\CurrentVersion\Uninstall\",
-        @"Software\Classes\"
+        @"Software\Classes\",
+        @"Control Panel\Desktop\MuiCached",
+        @"Software\Microsoft\Windows\CurrentVersion\Run",
+        @"Software\Microsoft\Windows\CurrentVersion\RunOnce",
+        @"AppEvents\Schemes\Apps\"
     ];
 
     internal static bool IsDeletablePath(string? path)
@@ -49,6 +58,12 @@ public sealed class RegistryCareService
             var ext = finding.Path[ClassesRoot.Length..].TrimStart('\\');
             return string.IsNullOrEmpty(ext) ? "File association" : $"File association: {ext}";
         }
+        if (finding.Path.StartsWith(MuiCacheRoot, StringComparison.OrdinalIgnoreCase))
+            return "Localized UI cache (MUI)";
+        if (finding.Path == StartupRunRoot || finding.Path == StartupRunOnceRoot)
+            return finding.ValueName is null ? "Startup entry" : $"Startup entry: {finding.ValueName}";
+        if (finding.Path.StartsWith(SoundAppsRoot + @"\", StringComparison.OrdinalIgnoreCase))
+            return "Orphaned sound event";
         return finding.Path;
     }
 
@@ -98,17 +113,33 @@ public sealed class RegistryCareService
             try
             {
                 using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
-                using var parent = root.OpenSubKey(ParentKeyPath(finding.Path), writable: true);
-                if (parent is null) { skipped.Add(new(finding.Path, "Parent key not found")); continue; }
-                var leaf = LeafKeyName(finding.Path);
-                // Probe with a scoped handle and dispose it BEFORE deleting: a key
-                // cannot be removed while any handle to it is open.
-                using (var existing = parent.OpenSubKey(leaf))
+                if (finding.ValueName is not null)
                 {
-                    if (existing is null) { skipped.Add(new(finding.Path, "Key not found (already clean)")); continue; }
+                    // Value-level finding: delete a single named value under the key.
+                    using var key = root.OpenSubKey(finding.Path, writable: true);
+                    if (key is null) { skipped.Add(new(finding.Path, "Key not found")); continue; }
+                    if (key.GetValue(finding.ValueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is null)
+                    {
+                        skipped.Add(new(finding.Path, "Value not found (already clean)"));
+                        continue;
+                    }
+                    key.DeleteValue(finding.ValueName, throwOnMissingValue: false);
+                    removed++;
                 }
-                parent.DeleteSubKeyTree(leaf, throwOnMissingSubKey: false);
-                removed++;
+                else
+                {
+                    using var parent = root.OpenSubKey(ParentKeyPath(finding.Path), writable: true);
+                    if (parent is null) { skipped.Add(new(finding.Path, "Parent key not found")); continue; }
+                    var leaf = LeafKeyName(finding.Path);
+                    // Probe with a scoped handle and dispose it BEFORE deleting: a key
+                    // cannot be removed while any handle to it is open.
+                    using (var existing = parent.OpenSubKey(leaf))
+                    {
+                        if (existing is null) { skipped.Add(new(finding.Path, "Key not found (already clean)")); continue; }
+                    }
+                    parent.DeleteSubKeyTree(leaf, throwOnMissingSubKey: false);
+                    removed++;
+                }
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException or ArgumentException)
             {
@@ -147,6 +178,22 @@ public sealed class RegistryCareService
                 .Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
             backups.Add(await ExportKeyAsync(path,
                 Path.Combine(directory, $"registry-classes-{name}-{stamp}.reg"), token));
+        }
+
+        // Safe per-user categories: export the key that holds the finding (or the
+        // key itself for the MUI cache). These are small keys, so a whole-key export
+        // is cheap and gives a precise restore point.
+        foreach (var path in findings
+                     .Select(f => f.Path)
+                     .Where(p => p.StartsWith(MuiCacheRoot, StringComparison.OrdinalIgnoreCase)
+                         || p == StartupRunRoot || p == StartupRunOnceRoot
+                         || p.StartsWith(SoundAppsRoot + @"\", StringComparison.OrdinalIgnoreCase))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var name = new string(path[(path.LastIndexOf('\\') + 1)..]
+                .Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
+            backups.Add(await ExportKeyAsync(path,
+                Path.Combine(directory, $"registry-{name}-{stamp}.reg"), token));
         }
         return backups;
     }

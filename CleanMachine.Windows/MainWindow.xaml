@@ -90,17 +90,17 @@
                 <TextBlock Text="Activity" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
+            <Button x:Name="NavSchedules" Style="{StaticResource NavButton}" Click="Schedules_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <FontIcon Glyph="&#xE787;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
+                <TextBlock Text="Schedules" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
           </StackPanel>
         </ScrollViewer>
 
         <!-- Row 2: always-visible bottom section (never clipped, never scrolled away) -->
         <StackPanel Grid.Row="2">
-          <Border Background="#EAF4EE" BorderBrush="#DCE8E1" BorderThickness="1" CornerRadius="9" Padding="12">
-            <StackPanel>
-              <TextBlock x:Name="AgentStatusText" Text="●  Background Agent  ON" Foreground="#4B675D" FontSize="11"/>
-              <TextBlock Text="Watching for browser exits" Foreground="#91A29A" FontSize="10" Margin="14,7,0,0"/>
-            </StackPanel>
-          </Border>
           <Button x:Name="NavSettings" Style="{StaticResource NavButton}" Click="Settings_Click">
             <StackPanel Orientation="Horizontal" Spacing="10">
               <FontIcon Glyph="&#xE713;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>

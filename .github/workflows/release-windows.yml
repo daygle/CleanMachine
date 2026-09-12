@@ -239,11 +239,19 @@ jobs:
           arm64_hash=$(tr -d '[:space:]' < "release/CleanMachine-ARM64/CleanMachine-ARM64-${GITHUB_REF_NAME}.sha256")
           test "${#x64_hash}" -eq 64
           test "${#arm64_hash}" -eq 64
-          export version x64_hash arm64_hash publisher
+          # Compute the installer .exe hash for the .exe install path.
+          setup_exe=$(ls release/CleanMachine-Setup/CleanMachine-Setup-*.exe 2>/dev/null | head -1)
+          if [ -n "$setup_exe" ]; then
+            setup_hash=$(sha256sum "$setup_exe" | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]')
+          else
+            setup_hash=""
+          fi
+          export version x64_hash arm64_hash publisher setup_hash
           python3 - <<'PY'
           import json, os
           tag = os.environ['GITHUB_REF_NAME']
           publisher = os.environ['publisher']
+          setup_hash = os.environ.get('setup_hash', '')
           data = {
             'version': os.environ['version'],
             'releaseNotes': 'See the GitHub release notes.',
@@ -252,6 +260,12 @@ jobs:
               'ARM64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-ARM64-{tag}.msix', 'sha256': os.environ['arm64_hash'], 'architecture': 'ARM64', 'publisher': publisher}
             }
           }
+          if setup_hash and len(setup_hash) == 64:
+            data['installer'] = {
+              'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-Setup-{os.environ["version"]}.exe',
+              'sha256': setup_hash,
+              'architecture': 'x64'
+            }
           with open('update-manifest.json', 'w', encoding='utf-8') as handle: json.dump(data, handle, indent=2)
           PY
           python3 -m json.tool update-manifest.json >/dev/null

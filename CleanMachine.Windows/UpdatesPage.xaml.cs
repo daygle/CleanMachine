@@ -95,9 +95,21 @@ public sealed partial class UpdatesPage : Page
         try
         {
             var executable = Environment.ProcessPath ?? throw new InvalidOperationException("Application path not found.");
+            var isExeInstall = _stagedPackagePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
             await _service.InstallVerifiedPackageAsync(_stagedPackagePath, executable);
-            StatusText.Text = "Installation complete. Please restart the application.";
-            InstallButton.Visibility = Visibility.Collapsed;
+            if (isExeInstall)
+            {
+                // The .exe installer has been launched and will replace the running app.
+                // Exit so the installer can proceed without file-in-use errors.
+                StatusText.Text = "Installer launched. The application will close.";
+                InstallButton.Visibility = Visibility.Collapsed;
+                Microsoft.UI.Xaml.Application.Current.Exit();
+            }
+            else
+            {
+                StatusText.Text = "Installation complete. Please restart the application.";
+                InstallButton.Visibility = Visibility.Collapsed;
+            }
         }
         catch (Exception ex)
         {

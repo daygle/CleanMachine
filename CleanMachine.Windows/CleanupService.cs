@@ -3,7 +3,7 @@ using Microsoft.Win32;
 namespace CleanMachine.Windows;
 
 public sealed record CleanupResult(int ItemsRemoved, long BytesRecovered);
-public sealed record RegistryFinding(string Hive, string Path, string Reason, bool LowRisk, int Confidence = 50);
+public sealed record RegistryFinding(string Hive, string Path, string Reason, bool LowRisk, int Confidence = 50, string Category = "Other", string? ValueName = null);
 public sealed record RegistryBackup(string FilePath, DateTimeOffset CreatedAt);
 public sealed record BrowserCleanupTarget(string Browser, string Category, string Path, long Bytes, bool Selected);
 
@@ -86,6 +86,9 @@ public sealed class CleanupService
         var findings = new List<RegistryFinding>();
         ScanUninstallEntries(RegistryHive.CurrentUser, findings);
         ScanFileAssociations(RegistryHive.CurrentUser, findings);
+        ScanMuiCache(findings);
+        ScanStartupEntries(findings);
+        ScanSoundAppEvents(findings);
         return Task.FromResult<IReadOnlyList<RegistryFinding>>(findings);
     }
 
@@ -102,7 +105,7 @@ public sealed class CleanupService
             if (!string.IsNullOrWhiteSpace(displayName) && string.IsNullOrWhiteSpace(uninstallString))
                 findings.Add(new RegistryFinding("HKCU",
                     $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{name}",
-                    "Uninstall metadata has no removal command", true, 75));
+                    "Uninstall metadata has no removal command", true, 75, "Installer/Uninstaller"));
         }
     }
 
@@ -119,8 +122,83 @@ public sealed class CleanupService
             using var progIdKey = root.OpenSubKey($@"Software\Classes\{progId}\shell");
             if (progIdKey is null)
                 findings.Add(new RegistryFinding("HKCU", $@"Software\Classes\{ext}",
-                    $"File extension maps to missing handler '{progId}'", true, 65));
+                    $"File extension maps to missing handler '{progId}'", true, 65, "File Extensions"));
         }
+    }
+
+    // Localized UI resource cache (MUI). Windows regenerates it on demand, so the
+    // whole key is a safe, self-healing cache to clear.
+    private static void ScanMuiCache(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var mui = root.OpenSubKey(@"Control Panel\Desktop\MuiCached");
+        if (mui is null || mui.ValueCount == 0) return;
+        findings.Add(new RegistryFinding("HKCU", @"Control Panel\Desktop\MuiCached",
+            "Localized UI cache that Windows regenerates automatically", true, 80, "MUI Cache"));
+    }
+
+    // Current-user auto-start entries (Run / RunOnce) whose executable no longer
+    // exists on disk. Deleting a startup entry whose program is gone cannot break
+    // anything — the program is simply not there to run.
+    private static void ScanStartupEntries(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        foreach (var path in new[]
+        {
+            @"Software\Microsoft\Windows\CurrentVersion\Run",
+            @"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+        })
+        {
+            using var key = root.OpenSubKey(path);
+            if (key is null) continue;
+            foreach (var valueName in key.GetValueNames())
+            {
+                var command = key.GetValue(valueName) as string;
+                if (string.IsNullOrWhiteSpace(command)) continue;
+                var exe = ResolveStartupExecutable(command);
+                if (exe is null || File.Exists(exe)) continue;
+                findings.Add(new RegistryFinding("HKCU", path,
+                    $"Startup entry '{valueName}' points to a missing executable", true, 70, "Windows Startup", valueName));
+            }
+        }
+    }
+
+    // Current-user sound event entries whose referenced sound file has been removed.
+    // A dead reference is harmless to delete and only silences a missing sound.
+    private static void ScanSoundAppEvents(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var apps = root.OpenSubKey(@"AppEvents\Schemes\Apps");
+        if (apps is null) return;
+        foreach (var appName in apps.GetSubKeyNames())
+        {
+            using var appKey = apps.OpenSubKey(appName);
+            if (appKey is null) continue;
+            foreach (var eventName in appKey.GetSubKeyNames())
+            {
+                using var eventKey = appKey.OpenSubKey(eventName);
+                var wav = eventKey?.GetValue(".Default") as string;
+                if (string.IsNullOrWhiteSpace(wav) || wav.Contains('%') || !Path.IsPathFullyQualified(wav)) continue;
+                if (!File.Exists(wav))
+                    findings.Add(new RegistryFinding("HKCU", $@"AppEvents\Schemes\Apps\{appName}\{eventName}",
+                        "Sound event references a missing file", true, 70, "Sound AppEvents", ".Default"));
+            }
+        }
+    }
+
+    /// <summary>Extracts a fully-qualified executable path from a Run value, or null
+    /// if the value cannot be resolved (env vars, relative paths, non-exe commands).
+    /// Unknown/ambiguous values are never flagged so the cleaner only acts on entries
+    /// it can positively verify as missing.</summary>
+    internal static string? ResolveStartupExecutable(string command)
+    {
+        var trimmed = command.Trim();
+        if (trimmed.Length == 0) return null;
+        string? candidate = trimmed.StartsWith('"')
+            ? (trimmed.IndexOf('"', 1) is var end && end > 1 ? trimmed[1..end] : null)
+            : trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+        if (candidate is null || candidate.Contains('%')) return null;
+        return Path.IsPathFullyQualified(candidate) ? candidate : null;
     }
 
     private static IEnumerable<string> GetProfiles(

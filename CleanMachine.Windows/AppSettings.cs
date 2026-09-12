@@ -30,6 +30,9 @@ public sealed class AppSettings
     // When false the main window is hidden from the taskbar and, when minimized,
     // it collapses to a system-tray icon instead.
     public bool ShowInTaskbar { get; set; } = true;
+    // Independent of ShowInTaskbar: when true, minimizing shows a system-tray icon
+    // but keeps the taskbar button, so the window can be restored from either place.
+    public bool MinimizeToTray { get; set; } = true;
     public WipeMethod SecureDeleteMethod { get; set; } = WipeMethod.SimpleZeroFill;
     public int CustomWipePasses { get; set; } = 1;
     public HashSet<string> ProtectedBrowsers { get; set; } = ["chrome", "edge", "firefox"];
@@ -53,6 +56,11 @@ public sealed class AppSettings
     public bool SystemMonitoringEnabled { get; set; }
     public double SystemMonitorFreeSpaceGb { get; set; } = 1.0;
     public ExitAction SystemMonitorAction { get; set; } = ExitAction.CleanSilently;
+
+    // User-defined cleanup schedules, executed by Windows Task Scheduler so they run
+    // even when the app is closed. An optional action (shutdown/restart/sleep) can
+    // follow a successful run.
+    public List<CleanupSchedule> Schedules { get; set; } = [];
 
     public BrowserMonitorSetting? FindBrowserMonitor(string browser) =>
         BrowserMonitors.FirstOrDefault(m => m.Browser.Equals(browser, StringComparison.OrdinalIgnoreCase));

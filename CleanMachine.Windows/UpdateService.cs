@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -8,12 +9,21 @@ using Windows.ApplicationModel;
 namespace CleanMachine.Windows;
 
 public sealed record UpdatePackage(string PackageUrl, string Sha256, string Architecture, string? Publisher = null);
-public sealed record UpdateManifest(string Version, string ReleaseNotes, string PackageUrl = "", string Sha256 = "", string Architecture = "", string? Publisher = null, Dictionary<string, UpdatePackage>? Packages = null);
+public sealed record UpdateManifest(string Version, string ReleaseNotes, string PackageUrl = "", string Sha256 = "", string Architecture = "", string? Publisher = null, Dictionary<string, UpdatePackage>? Packages = null, UpdatePackage? Installer = null);
 public sealed record UpdateCheckResult(bool Available, UpdateManifest? Manifest, UpdatePackage? Package, string? Error);
 
 public sealed class UpdateService
 {
     private static readonly Uri ManifestUri = new("https://github.com/daygle/CleanMachine/releases/latest/download/update-manifest.json");
+
+    /// <summary>True when running inside an MSIX package; false for standalone .exe installs.</summary>
+    public static bool IsInstalledAsMsix { get; } = TryGetIsMsix();
+
+    private static bool TryGetIsMsix()
+    {
+        try { _ = Package.Current.Id.FullName; return true; }
+        catch (Exception ex) when (ex is InvalidOperationException or COMException) { return false; }
+    }
     // The published manifest is generated with camelCase keys (version, releaseNotes,
     // packages, ...). System.Text.Json is case-sensitive by default, so binding must
     // be case-insensitive for the record properties to populate.
@@ -40,16 +50,19 @@ public sealed class UpdateService
 
     public async Task<string> DownloadAndVerifyAsync(UpdatePackage package, CancellationToken cancellationToken = default)
     {
-        if (!IsValidPackage(package) || !package.PackageUrl.EndsWith(".msix", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Only signed MSIX update packages are supported.");
+        if (!IsValidPackage(package)) throw new InvalidOperationException("No signed update package is available for this device.");
+        var isMsix = package.PackageUrl.EndsWith(".msix", StringComparison.OrdinalIgnoreCase);
+        var ext = isMsix ? ".msix" : ".exe";
         var directory = Path.Combine(Path.GetTempPath(), "CleanMachine", "Updates"); Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, $"CleanMachine-{DateTime.UtcNow:yyyyMMddHHmmss}-{package.Architecture}.msix");
+        var path = Path.Combine(directory, $"CleanMachine-{DateTime.UtcNow:yyyyMMddHHmmss}-{package.Architecture}{ext}");
         try
         {
             await using (var source = await _httpClient.GetStreamAsync(new Uri(package.PackageUrl), cancellationToken))
             await using (var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true)) await source.CopyToAsync(target, cancellationToken);
             await using var verify = File.OpenRead(path);
             var hash = Convert.ToHexString(await SHA256.HashDataAsync(verify, cancellationToken));
-            if (!hash.Equals(package.Sha256, StringComparison.OrdinalIgnoreCase) || !HasExpectedPublisher(path, package.Publisher)) throw new InvalidDataException("The downloaded MSIX failed hash or publisher verification.");
+            if (!hash.Equals(package.Sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The downloaded package failed hash verification.");
+            if (isMsix && !HasExpectedPublisher(path, package.Publisher)) throw new InvalidDataException("The downloaded MSIX failed publisher verification.");
             await _stateStore.MarkAsync("staged", path, null, cancellationToken);
             return path;
         }
@@ -58,15 +71,33 @@ public sealed class UpdateService
 
     public async Task InstallVerifiedPackageAsync(string packagePath, string currentExecutable, CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(packagePath) || !packagePath.EndsWith(".msix", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A verified MSIX package is required.");
+        if (!File.Exists(packagePath)) throw new FileNotFoundException("Staged package not found.", packagePath);
+        var isMsix = packagePath.EndsWith(".msix", StringComparison.OrdinalIgnoreCase);
+        var isExe = packagePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+        if (!isMsix && !isExe) throw new InvalidDataException("A verified MSIX or EXE package is required.");
+
         var rollback = await StageRollbackCopyAsync(currentExecutable, cancellationToken);
         await _stateStore.MarkAsync("installing", packagePath, rollback, cancellationToken);
         try
         {
-            var uri = new Uri(packagePath, UriKind.Absolute);
-            var manager = new global::Windows.Management.Deployment.PackageManager();
-            var current = Package.Current.Id.FullName;
-            await manager.AddPackageAsync(uri, null, global::Windows.Management.Deployment.DeploymentOptions.ForceApplicationShutdown);
+            if (isMsix)
+            {
+                var uri = new Uri(packagePath, UriKind.Absolute);
+                var manager = new global::Windows.Management.Deployment.PackageManager();
+                await manager.AddPackageAsync(uri, null, global::Windows.Management.Deployment.DeploymentOptions.ForceApplicationShutdown);
+            }
+            else
+            {
+                // .exe installer: launch silently and exit so the installer can replace files.
+                // Inno Setup /SILENT shows a progress bar; /SUPPRESSMSGBOXES prevents dialogs;
+                // /NORESTART avoids an automatic reboot.
+                var psi = new ProcessStartInfo(packagePath, "/SILENT /SUPPRESSMSGBOXES /NORESTART")
+                {
+                    UseShellExecute = true,
+                    Verb = "runas"
+                };
+                Process.Start(psi);
+            }
             await _stateStore.MarkAsync("installed", packagePath, rollback, cancellationToken);
             CleanupRollbackCopy();
         }
@@ -103,8 +134,30 @@ public sealed class UpdateService
 
     public static string? FindRollbackCopy() { var copy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Updates", "rollback", "CleanMachine.previous"); return File.Exists(copy) ? copy : null; }
     public static void CleanupRollbackCopy() { var copy = FindRollbackCopy(); try { if (copy is not null) File.Delete(copy); } catch { } }
-    private static UpdatePackage? ResolvePackage(UpdateManifest manifest) { var arch = CurrentArchitecture(); if (manifest.Packages is not null && manifest.Packages.TryGetValue(arch, out var package)) return package; return manifest.Architecture == arch && !string.IsNullOrWhiteSpace(manifest.PackageUrl) ? new UpdatePackage(manifest.PackageUrl, manifest.Sha256, manifest.Architecture, manifest.Publisher) : null; }
-    private static bool IsValidPackage(UpdatePackage package) => Uri.TryCreate(package.PackageUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && package.PackageUrl.EndsWith(".msix", StringComparison.OrdinalIgnoreCase) && package.Sha256.Length == 64 && package.Sha256.All(Uri.IsHexDigit) && package.Architecture == CurrentArchitecture() && !string.IsNullOrWhiteSpace(package.Publisher);
+    private static UpdatePackage? ResolvePackage(UpdateManifest manifest)
+    {
+        var arch = CurrentArchitecture();
+        // .exe installs use the standalone installer; MSIX installs use the per-architecture package.
+        if (!IsInstalledAsMsix)
+        {
+            if (manifest.Installer is not null && manifest.Installer.Architecture == arch) return manifest.Installer;
+            return null; // No installer available for this architecture.
+        }
+        if (manifest.Packages is not null && manifest.Packages.TryGetValue(arch, out var package)) return package;
+        return manifest.Architecture == arch && !string.IsNullOrWhiteSpace(manifest.PackageUrl) ? new UpdatePackage(manifest.PackageUrl, manifest.Sha256, manifest.Architecture, manifest.Publisher) : null;
+    }
+    private static bool IsValidPackage(UpdatePackage package)
+    {
+        if (!Uri.TryCreate(package.PackageUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) return false;
+        if (package.Sha256.Length != 64 || !package.Sha256.All(Uri.IsHexDigit)) return false;
+        if (package.Architecture != CurrentArchitecture()) return false;
+        var isMsix = package.PackageUrl.EndsWith(".msix", StringComparison.OrdinalIgnoreCase);
+        var isExe = package.PackageUrl.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+        if (!isMsix && !isExe) return false;
+        // Publisher is required for MSIX (sideload verification); not needed for .exe installs.
+        if (isMsix && string.IsNullOrWhiteSpace(package.Publisher)) return false;
+        return true;
+    }
     private static string CurrentArchitecture() => RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "ARM64" : RuntimeInformation.OSArchitecture == Architecture.X64 ? "x64" : "x86";
     internal static bool IsNewer(string version) => Version.TryParse(version, out var candidate) && candidate > CurrentVersion();
 

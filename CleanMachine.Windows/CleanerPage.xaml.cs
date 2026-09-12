@@ -1,12 +1,13 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace CleanMachine.Windows;
 
 public sealed partial class CleanerPage : Page
 {
     private readonly BrowserCleanupService _service = new();
-    private CancellationTokenSource? _cancel;
+    private readonly List<(string BrowserId, string ItemId, bool Destructive, CheckBox Box)> _itemBoxes = [];
 
     public CleanerPage()
     {
@@ -18,79 +19,164 @@ public sealed partial class CleanerPage : Page
     {
         var state = await _service.LoadInterruptedStateAsync();
         if (state is not null)
-        {
             StatusText.Text = $"A previous cleanup ({state.Removed} files removed) was interrupted. " +
-                              $"Recovered: {state.BytesRecovered:N0} bytes. {state.RemainingFiles.Count} files remain.";
-        }
+                              $"{state.RemainingFiles.Count} files may remain.";
     }
 
     private async void Scan_Click(object sender, RoutedEventArgs e)
     {
         ScanButton.IsEnabled = false;
-        _cancel = new CancellationTokenSource();
+        CleanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
+        StatusText.Text = "Detecting browsers and measuring items…";
+        BrowserPanel.Children.Clear();
+        _itemBoxes.Clear();
         try
         {
-            var settings = await AppSettings.LoadAsync(_cancel.Token);
-            var targets = await _service.ScanAsync(
-                ["chrome", "edge", "firefox"],
-                additionalRoots: null,
-                excludedPaths: settings.ExcludedPaths,
-                token: _cancel.Token);
+            var scans = await _service.DetectAndScanAsync();
+            foreach (var scan in scans)
+                BrowserPanel.Children.Add(BuildCard(scan));
 
-            if (targets.Count == 0) { StatusText.Text = "No supported browser cache folders were found."; return; }
-
-            var running = BrowserCleanupService.GetRunningBrowsers();
-            if (running.Count > 0)
-            {
-                StatusText.Text = $"Close {string.Join(", ", running)} before cleaning.";
-                return;
-            }
-
-            var list = new StackPanel { Spacing = 8 };
-            foreach (var target in targets)
-                list.Children.Add(new CheckBox
-                {
-                    IsChecked = target.Selected,
-                    Content = $"{target.Browser} · {target.Category} · {target.Bytes:N0} bytes",
-                    Tag = target
-                });
-
-            var dialog = new ContentDialog
-            {
-                Title = "Review browser cleanup",
-                Content = list,
-                PrimaryButtonText = "Clean Selected",
-                CloseButtonText = "Cancel",
-                XamlRoot = XamlRoot
-            };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-            var selected = list.Children.OfType<CheckBox>()
-                .Select(c => ((BrowserCleanupTarget)c.Tag!) with { Selected = c.IsChecked == true });
-
-            var progress = new Progress<CleanupProgress>(p =>
-                Progress.Value = p.Total == 0 ? 0 : (double)p.Completed / p.Total);
-
-            var result = await _service.CleanWithReportAsync(
-                selected,
-                new BrowserCleanupOptions(
-                    ExcludedPaths: settings.ExcludedPaths,
-                    RequireBrowsersClosed: true),
-                progress,
-                _cancel.Token);
-
-            StatusText.Text = $"Complete: {result.Result.ItemsRemoved:N0} files removed, " +
-                              $"{result.Result.BytesRecovered:N0} bytes recovered, " +
-                              $"{result.Skipped.Count:N0} skipped.";
+            var installed = scans.Count(s => s.Installed);
+            StatusText.Text = installed == 0
+                ? "No supported browsers were detected on this PC."
+                : $"{installed} browser(s) detected. Tick items to clean, then choose Clean selected.";
+            CleanButton.IsEnabled = installed > 0;
         }
-        catch (OperationCanceledException) { StatusText.Text = "Cleanup cancelled."; }
-        catch (Exception ex) { StatusText.Text = ex.Message; }
+        catch (Exception ex)
+        {
+            StatusText.Text = ex.Message;
+        }
         finally
         {
             ScanButton.IsEnabled = true;
-            _cancel?.Dispose();
-            _cancel = null;
+            Progress.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private Expander BuildCard(BrowserScan scan)
+    {
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        header.Children.Add(new FontIcon
+        {
+            Glyph = "\uE774",
+            FontSize = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58))
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = scan.Name,
+            FontSize = 14,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = scan.Installed ? "Installed" : "N/A",
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(scan.Installed
+                ? global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69)
+                : global::Windows.UI.Color.FromArgb(255, 0x9A, 0xA6, 0xA1))
+        });
+
+        var expander = new Expander
+        {
+            Header = header,
+            IsExpanded = scan.Installed,
+            IsEnabled = scan.Installed,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch
+        };
+        if (!scan.Installed) return expander;
+
+        var content = new StackPanel { Spacing = 2 };
+        foreach (var item in scan.Items)
+        {
+            var text = new StackPanel { Spacing = 0 };
+            text.Children.Add(new TextBlock
+            {
+                Text = item.Name,
+                FontSize = 12,
+                Foreground = new SolidColorBrush(item.Destructive
+                    ? global::Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D)
+                    : global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+            });
+            var detail = item.Bytes > 0
+                ? $"{AppNotifications.FormatBytes(item.Bytes)} · {item.FileCount:N0} files"
+                : "nothing to clean";
+            text.Children.Add(new TextBlock
+            {
+                Text = item.Destructive ? $"{detail} · {item.Description}" : detail,
+                FontSize = 10,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
+
+            var box = new CheckBox
+            {
+                Content = text,
+                // Destructive items start unticked so a single mis-click can never wipe data.
+                IsChecked = !item.Destructive,
+                MinHeight = 30
+            };
+            ToolTipService.SetToolTip(box, item.Description);
+            _itemBoxes.Add((scan.Id, item.Id, item.Destructive, box));
+            content.Children.Add(box);
+        }
+
+        expander.Content = content;
+        return expander;
+    }
+
+    private async void Clean_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = _itemBoxes
+            .Where(x => x.Box.IsChecked == true)
+            .Select(x => (x.BrowserId, x.ItemId))
+            .ToArray();
+        if (selected.Length == 0) { StatusText.Text = "Nothing is ticked. Tick at least one item to clean."; return; }
+
+        var destructive = _itemBoxes.Count(x => x.Box.IsChecked == true && x.Destructive);
+        if (destructive > 0)
+        {
+            var confirm = new ContentDialog
+            {
+                Title = "Delete user data?",
+                Content = $"{destructive} destructive item(s) are ticked (cookies, history, saved passwords, or similar). " +
+                          "That data is permanently deleted and cannot be undone. Continue?",
+                PrimaryButtonText = "Delete",
+                CloseButtonText = "Cancel",
+                XamlRoot = XamlRoot
+            };
+            if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        }
+
+        CleanButton.IsEnabled = false;
+        ScanButton.IsEnabled = false;
+        Progress.Visibility = Visibility.Visible;
+        StatusText.Text = "Cleaning…";
+        try
+        {
+            var report = await _service.CleanItemsAsync(selected);
+            StatusText.Text = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
+                              $"{AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered, " +
+                              $"{report.Skipped.Count:N0} skipped.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            StatusText.Text = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = ex.Message;
+        }
+        finally
+        {
+            CleanButton.IsEnabled = true;
+            ScanButton.IsEnabled = true;
+            Progress.Visibility = Visibility.Collapsed;
         }
     }
 }

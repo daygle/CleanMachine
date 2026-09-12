@@ -16,6 +16,15 @@ public partial class App : Application
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Headless entry point used by Windows Scheduled Tasks. No window is created;
+        // the process runs the cleanup, records activity, and exits.
+        if (TryReadScheduledRun(Environment.GetCommandLineArgs(), out var scheduleId))
+        {
+            await RunScheduledCleanupAsync(scheduleId);
+            Exit();
+            return;
+        }
+
         MainWindow = new MainWindow();
         MainWindow.Activate();
         AppNotifications.Register();
@@ -23,6 +32,33 @@ public partial class App : Application
         var settings = await AppSettings.LoadAsync();
         if (settings.BackgroundAgentEnabled)
             StartBackgroundAgent(settings);
+        // Keep the OS task store in step with whatever schedules are saved.
+        _ = ScheduleService.SyncAllAsync(settings);
+    }
+
+    private static bool TryReadScheduledRun(string[] arguments, out string scheduleId)
+    {
+        scheduleId = string.Empty;
+        for (var i = 0; i < arguments.Length - 1; i++)
+        {
+            if (!arguments[i].Equals("--run-schedule", StringComparison.OrdinalIgnoreCase)) continue;
+            scheduleId = arguments[i + 1];
+            return !string.IsNullOrWhiteSpace(scheduleId);
+        }
+        return false;
+    }
+
+    private static async Task RunScheduledCleanupAsync(string scheduleId)
+    {
+        try
+        {
+            var settings = await AppSettings.LoadAsync();
+            var schedule = settings.Schedules.FirstOrDefault(s =>
+                s.Id.Equals(scheduleId, StringComparison.OrdinalIgnoreCase));
+            if (schedule is null || !schedule.Enabled) return;
+            await ScheduleService.RunAsync(schedule, settings);
+        }
+        catch { /* a headless run must never surface a dialog or crash the process */ }
     }
 
     public void StartBackgroundAgent(AppSettings? settings = null)

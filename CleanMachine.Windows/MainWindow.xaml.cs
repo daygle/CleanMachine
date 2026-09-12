@@ -22,9 +22,11 @@ public sealed partial class MainWindow : Window
     private const uint WM_SIZE = 0x0005;
     private const long SC_MINIMIZE_VALUE = 0xF020;
     private const long SIZE_MINIMIZED_VALUE = 1;
+    private const long SIZE_RESTORED_VALUE = 0;
     private const int GWL_WNDPROC = -4;
 
     private bool _showInTaskbar = true;
+    private bool _minimizeToTray;
     private bool _inTray;
     private TrayIcon? _trayIcon;
     private WndProc? _baseWndProc;
@@ -41,7 +43,6 @@ public sealed partial class MainWindow : Window
         LoadSidebarLogo();
         ApplyTitleBarTheme();
         Navigate<OverviewPage>();
-        _ = LoadAgentStateAsync();
         // Defer applying the taskbar preference until the window is first
         // activated: changing ex-styles while the shell is still registering the
         // window's button can race Explorer and permanently lose the button.
@@ -171,6 +172,7 @@ public sealed partial class MainWindow : Window
     {
         var settings = await AppSettings.LoadAsync();
         ApplyShowInTaskbar(settings.ShowInTaskbar);
+        ApplyMinimizeToTray(settings.MinimizeToTray);
     }
 
     public void ApplyShowInTaskbar(bool showInTaskbar)
@@ -189,6 +191,20 @@ public sealed partial class MainWindow : Window
             // Self-heal: if a previous style change raced Explorer and lost the
             // taskbar button, force the tab back (idempotent, no-op if present).
             ForceTaskbarButton(WinRT.Interop.WindowNative.GetWindowHandle(this));
+        }
+    }
+
+    /// <summary>Independent of "Show in taskbar": when on, minimizing shows a tray
+    /// icon but keeps the taskbar button, so the window restores from either place.</summary>
+    public void ApplyMinimizeToTray(bool minimizeToTray)
+    {
+        _minimizeToTray = minimizeToTray;
+        // Turning the option off while a minimized window is showing its tray icon:
+        // drop the icon — the taskbar button still restores the window.
+        if (!minimizeToTray && _showInTaskbar && _inTray)
+        {
+            _inTray = false;
+            HideTrayIcon();
         }
     }
 
@@ -291,32 +307,48 @@ public sealed partial class MainWindow : Window
 
     private IntPtr WndProcHook(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        if (!_showInTaskbar && !_inTray)
+        var minimizeCommand = msg == WM_SYSCOMMAND && (wParam.ToInt64() & 0xFFF0) == SC_MINIMIZE_VALUE;
+        var minimized = msg == WM_SIZE && wParam.ToInt64() == SIZE_MINIMIZED_VALUE;
+        var restored = msg == WM_SIZE && wParam.ToInt64() == SIZE_RESTORED_VALUE;
+
+        if (!_inTray && (minimizeCommand || minimized))
         {
-            // Swallow the minimize command and collapse to the tray instead.
-            if (msg == WM_SYSCOMMAND && (wParam.ToInt64() & 0xFFF0) == SC_MINIMIZE_VALUE)
+            if (!_showInTaskbar)
             {
-                SendToTray();
-                return IntPtr.Zero;
+                // Tray-only mode: hide the window (no taskbar button). Swallow the
+                // minimize command so it does not also appear minimized on the taskbar.
+                SendToTray(hideWindow: true);
+                if (minimizeCommand) return IntPtr.Zero;
             }
-            // Fallback for minimize paths that bypass WM_SYSCOMMAND.
-            if (msg == WM_SIZE && wParam.ToInt64() == SIZE_MINIMIZED_VALUE)
+            else if (_minimizeToTray)
             {
-                SendToTray();
-                return CallWindowProc(_originalWndProc, hWnd, msg, wParam, lParam);
+                // Surface the tray icon but keep the taskbar button: let the normal
+                // minimize proceed so the window can be restored from either place.
+                SendToTray(hideWindow: false);
             }
+        }
+        else if (restored && _inTray && _showInTaskbar)
+        {
+            // Minimize-to-tray mode: restored from the taskbar or the window itself —
+            // drop the tray icon. (In tray-only mode the window is hidden, not
+            // minimized, so the icon must stay until the tray click restores it.)
+            _inTray = false;
+            HideTrayIcon();
         }
         return CallWindowProc(_originalWndProc, hWnd, msg, wParam, lParam);
     }
 
-    private void SendToTray()
+    /// <summary>Shows the tray icon when the window minimizes. With
+    /// <paramref name="hideWindow"/> the window hides entirely (tray-only mode);
+    /// otherwise it stays minimized so its taskbar button remains.</summary>
+    private void SendToTray(bool hideWindow)
     {
         if (_inTray) return;
         // Show the tray icon BEFORE hiding the window: if the icon can't be shown,
         // the window must stay visible or it would be unreachable.
         if (!ShowTrayIcon()) return;
         _inTray = true;
-        AppWindow.Hide();
+        if (hideWindow) AppWindow.Hide();
     }
 
     private bool ShowTrayIcon()
@@ -393,10 +425,11 @@ public sealed partial class MainWindow : Window
             : pageType == typeof(WindowsCleanupPage) ? NavWindowsCleanup
             : pageType == typeof(SecureDeletePage) ? NavSecureDelete
             : pageType == typeof(ActivityPage) ? NavActivity
+            : pageType == typeof(SchedulesPage) ? NavSchedules
             : pageType == typeof(SettingsPage) ? NavSettings
             : pageType == typeof(UpdatesPage) ? NavUpdates
             : null;
-        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavSecureDelete, NavActivity, NavSettings, NavUpdates })
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavSecureDelete, NavActivity, NavSchedules, NavSettings, NavUpdates })
             button.Background = ReferenceEquals(button, active) ? NavActiveBrush : NavIdleBrush;
 
         AttachNavPointerFeedback();
@@ -410,7 +443,7 @@ public sealed partial class MainWindow : Window
     {
         if (_navPointerHandlersAttached) return;
         _navPointerHandlersAttached = true;
-        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavSecureDelete, NavActivity, NavSettings, NavUpdates })
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavSecureDelete, NavActivity, NavSchedules, NavSettings, NavUpdates })
         {
             button.PointerEntered += (s, _) => { var b = (Button)s; if (!IsNavActive(b)) b.Background = NavHoverBrush; };
             button.PointerExited += (s, _) => { var b = (Button)s; b.Background = IsNavActive(b) ? NavActiveBrush : NavIdleBrush; };
@@ -418,13 +451,13 @@ public sealed partial class MainWindow : Window
             button.PointerReleased += (s, _) => { var b = (Button)s; b.Background = IsNavActive(b) ? NavActiveBrush : NavHoverBrush; };
         }
     }
-    private async Task LoadAgentStateAsync() { var settings = await AppSettings.LoadAsync(); AgentStatusText.Text = settings.BackgroundAgentEnabled ? "●  Background Agent  ON" : "●  Background Agent  OFF"; }
     private void Overview_Click(object sender, RoutedEventArgs e) => Navigate<OverviewPage>();
     private void Cleaner_Click(object sender, RoutedEventArgs e) => Navigate<CleanerPage>();
     private void Registry_Click(object sender, RoutedEventArgs e) => Navigate<RegistryCarePage>();
     private void WindowsCleanup_Click(object sender, RoutedEventArgs e) => Navigate<WindowsCleanupPage>();
     private void SecureDeleteNav_Click(object sender, RoutedEventArgs e) => Navigate<SecureDeletePage>();
     private void Activity_Click(object sender, RoutedEventArgs e) => Navigate<ActivityPage>();
+    private void Schedules_Click(object sender, RoutedEventArgs e) => Navigate<SchedulesPage>();
     private void Settings_Click(object sender, RoutedEventArgs e) => Navigate<SettingsPage>();
     private void CheckUpdates_Click(object sender, RoutedEventArgs e) => Navigate<UpdatesPage>();
 }

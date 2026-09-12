@@ -36,6 +36,7 @@ public sealed partial class SettingsPage : Page
 
         UpdateCheckToggle.IsChecked = _settings.CheckForUpdatesAutomatically;
         ShowInTaskbarToggle.IsChecked = _settings.ShowInTaskbar;
+        MinimizeToTrayToggle.IsChecked = _settings.MinimizeToTray;
         WipeMethodCombo.SelectedIndex = _settings.SecureDeleteMethod switch
         {
             WipeMethod.Dod522022M => 1,
@@ -76,6 +77,7 @@ public sealed partial class SettingsPage : Page
 
         _settings.CheckForUpdatesAutomatically = UpdateCheckToggle.IsChecked == true;
         _settings.ShowInTaskbar = ShowInTaskbarToggle.IsChecked == true;
+        _settings.MinimizeToTray = MinimizeToTrayToggle.IsChecked == true;
         _settings.SecureDeleteMethod = WipeMethodCombo.SelectedIndex switch
         {
             1 => WipeMethod.Dod522022M,
@@ -98,7 +100,10 @@ public sealed partial class SettingsPage : Page
         catch { /* startup registration is best-effort */ }
 
         if (App.MainWindow is MainWindow mainWindow)
+        {
             mainWindow.ApplyShowInTaskbar(_settings.ShowInTaskbar);
+            mainWindow.ApplyMinimizeToTray(_settings.MinimizeToTray);
+        }
 
         // Restart the agent so enabling/disabling it takes effect immediately.
         // Its handlers reload settings on every event, so action changes apply
@@ -139,6 +144,7 @@ public sealed partial class SettingsPage : Page
         SystemMonitorAction.SelectedIndex = 1;
         UpdateCheckToggle.IsChecked = defaults.CheckForUpdatesAutomatically;
         ShowInTaskbarToggle.IsChecked = defaults.ShowInTaskbar;
+        MinimizeToTrayToggle.IsChecked = defaults.MinimizeToTray;
         WipeMethodCombo.SelectedIndex = 0;
         ExclusionsBox.Text = "";
         StatusText.Text = "Defaults restored. Click Save Settings to apply.";

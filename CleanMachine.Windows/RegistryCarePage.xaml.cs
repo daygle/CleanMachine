@@ -7,6 +7,7 @@ namespace CleanMachine.Windows;
 public sealed partial class RegistryCarePage : Page
 {
     private readonly RegistryCareService _service = new();
+    private readonly List<CheckBox> _findingBoxes = new();
     private IReadOnlyList<RegistryBackup> _lastBackups = [];
     private IReadOnlyList<RegistryFinding> _findings = [];
 
@@ -29,6 +30,7 @@ public sealed partial class RegistryCarePage : Page
             var review = await _service.ScanAsync();
             _findings = review.Findings;
             FindingsPanel.Children.Clear();
+            _findingBoxes.Clear();
 
             if (_findings.Count == 0)
             {
@@ -37,36 +39,8 @@ public sealed partial class RegistryCarePage : Page
                 return;
             }
 
-            foreach (var item in _findings)
-            {
-                var cleanable = RegistryCareService.IsCleanable(item);
-                var box = new CheckBox
-                {
-                    IsChecked = cleanable,
-                    IsEnabled = cleanable,
-                    MinHeight = 28,
-                    Content = new StackPanel { Spacing = 0 },
-                    Tag = item
-                };
-                var stack = (StackPanel)box.Content;
-                stack.Children.Add(new TextBlock
-                {
-                    Text = RegistryCareService.DisplayName(item),
-                    FontSize = 12,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
-                });
-                stack.Children.Add(new TextBlock
-                {
-                    Text = cleanable
-                        ? $"{item.Confidence}% confidence · {item.Reason}"
-                        : $"{item.Confidence}% confidence · {item.Reason} (not eligible)",
-                    FontSize = 10,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
-                });
-                FindingsPanel.Children.Add(box);
-            }
+            foreach (var group in _findings.GroupBy(f => f.Category).OrderBy(g => g.Key))
+                FindingsPanel.Children.Add(BuildCategoryGroup(group.Key, group.ToList()));
 
             var eligible = _findings.Count(RegistryCareService.IsCleanable);
             ReportHeadline.Text = $"Analysis complete — {_findings.Count} issue(s) found.";
@@ -87,9 +61,67 @@ public sealed partial class RegistryCarePage : Page
         }
     }
 
+    private StackPanel BuildCategoryGroup(string category, IReadOnlyList<RegistryFinding> findings)
+    {
+        var panel = new StackPanel { Spacing = 2, Margin = new Thickness(0, 8, 0, 2) };
+
+        var master = new CheckBox
+        {
+            Content = $"{category} ({findings.Count})",
+            IsChecked = findings.Any(RegistryCareService.IsCleanable),
+            MinHeight = 26,
+            FontWeight = global::Microsoft.UI.Text.FontWeights.SemiBold
+        };
+        master.Checked += (_, _) => SetGroupChecked(findings, true);
+        master.Unchecked += (_, _) => SetGroupChecked(findings, false);
+        panel.Children.Add(master);
+
+        foreach (var item in findings)
+        {
+            var cleanable = RegistryCareService.IsCleanable(item);
+            var box = new CheckBox
+            {
+                IsChecked = cleanable,
+                IsEnabled = cleanable,
+                MinHeight = 28,
+                Content = new StackPanel { Spacing = 0 },
+                Tag = item
+            };
+            var stack = (StackPanel)box.Content;
+            stack.Children.Add(new TextBlock
+            {
+                Text = RegistryCareService.DisplayName(item),
+                FontSize = 12,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = cleanable
+                    ? $"{item.Confidence}% confidence · {item.Reason}"
+                    : $"{item.Confidence}% confidence · {item.Reason} (not eligible)",
+                FontSize = 10,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
+            _findingBoxes.Add(box);
+            panel.Children.Add(box);
+        }
+        return panel;
+    }
+
+    private void SetGroupChecked(IReadOnlyList<RegistryFinding> findings, bool value)
+    {
+        foreach (var box in _findingBoxes)
+        {
+            if (box.Tag is RegistryFinding f && findings.Contains(f) && box.IsEnabled)
+                box.IsChecked = value;
+        }
+    }
+
     private async void Clean_Click(object sender, RoutedEventArgs e)
     {
-        var selected = FindingsPanel.Children.OfType<CheckBox>()
+        var selected = _findingBoxes
             .Where(x => x.IsChecked == true)
             .Select(x => (RegistryFinding)x.Tag!)
             .ToArray();

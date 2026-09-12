@@ -1,4 +1,5 @@
 using CleanMachine.Windows;
+using Microsoft.Win32;
 using Xunit;
 
 namespace CleanMachine.Windows.Tests;
@@ -215,6 +216,11 @@ public sealed class ManifestAndSafetyTests
                   "architecture": "x64",
                   "publisher": "CN=CleanMachine Publisher"
                 }
+              },
+              "installer": {
+                "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.2.3/CleanMachine-Setup-1.2.3.exe",
+                "sha256": "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF",
+                "architecture": "x64"
               }
             }
             """;
@@ -229,6 +235,11 @@ public sealed class ManifestAndSafetyTests
         Assert.True(manifest.Packages.ContainsKey("x64"));
         Assert.Equal("x64", manifest.Packages["x64"].Architecture);
         Assert.Equal("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789", manifest.Packages["x64"].Sha256);
+        // Installer section is optional; when present it should parse correctly.
+        Assert.NotNull(manifest.Installer);
+        Assert.Contains(".exe", manifest.Installer!.PackageUrl);
+        Assert.Equal("x64", manifest.Installer.Architecture);
+        Assert.Equal("1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF", manifest.Installer.Sha256);
     }
 
     [Fact]
@@ -383,5 +394,277 @@ public sealed class ManifestAndSafetyTests
         Assert.Contains(selected, c => c.Id == "system-temp");
         // Review-risk categories (Recycle Bin, Downloads) must never be auto-cleaned.
         Assert.DoesNotContain(selected, c => c.Risk != CleanupRisk.Safe);
+    }
+
+    [Fact]
+    public void RegistryCleanableGateAcceptsSafeUserScopedCategories()
+    {
+        // MUI cache (key-level, allowed root).
+        Assert.True(RegistryCareService.IsCleanable(new RegistryFinding("HKCU",
+            @"Control Panel\Desktop\MuiCached", "cache", true, 80, "MUI Cache")));
+        // Startup value-level finding (allowed root).
+        Assert.True(RegistryCareService.IsCleanable(new RegistryFinding("HKCU",
+            @"Software\Microsoft\Windows\CurrentVersion\Run", "missing exe", true, 70, "Windows Startup", "FooApp")));
+        // Sound event value-level finding (allowed root).
+        Assert.True(RegistryCareService.IsCleanable(new RegistryFinding("HKCU",
+            @"AppEvents\Schemes\Apps\App\Event", "missing wav", true, 70, "Sound AppEvents", ".Default")));
+        // Machine-wide equivalents are never deletable.
+        Assert.False(RegistryCareService.IsCleanable(new RegistryFinding("HKLM",
+            @"Control Panel\Desktop\MuiCached", "cache", true, 80, "MUI Cache")));
+        // A sibling key outside the allow-list is never deletable.
+        Assert.False(RegistryCareService.IsCleanable(new RegistryFinding("HKCU",
+            @"Control Panel\Desktop\SomeOtherKey", "cache", true, 80, "MUI Cache")));
+    }
+
+    [Fact]
+    public void StartupExecutableResolverOnlyFlagsFullyQualifiedMissingPaths()
+    {
+        Assert.Equal(@"C:\Program Files\App\app.exe",
+            CleanupService.ResolveStartupExecutable(@"""C:\Program Files\App\app.exe"" --flag"));
+        Assert.Equal(@"C:\App\app.exe",
+            CleanupService.ResolveStartupExecutable(@"C:\App\app.exe --flag"));
+        // Environment-variable commands are ambiguous and must not be resolved.
+        Assert.Null(CleanupService.ResolveStartupExecutable(@"""%ProgramFiles%\App\app.exe"""));
+        // Non-path commands (e.g. a bare command name) must not be resolved.
+        Assert.Null(CleanupService.ResolveStartupExecutable("cmd /c echo hi"));
+        Assert.Null(CleanupService.ResolveStartupExecutable(""));
+    }
+
+    [Fact]
+    public async Task CleaningDeletesOnlyTheNamedValueNotTheKey()
+    {
+        const string path = @"Software\Classes\CleanMachineTestProgId";
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using (var key = root.CreateSubKey(path))
+        {
+            key.SetValue("KeepMe", "keep");
+            key.SetValue("RemoveMe", "remove");
+        }
+
+        var review = new RegistryReview(
+        [
+            new RegistryFinding("HKCU", path, "orphaned value", true, 75, "File Extensions", "RemoveMe")
+        ], []);
+        var result = await new RegistryCareService().CleanAsync(review);
+
+        Assert.Equal(1, result.Removed);
+        Assert.Empty(result.Skipped);
+
+        using var verify = root.OpenSubKey(path);
+        Assert.NotNull(verify);
+        Assert.Null(verify!.GetValue("RemoveMe", null, RegistryValueOptions.DoNotExpandEnvironmentNames));
+        Assert.Equal("keep", verify.GetValue("KeepMe") as string);
+
+        root.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
+    }
+
+    [Fact]
+    public void ScheduleTaskArgumentsCoverEveryTrigger()
+    {
+        // BuildCreateArguments takes the full launch command (not a raw path).
+        var launchCmd = "\"C:\\Program Files\\CleanMachine\\CleanMachine.exe\" --run-schedule";
+
+        var daily = ScheduledTask.BuildCreateArguments(new CleanupSchedule
+        { Id = "abc", Trigger = ScheduleTrigger.Daily, Hour = 3, Minute = 5 }, $"{launchCmd} abc");
+        Assert.Contains("/SC DAILY", daily);
+        Assert.Contains("/ST 03:05", daily);
+        Assert.Contains("/RL LIMITED", daily);
+        Assert.Contains("--run-schedule abc", daily);
+        Assert.Contains("CleanMachine.exe", daily);
+
+        var weekly = ScheduledTask.BuildCreateArguments(new CleanupSchedule
+        { Id = "w", Trigger = ScheduleTrigger.Weekly, DayOfWeek = DayOfWeek.Thursday, Hour = 22, Minute = 30 }, $"{launchCmd} w");
+        Assert.Contains("/SC WEEKLY /D THU /ST 22:30", weekly);
+
+        var monthly = ScheduledTask.BuildCreateArguments(new CleanupSchedule
+        { Id = "m", Trigger = ScheduleTrigger.Monthly, DayOfMonth = 15 }, $"{launchCmd} m");
+        Assert.Contains("/SC MONTHLY /D 15", monthly);
+
+        var logon = ScheduledTask.BuildCreateArguments(new CleanupSchedule
+        { Id = "l", Trigger = ScheduleTrigger.AtLogon }, $"{launchCmd} l");
+        Assert.Contains("/SC ONLOGON", logon);
+        Assert.DoesNotContain("/ST", logon);
+    }
+
+    [Fact]
+    public void MsixLaunchCommandUsesPackageIdentity()
+    {
+        var familyName = "CleanMachine_1234567890abcdef_abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+        var launchCommand = $"cmd.exe /c start \"\" \"shell:AppsFolder\\{familyName}!App\" --run-schedule abc";
+        var args = ScheduledTask.BuildCreateArguments(new CleanupSchedule
+        { Id = "abc", Trigger = ScheduleTrigger.Daily, Hour = 3, Minute = 5 }, launchCommand);
+        Assert.Contains("/SC DAILY", args);
+        Assert.Contains("/ST 03:05", args);
+        Assert.Contains("/RL LIMITED", args);
+        Assert.Contains("--run-schedule abc", args);
+        Assert.Contains(familyName, args);
+        Assert.Contains("shell:AppsFolder", args);
+        // The MSIX command must not contain a direct exe path.
+        Assert.DoesNotContain("CleanMachine.exe", args);
+    }
+
+    [Fact]
+    public void ScheduleTaskNameIsNamespacedAndDeleteMatches()
+    {
+        Assert.Equal(@"CleanMachine\Cleanup-xyz", ScheduledTask.TaskName("xyz"));
+        Assert.Contains(@"/Delete /TN ""CleanMachine\Cleanup-xyz""", ScheduledTask.BuildDeleteArguments("xyz"));
+    }
+
+    [Fact]
+    public void ScheduleHasWorkRequiresAtLeastOneTarget()
+    {
+        Assert.False(ScheduledTask.HasWork(new CleanupSchedule()));
+        Assert.True(ScheduledTask.HasWork(new CleanupSchedule { CleanBrowserCache = true }));
+        Assert.True(ScheduledTask.HasWork(new CleanupSchedule { WindowsCategoryIds = ["system-temp"] }));
+        Assert.True(ScheduledTask.HasWork(new CleanupSchedule { RegistryCategories = ["MUI Cache"] }));
+    }
+
+    [Fact]
+    public void SchedulesRoundTripThroughSettingsJson()
+    {
+        var settings = new AppSettings
+        {
+            Schedules =
+            [
+                new CleanupSchedule
+                {
+                    Id = "s1",
+                    Name = "Nightly",
+                    Trigger = ScheduleTrigger.Daily,
+                    Hour = 2,
+                    Minute = 15,
+                    AfterClean = ScheduleAction.Shutdown,
+                    CleanBrowserCache = true,
+                    WindowsCategoryIds = ["system-temp", "system-dns-cache"],
+                    RegistryCategories = ["MUI Cache"]
+                }
+            ]
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+
+        Assert.NotNull(clone);
+        var schedule = Assert.Single(clone!.Schedules);
+        Assert.Equal("Nightly", schedule.Name);
+        Assert.Equal(ScheduleTrigger.Daily, schedule.Trigger);
+        Assert.Equal(2, schedule.Hour);
+        Assert.Equal(15, schedule.Minute);
+        Assert.Equal(ScheduleAction.Shutdown, schedule.AfterClean);
+        Assert.True(schedule.CleanBrowserCache);
+        Assert.Equal(new[] { "system-temp", "system-dns-cache" }, schedule.WindowsCategoryIds);
+        Assert.Equal(new[] { "MUI Cache" }, schedule.RegistryCategories);
+    }
+
+    [Fact]
+    public void BrowserCatalogCoversCoreAndCommonBrowsers()
+    {
+        foreach (var id in new[] { "chrome", "edge", "firefox", "brave", "opera", "vivaldi", "ie" })
+            Assert.NotNull(BrowserCatalog.Find(id));
+        // Lookup is case-insensitive.
+        Assert.NotNull(BrowserCatalog.Find("Chrome"));
+        Assert.NotNull(BrowserCatalog.Find("EDGE"));
+    }
+
+    [Fact]
+    public void BrowserItemsAreClassifiedByRisk()
+    {
+        foreach (var item in BrowserCatalog.ItemsFor(BrowserFamily.Chromium))
+        {
+            var destructive = item.Id is "history" or "download-history" or "cookies" or "autofill" or "passwords" or "last-download-location";
+            Assert.Equal(destructive, item.Destructive);
+        }
+
+        var firefox = BrowserCatalog.ItemsFor(BrowserFamily.Firefox);
+        Assert.Contains(firefox, i => i.Id == "site-prefs" && i.Destructive);
+        Assert.Contains(firefox, i => i.Id == "cache" && !i.Destructive);
+    }
+
+    [Fact]
+    public void BrowserItemPathsAnchorToTheRightRoots()
+    {
+        var cookies = BrowserCatalog.PathsFor(BrowserFamily.Chromium, "cookies");
+        Assert.Contains(cookies, p => p.Root == BrowserItemRoot.Profile && p.Relative == @"Network\Cookies");
+
+        var crash = BrowserCatalog.PathsFor(BrowserFamily.Chromium, "crash-reports");
+        Assert.All(crash, p => Assert.Equal(BrowserItemRoot.UserData, p.Root));
+
+        var ieCache = BrowserCatalog.PathsFor(BrowserFamily.InternetExplorer, "cache");
+        Assert.All(ieCache, p => Assert.Equal(BrowserItemRoot.Absolute, p.Root));
+
+        Assert.True(BrowserCatalog.IsPreferenceEdit("last-download-location"));
+        Assert.False(BrowserCatalog.IsPreferenceEdit("cache"));
+    }
+
+    [Fact]
+    public void MinimizeToTrayDefaultsOnAndRoundTrips()
+    {
+        Assert.True(new AppSettings().MinimizeToTray);
+        Assert.True(new AppSettings().ShowInTaskbar);
+
+        var settings = new AppSettings { MinimizeToTray = false, ShowInTaskbar = true };
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+
+        Assert.NotNull(clone);
+        Assert.False(clone!.MinimizeToTray);
+        Assert.True(clone.ShowInTaskbar);
+    }
+
+    [Fact]
+    public void IsInstalledAsMsixIsConsistentWithCurrentVersion()
+    {
+        // When running as MSIX, CurrentVersion reads from Package.Current.Id.Version;
+        // when standalone, it falls back to the assembly version. The IsInstalledAsMsix
+        // flag must agree with whichever path succeeded.
+        var isMsix = UpdateService.IsInstalledAsMsix;
+        var currentVersion = UpdateService.CurrentVersion();
+        // Both paths always return a version; the flag just tells us which source it came from.
+        Assert.NotNull(currentVersion);
+        // The flag should be false in the test runner (no MSIX identity).
+        Assert.False(isMsix);
+    }
+
+    [Fact]
+    public async Task ManifestWithInstallerSectionParsesInstaller()
+    {
+        const string json = """
+            {
+              "version": "2.0.0",
+              "releaseNotes": "Installer update.",
+              "installer": {
+                "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v2.0.0/CleanMachine-Setup-2.0.0.exe",
+                "sha256": "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
+                "architecture": "x64"
+              }
+            }
+            """;
+
+        await using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+        var manifest = await UpdateService.ParseManifestAsync(stream);
+
+        Assert.NotNull(manifest);
+        Assert.NotNull(manifest!.Installer);
+        Assert.Contains(".exe", manifest.Installer!.PackageUrl);
+        Assert.Equal("x64", manifest.Installer.Architecture);
+        // packages can be null when only an installer is present.
+        Assert.Null(manifest.Packages);
+    }
+
+    [Fact]
+    public async Task ManifestWithoutInstallerSectionHasNullInstaller()
+    {
+        const string json = """
+            {
+              "version": "2.0.0",
+              "releaseNotes": "MSIX only."
+            }
+            """;
+
+        await using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+        var manifest = await UpdateService.ParseManifestAsync(stream);
+
+        Assert.NotNull(manifest);
+        Assert.Null(manifest!.Installer);
     }
 }

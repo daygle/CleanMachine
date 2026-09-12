@@ -19,14 +19,16 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Configurable exclusion paths to skip specific directories
 - Interrupted-cleanup state persistence with recovery messaging
 - Process-lock detection requires browsers to be closed before cleaning
-- Cache-only cleanup; cookies, passwords, bookmarks, history, and sessions are excluded
+- Detects Chrome, Edge, Brave, Opera, Vivaldi, Firefox, and Internet Explorer and shows them as per-browser cards
+- Per-item selection: safe items (cache, sessions, crash reports, metrics, bookmark backups) are on by default; destructive items (cookies, history, downloads, autofill, saved passwords) are opt-in behind a confirmation
+- Whole-file deletion, with a backup taken before any preference-file edit
 
 ### Registry Care
-- Read-only scanning of current-user uninstall metadata and file associations
+- Read-only scanning of current-user uninstall metadata, file associations, MUI cache, startup entries, and orphaned sound events
+- Safe per-user cleanup with value-level deletion, so shared keys are never removed wholesale
 - Confidence-based filtering (minimum 70%) for review eligibility
-- `.reg` backup export with validation of backup header integrity
+- `.reg` backup export with validation of backup header integrity; cleaning refuses to run without a backup
 - Explicit restore flow using Windows `reg.exe`
-- Registry mutation remains disabled until transactional rollback tests pass
 
 ### Windows Cleanup
 - Safe category scanning: user temporary files, thumbnail cache, error reports
@@ -53,8 +55,15 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Rollback copy staging and executable restoration after failed installation
 - Pending-update recovery across sessions
 
+### Scheduled Cleanup
+- Recurring cleanup on Daily / Weekly / Monthly schedules or at logon, registered with Windows Task Scheduler so it runs even while the app is closed
+- Per-schedule item selection across Windows cleanup categories, browser caches, and Registry Care categories
+- Optional post-clean action — notify, shut down, restart, or sleep — with a 60-second abort window for shutdown and restart
+- Runs with least privilege, so only per-user items are touched
+
 ### Settings
 - Background agent startup toggle
+- Minimize to tray (keeps the taskbar button)
 - Automatic cleanup on browser exit toggle
 - Update check frequency toggle
 - Default wipe method selection
@@ -63,7 +72,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 
 ## Safety model
 
-All destructive workflows are review-first. Browser cleaning is limited to recreatable cache directories and requires supported browsers to be closed. Cookies, passwords, bookmarks, history, and sessions are not targeted. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. Windows Update cleanup remains disabled until a safe Windows service/API implementation is validated.
+All destructive workflows are review-first. Browser cleaning requires supported browsers to be closed; safe items (caches, sessions, crash reports) are selected by default, while destructive items (cookies, history, saved passwords) are opt-in behind a confirmation. Registry Care deletes only after a verified `.reg` backup and only from an allow-listed set of per-user paths. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. Windows Update cleanup remains disabled until a safe Windows service/API implementation is validated.
 
 Registry Care scans read-only and does not delete registry entries. Selected high-confidence low-risk findings can produce a real current-user uninstall-key `.reg` export; restore is explicit and uses Windows `reg.exe`.
 
