@@ -370,10 +370,10 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
     private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
-    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavActiveBrush = new(Microsoft.UI.Colors.White);
-    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavIdleBrush = new(Microsoft.UI.Colors.Transparent);
-    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavHoverBrush = new(Microsoft.UI.Color.FromArgb(255, 243, 248, 245)); // #F3F8F5
-    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavPressedBrush = new(Microsoft.UI.Color.FromArgb(255, 234, 244, 238)); // #EAF4EE
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavActiveBrush = new(ColorFromHex("#FFFFFF"));
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavIdleBrush = new(global::Windows.UI.Color.FromArgb(0, 0, 0, 0));
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavHoverBrush = new(global::Windows.UI.Color.FromArgb(255, 243, 248, 245)); // #F3F8F5
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavPressedBrush = new(global::Windows.UI.Color.FromArgb(255, 234, 244, 238)); // #EAF4EE
     private bool _navPointerHandlersAttached;
 
     public void Navigate<T>() where T : Page, new()
