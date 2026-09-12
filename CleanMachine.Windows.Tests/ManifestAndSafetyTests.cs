@@ -230,4 +230,29 @@ public sealed class ManifestAndSafetyTests
         Assert.Equal("x64", manifest.Packages["x64"].Architecture);
         Assert.Equal("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789", manifest.Packages["x64"].Sha256);
     }
+
+    [Fact]
+    public void CurrentVersionFallsBackToAssemblyVersionNotHardcoded()
+    {
+        // The unpackaged (installer) build has no MSIX identity, so CurrentVersion
+        // must fall back to the assembly version stamped from the release tag —
+        // never a hardcoded constant, which made every release look like an update.
+        // The test assembly itself is stamped 1.0.0.0 by default; the contract under
+        // test is that the fallback is derived from the assembly, and that a manifest
+        // at the same version is not offered as an update.
+        var current = UpdateService.CurrentVersion();
+        Assert.Equal(typeof(UpdateService).Assembly.GetName().Version!.Major, current.Major);
+        Assert.Equal(typeof(UpdateService).Assembly.GetName().Version!.Minor, current.Minor);
+        Assert.Equal(typeof(UpdateService).Assembly.GetName().Version!.Build, current.Build);
+    }
+
+    [Fact]
+    public void IsNewerOffersOnlyStrictlyNewerVersions()
+    {
+        // The released build must never be offered as an "update" to itself.
+        var current = UpdateService.CurrentVersion();
+        Assert.False(UpdateService.IsNewer($"{current.Major}.{current.Minor}.{current.Build}")); // same version
+        Assert.True(UpdateService.IsNewer($"{current.Major + 1}.0.0"));          // strictly newer
+        Assert.False(UpdateService.IsNewer("0.0.1"));                            // older
+    }
 }

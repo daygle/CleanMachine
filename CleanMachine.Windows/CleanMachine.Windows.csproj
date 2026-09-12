@@ -25,6 +25,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>CleanMachine</AssemblyName>
+    <!-- Stamp the assembly version from the release version (passed as
+         ApplicationDisplayVersion by the release workflow) so the unpackaged
+         installer build reports its true version in update checks; without this
+         the exe stays at the default 1.0.0.0 and update checks always offer
+         the latest release as an "update". -->
+    <Version Condition="'$(ApplicationDisplayVersion)' != ''">$(ApplicationDisplayVersion)</Version>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>

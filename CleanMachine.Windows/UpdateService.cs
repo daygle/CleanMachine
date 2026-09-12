@@ -106,8 +106,20 @@ public sealed class UpdateService
     private static UpdatePackage? ResolvePackage(UpdateManifest manifest) { var arch = CurrentArchitecture(); if (manifest.Packages is not null && manifest.Packages.TryGetValue(arch, out var package)) return package; return manifest.Architecture == arch && !string.IsNullOrWhiteSpace(manifest.PackageUrl) ? new UpdatePackage(manifest.PackageUrl, manifest.Sha256, manifest.Architecture, manifest.Publisher) : null; }
     private static bool IsValidPackage(UpdatePackage package) => Uri.TryCreate(package.PackageUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && package.PackageUrl.EndsWith(".msix", StringComparison.OrdinalIgnoreCase) && package.Sha256.Length == 64 && package.Sha256.All(Uri.IsHexDigit) && package.Architecture == CurrentArchitecture() && !string.IsNullOrWhiteSpace(package.Publisher);
     private static string CurrentArchitecture() => RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "ARM64" : RuntimeInformation.OSArchitecture == Architecture.X64 ? "x64" : "x86";
-    private static bool IsNewer(string version) => Version.TryParse(version, out var candidate) && candidate > CurrentVersion();
-    private static Version CurrentVersion() { try { return new(Package.Current.Id.Version.Major, Package.Current.Id.Version.Minor, Package.Current.Id.Version.Build, Package.Current.Id.Version.Revision); } catch { return new(1, 0, 0, 0); } }
+    internal static bool IsNewer(string version) => Version.TryParse(version, out var candidate) && candidate > CurrentVersion();
+
+    /// <summary>The running app's version: the MSIX package identity when packaged,
+    /// otherwise the assembly version stamped at build time from the release tag
+    /// (the installer build carries no package identity, so Package.Current throws).</summary>
+    internal static Version CurrentVersion()
+    {
+        try { return new(Package.Current.Id.Version.Major, Package.Current.Id.Version.Minor, Package.Current.Id.Version.Build, Package.Current.Id.Version.Revision); }
+        catch (Exception ex) when (ex is InvalidOperationException or COMException)
+        {
+            var assemblyVersion = typeof(UpdateService).Assembly.GetName().Version;
+            return assemblyVersion is null ? new(0, 0, 0, 0) : new(assemblyVersion.Major, assemblyVersion.Minor, assemblyVersion.Build, 0);
+        }
+    }
     private static bool HasExpectedPublisher(string path, string? publisher) { if (string.IsNullOrWhiteSpace(publisher)) return false; try { using var cert = X509Certificate.CreateFromSignedFile(path); return cert.Subject.Contains(publisher, StringComparison.OrdinalIgnoreCase); } catch { return false; } }
     private static void TryDelete(string path) { try { File.Delete(path); } catch { } }
 }
