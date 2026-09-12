@@ -6,7 +6,7 @@ namespace CleanMachine.Windows;
 public sealed partial class RegistryCarePage : Page
 {
     private readonly RegistryCareService _service = new();
-    private RegistryBackup? _lastBackup;
+    private IReadOnlyList<RegistryBackup> _lastBackups = [];
 
     public RegistryCarePage()
     {
@@ -16,6 +16,7 @@ public sealed partial class RegistryCarePage : Page
     private async void Scan_Click(object sender, RoutedEventArgs e)
     {
         ScanButton.IsEnabled = false;
+        RestoreButton.Visibility = Visibility.Collapsed;
         try
         {
             var review = await _service.ScanAsync();
@@ -23,18 +24,24 @@ public sealed partial class RegistryCarePage : Page
 
             var list = new StackPanel { Spacing = 8 };
             foreach (var item in review.Findings)
+            {
+                var cleanable = RegistryCareService.IsCleanable(item);
                 list.Children.Add(new CheckBox
                 {
-                    IsChecked = true,
-                    Content = $"{item.Path} · {item.Confidence}% confidence · {item.Reason}",
+                    IsChecked = cleanable,
+                    IsEnabled = cleanable,
+                    Content = cleanable
+                        ? $"{item.Path} · {item.Confidence}% confidence · {item.Reason}"
+                        : $"{item.Path} · {item.Confidence}% confidence · {item.Reason} (not eligible for cleaning)",
                     Tag = item
                 });
+            }
 
             var dialog = new ContentDialog
             {
-                Title = "Review registry findings",
-                Content = list,
-                PrimaryButtonText = "Create Backup",
+                Title = "Select registry items to clean",
+                Content = new ScrollViewer { MaxHeight = 360, Content = list },
+                PrimaryButtonText = "Back Up and Clean Selected",
                 CloseButtonText = "Cancel",
                 XamlRoot = XamlRoot
             };
@@ -42,23 +49,26 @@ public sealed partial class RegistryCarePage : Page
 
             var selected = list.Children.OfType<CheckBox>()
                 .Where(x => x.IsChecked == true)
-                .Select(x => (RegistryFinding)x.Tag!);
+                .Select(x => (RegistryFinding)x.Tag!)
+                .ToArray();
+            if (selected.Length == 0) { StatusText.Text = "Nothing was selected to clean."; return; }
 
             var result = await _service.PrepareReviewAsync(selected);
-            _lastBackup = result.Backup;
+            _lastBackups = result.Backups;
 
-            if (result.Backup is not null)
+            if (result.Backups.Count == 0)
             {
-                var valid = await RegistryCareService.ValidateBackupAsync(result.Backup);
-                StatusText.Text = valid
-                    ? $"Backup created and validated: {result.Backup.FilePath}. No registry values were changed."
-                    : $"Backup created but validation failed: {result.Backup.FilePath}.";
-                RestoreButton.Visibility = valid ? Visibility.Visible : Visibility.Collapsed;
+                StatusText.Text = "No backup could be created, so nothing was cleaned. The backup is required as a restore point.";
+                return;
             }
-            else
-            {
-                StatusText.Text = "No backup was created (no eligible findings).";
-            }
+
+            var clean = await _service.CleanAsync(result);
+            var backupNote = $"{result.Backups.Count} backup file(s) saved under " +
+                             $"{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Backups")}";
+            StatusText.Text = clean.Removed == 0 && clean.Skipped.Count == 0
+                ? $"Nothing needed cleaning. {backupNote}."
+                : $"Cleaned {clean.Removed} registry item(s); {clean.Skipped.Count} skipped. {backupNote}.";
+            RestoreButton.Visibility = Visibility.Visible;
         }
         catch (Exception ex) { StatusText.Text = ex.Message; }
         finally { ScanButton.IsEnabled = true; }
@@ -66,12 +76,12 @@ public sealed partial class RegistryCarePage : Page
 
     private async void Restore_Click(object sender, RoutedEventArgs e)
     {
-        if (_lastBackup is null) { StatusText.Text = "No backup available to restore."; return; }
+        if (_lastBackups.Count == 0) { StatusText.Text = "No backup available to restore."; return; }
 
         var confirm = new ContentDialog
         {
-            Title = "Restore registry backup?",
-            Content = $"This will import the backup from {_lastBackup.CreatedAt:g}. Continue?",
+            Title = "Restore registry backups?",
+            Content = $"This will re-import {_lastBackups.Count} backup file(s) from {_lastBackups[0].CreatedAt:g}. Continue?",
             PrimaryButtonText = "Restore",
             CloseButtonText = "Cancel",
             XamlRoot = XamlRoot
@@ -80,8 +90,16 @@ public sealed partial class RegistryCarePage : Page
 
         try
         {
-            await RegistryCareService.RestoreBackupAsync(_lastBackup);
-            StatusText.Text = "Registry backup restored successfully.";
+            var restored = 0;
+            var failures = new List<string>();
+            foreach (var backup in _lastBackups)
+            {
+                try { await RegistryCareService.RestoreBackupAsync(backup); restored++; }
+                catch (Exception ex) { failures.Add($"{Path.GetFileName(backup.FilePath)}: {ex.Message}"); }
+            }
+            StatusText.Text = failures.Count == 0
+                ? $"All {restored} registry backup(s) restored successfully."
+                : $"Restored {restored} of {_lastBackups.Count}. Failures: {string.Join("; ", failures)}";
         }
         catch (Exception ex) { StatusText.Text = $"Restore failed: {ex.Message}"; }
     }

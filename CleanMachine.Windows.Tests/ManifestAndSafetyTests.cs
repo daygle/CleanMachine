@@ -255,4 +255,61 @@ public sealed class ManifestAndSafetyTests
         Assert.True(UpdateService.IsNewer($"{current.Major + 1}.0.0"));          // strictly newer
         Assert.False(UpdateService.IsNewer("0.0.1"));                            // older
     }
+
+    [Fact]
+    public void RegistryCleanableGateRequiresLowRiskConfidenceHiveAndKnownRoot()
+    {
+        var eligible = new RegistryFinding("HKCU",
+            @"Software\Microsoft\Windows\CurrentVersion\Uninstall\OrphanApp",
+            "Uninstall metadata has no removal command", true, 75);
+        Assert.True(RegistryCareService.IsCleanable(eligible));
+
+        // Wrong hive: never deletable.
+        Assert.False(RegistryCareService.IsCleanable(eligible with { Hive = "HKLM" }));
+        // Below the confidence floor.
+        Assert.False(RegistryCareService.IsCleanable(eligible with { Confidence = 69 }));
+        // Unsafe flag.
+        Assert.False(RegistryCareService.IsCleanable(eligible with { LowRisk = false }));
+        // Outside the allowed roots.
+        Assert.False(RegistryCareService.IsCleanable(eligible with { Path = @"Software\SomeOtherKey" }));
+        // Path injection via an embedded quote character is rejected.
+        var withQuote = @"Software\Classes\evil" + (char)34;
+        Assert.False(RegistryCareService.IsCleanable(eligible with { Path = withQuote }));
+        // Path traversal is rejected.
+        Assert.False(RegistryCareService.IsCleanable(eligible with { Path = @"Software\Classes\..\..\Temp" }));
+    }
+
+    [Fact]
+    public async Task CleaningEmptyReviewRemovesNothing()
+    {
+        var result = await new RegistryCareService().CleanAsync(new RegistryReview([], []));
+        Assert.Equal(0, result.Removed);
+        Assert.Empty(result.Skipped);
+    }
+
+    [Fact]
+    public async Task CleaningReportsNonEligibleFindingsAsSkipped()
+    {
+        var review = new RegistryReview(
+        [
+            new RegistryFinding("HKCU", @"Software\NotAnAllowedRoot", "unsafe target", true, 90)
+        ], []);
+        var result = await new RegistryCareService().CleanAsync(review);
+        Assert.Equal(0, result.Removed);
+        Assert.Single(result.Skipped);
+    }
+
+    [Fact]
+    public async Task CleaningMissingKeyIsReportedNotThrown()
+    {
+        var review = new RegistryReview(
+        [
+            new RegistryFinding("HKCU",
+                @"Software\Microsoft\Windows\CurrentVersion\Uninstall\CleanMachineTestKeyDoesNotExist",
+                "no removal command", true, 75)
+        ], []);
+        var result = await new RegistryCareService().CleanAsync(review);
+        Assert.Equal(0, result.Removed);
+        Assert.Single(result.Skipped);
+    }
 }
