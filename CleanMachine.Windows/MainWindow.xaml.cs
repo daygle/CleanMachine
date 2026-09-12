@@ -41,7 +41,12 @@ public sealed partial class MainWindow : Window
         ApplyTitleBarTheme();
         Navigate<OverviewPage>();
         _ = LoadAgentStateAsync();
-        _ = ApplyInitialTaskbarPreferenceAsync();
+        // Defer applying the taskbar preference until the window is first
+        // activated: changing ex-styles while the shell is still registering the
+        // window's button can race Explorer and permanently lose the button.
+        // By the first Activated event the button is registered, and the default
+        // preference (show) would be a no-op anyway.
+        Activated += OnFirstActivated;
         SubclassForMinimizeToTray();
         Closed += (_, _) =>
         {
@@ -151,6 +156,16 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll", EntryPoint = "LoadImageW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr LoadImage(IntPtr hInstance, string lpFileName, uint ulType, int cxDesired, int cyDesired, uint fuLoad);
 
+    private bool _taskbarPreferenceApplied;
+
+    private void OnFirstActivated(object sender, WindowActivatedEventArgs args)
+    {
+        if (_taskbarPreferenceApplied || args.WindowActivationState == WindowActivationState.Deactivated) return;
+        _taskbarPreferenceApplied = true;
+        Activated -= OnFirstActivated;
+        _ = ApplyInitialTaskbarPreferenceAsync();
+    }
+
     private async Task ApplyInitialTaskbarPreferenceAsync()
     {
         var settings = await AppSettings.LoadAsync();
@@ -170,6 +185,9 @@ public sealed partial class MainWindow : Window
                 AppWindow.Show();
                 if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.Restore();
             }
+            // Self-heal: if a previous style change raced Explorer and lost the
+            // taskbar button, force the tab back (idempotent, no-op if present).
+            ForceTaskbarButton(WinRT.Interop.WindowNative.GetWindowHandle(this));
         }
     }
 
@@ -178,11 +196,16 @@ public sealed partial class MainWindow : Window
         try
         {
             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+            // Already in the requested state — do nothing. This matters at
+            // startup: even a redundant hide/reshow can race Explorer's initial
+            // taskbar-button registration and permanently lose the button.
+            if (((exStyle & (int)WS_EX_TOOLWINDOW) != 0) == !showInTaskbar) return;
+
             var wasVisible = AppWindow.IsVisible && !_inTray;
             // The shell only re-evaluates the taskbar button on a visibility change,
             // so briefly hide/reshow the window around the style change.
             if (wasVisible) AppWindow.Hide();
-            var exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
             if (showInTaskbar)
             {
                 exStyle &= ~(int)WS_EX_TOOLWINDOW;
@@ -198,6 +221,42 @@ public sealed partial class MainWindow : Window
             if (wasVisible) AppWindow.Show();
         }
         catch { /* best-effort */ }
+    }
+
+    // Note: deliberately not sealed — the ComImport coclass is cast to
+    // ITaskbarList, and a sealed-class-to-interface cast is a compile error
+    // under classic conversion rules (COM coclasses cannot be derived from anyway).
+    [ComImport]
+    [Guid("56FDF344-FD6D-11d0-958A-006097C9A090")]
+    private class TaskbarListClass { }
+
+    [ComImport]
+    [Guid("56FDF342-FD6D-11d0-958A-006097C9A090")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITaskbarList
+    {
+        void HrInit();
+        void AddTab(IntPtr hwnd);
+        void DeleteTab(IntPtr hwnd);
+        void ActivateTab(IntPtr hwnd);
+        void SetActiveAlt(IntPtr hwnd);
+    }
+
+    /// <summary>
+    /// Re-asserts the window's taskbar button via the shell's ITaskbarList API.
+    /// AddTab is idempotent for a window that already has a button, so this is
+    /// safe to call as a self-heal whenever the button should be present.
+    /// </summary>
+    private static void ForceTaskbarButton(IntPtr hwnd)
+    {
+        try
+        {
+            var list = (ITaskbarList)new TaskbarListClass();
+            list.HrInit();
+            list.AddTab(hwnd);
+            list.ActivateTab(hwnd);
+        }
+        catch { /* best-effort: the shell may be busy or the call unsupported */ }
     }
 
     /// <summary>
