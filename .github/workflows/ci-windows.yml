@@ -47,19 +47,31 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CleanMachine-x64-msix
-          path: CleanMachine.Windows/bin/Release/net8.0-windows10.0.26100.0/win-x64/AppPackages/**/*.msix
+          path: CleanMachine.Windows/bin/x64/Release/net8.0-windows10.0.26100.0/win-x64/AppPackages/**/*.msix
           if-no-files-found: warn
 
       - name: Build Inno Setup installer (x64)
         shell: pwsh
         run: |
-          $iss = CleanMachine.Windows\installer\cleanmachine.iss
+          $ErrorActionPreference = 'Stop'
+          $iss = 'CleanMachine.Windows\installer\cleanmachine.iss'
           if (-not (Test-Path $iss)) {
-            Write-Host 'Inno Setup script not found; skipping installer build.'
+            Write-Host "Inno Setup script not found at '$iss'; skipping installer build."
             exit 0
           }
-          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' $iss
-          # Installer lands in bin/installer/CleanMachine-Setup-<version>.exe
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            foreach ($p in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
+              if ($p -and (Test-Path $p)) { $iscc = $p; break }
+            }
+          }
+          if (-not $iscc) { throw 'Inno Setup 6 (ISCC.exe) was not found on this runner.' }
+          Write-Host "Compiling installer with $iscc"
+          & $iscc $iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
+          $setup = Get-ChildItem 'CleanMachine.Windows/bin/installer/CleanMachine-Setup-*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -eq $setup) { throw 'Installer exe was not produced by ISCC.' }
+          Write-Host "Installer created: $($setup.FullName) ($([math]::Round($setup.Length/1MB,1)) MB)"
 
       - name: Upload installer artifact
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

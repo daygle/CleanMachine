@@ -19,9 +19,10 @@ AllowNoIcons=yes
 LicenseFile=..\..\LICENSE
 ; Uncomment and provide a cert+key to sign the installer:
 ; SignTool=signtool sign /d "{#MyAppName}" /fd sha256 /tr http://timestamp.digicert.com /td sha256 $f
-OutputDir=..\..\bin\installer
+; Output paths are relative to this script's folder (CleanMachine.Windows\installer\).
+OutputDir=..\bin\installer
 OutputBaseFilename=CleanMachine-Setup-{#MyAppVersion}
-SetupIconFile=CleanMachine.Windows\Assets\Square44x44Logo.png
+SetupIconFile=..\Assets\app.ico
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
@@ -42,9 +43,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\bin\Release\net8.0-windows10.0.26100.0\win-x64\publish\CleanMachine.exe"; DestDir: "{app}"; Flags: ignoreversion
-; Everything under the publish folder
-Source: "..\bin\Release\net8.0-windows10.0.26100.0\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Published (self-contained) app output. -p:Platform=x64 puts it under bin\x64\Release.
+Source: "..\bin\x64\Release\net8.0-windows10.0.26100.0\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
