@@ -3,6 +3,30 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CleanMachine">
   <Grid Background="#F7F9F7">
+    <Grid.Resources>
+    <Style x:Key="NavButton" TargetType="Button">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="#273630"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="12,10"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <!-- Minimal template: hover/press must not hijack Background, so the
+           white active highlight (set in code-behind) stays stable. -->
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="RootBorder" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}">
+              <ContentPresenter Padding="{TemplateBinding Padding}"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    </Grid.Resources>
+
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="230"/>
       <ColumnDefinition Width="*"/>
@@ -30,37 +54,37 @@
         <!-- Row 1: navigation buttons scroll when the window is short -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,0,12">
           <StackPanel>
-            <Button Click="Overview_Click" HorizontalContentAlignment="Left" Padding="12" Background="White" BorderThickness="0">
+            <Button x:Name="NavOverview" Style="{StaticResource NavButton}" Click="Overview_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE80F;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
                 <TextBlock Text="Overview" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
-            <Button Click="Cleaner_Click" HorizontalContentAlignment="Left" Padding="12" Background="Transparent" BorderThickness="0">
+            <Button x:Name="NavCleaner" Style="{StaticResource NavButton}" Click="Cleaner_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE72C;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
                 <TextBlock Text="Browser Cleaner" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
-            <Button Click="Registry_Click" HorizontalContentAlignment="Left" Padding="12" Background="Transparent" BorderThickness="0">
+            <Button x:Name="NavRegistry" Style="{StaticResource NavButton}" Click="Registry_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xEA18;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
                 <TextBlock Text="Registry Care" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
-            <Button Click="WindowsCleanup_Click" HorizontalContentAlignment="Left" Padding="12" Background="Transparent" BorderThickness="0">
+            <Button x:Name="NavWindowsCleanup" Style="{StaticResource NavButton}" Click="WindowsCleanup_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE9D5;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
                 <TextBlock Text="Windows Cleanup" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
-            <Button Click="SecureDeleteNav_Click" HorizontalContentAlignment="Left" Padding="12" Background="Transparent" BorderThickness="0">
+            <Button x:Name="NavSecureDelete" Style="{StaticResource NavButton}" Click="SecureDeleteNav_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE7C3;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
                 <TextBlock Text="Secure Delete" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
-            <Button Click="Activity_Click" HorizontalContentAlignment="Left" Padding="12" Background="Transparent" BorderThickness="0">
+            <Button x:Name="NavActivity" Style="{StaticResource NavButton}" Click="Activity_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE81C;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
                 <TextBlock Text="Activity" VerticalAlignment="Center"/>
@@ -77,13 +101,13 @@
               <TextBlock Text="Watching for browser exits" Foreground="#91A29A" FontSize="10" Margin="14,7,0,0"/>
             </StackPanel>
           </Border>
-          <Button Click="Settings_Click" HorizontalContentAlignment="Left" Padding="12" Background="Transparent" BorderThickness="0">
+          <Button x:Name="NavSettings" Style="{StaticResource NavButton}" Click="Settings_Click">
             <StackPanel Orientation="Horizontal" Spacing="10">
               <FontIcon Glyph="&#xE713;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
               <TextBlock Text="Settings" VerticalAlignment="Center"/>
             </StackPanel>
           </Button>
-          <Button Click="CheckUpdates_Click" HorizontalContentAlignment="Left" Padding="12" Background="Transparent" BorderThickness="0">
+          <Button x:Name="NavUpdates" Style="{StaticResource NavButton}" Click="CheckUpdates_Click">
             <StackPanel Orientation="Horizontal" Spacing="10">
               <FontIcon Glyph="&#xE896;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
               <TextBlock Text="Updates" VerticalAlignment="Center"/>

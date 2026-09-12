@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
 using System.Runtime.InteropServices;
 
@@ -369,7 +370,54 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
     private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
-    public void Navigate<T>() where T : Page, new() => ContentFrame.Navigate(typeof(T));
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavActiveBrush = new(Microsoft.UI.Colors.White);
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavIdleBrush = new(Microsoft.UI.Colors.Transparent);
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavHoverBrush = new(Microsoft.UI.Color.FromArgb(255, 243, 248, 245)); // #F3F8F5
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush NavPressedBrush = new(Microsoft.UI.Color.FromArgb(255, 234, 244, 238)); // #EAF4EE
+    private bool _navPointerHandlersAttached;
+
+    public void Navigate<T>() where T : Page, new()
+    {
+        ContentFrame.Navigate(typeof(T));
+        HighlightNav(typeof(T));
+    }
+
+    /// <summary>Moves the white highlight to the nav item matching the open page,
+    /// so the highlight always tracks whatever is on the right — however it got there
+    /// (sidebar click or an in-page quick link).</summary>
+    private void HighlightNav(Type pageType)
+    {
+        Button? active = pageType == typeof(OverviewPage) ? NavOverview
+            : pageType == typeof(CleanerPage) ? NavCleaner
+            : pageType == typeof(RegistryCarePage) ? NavRegistry
+            : pageType == typeof(WindowsCleanupPage) ? NavWindowsCleanup
+            : pageType == typeof(SecureDeletePage) ? NavSecureDelete
+            : pageType == typeof(ActivityPage) ? NavActivity
+            : pageType == typeof(SettingsPage) ? NavSettings
+            : pageType == typeof(UpdatesPage) ? NavUpdates
+            : null;
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavSecureDelete, NavActivity, NavSettings, NavUpdates })
+            button.Background = ReferenceEquals(button, active) ? NavActiveBrush : NavIdleBrush;
+
+        AttachNavPointerFeedback();
+    }
+
+    private static bool IsNavActive(Button button) => ReferenceEquals(button.Background, NavActiveBrush);
+
+    /// <summary>Hover/pressed tinting for nav items that are not the active one;
+    /// the active item keeps its white highlight under the pointer.</summary>
+    private void AttachNavPointerFeedback()
+    {
+        if (_navPointerHandlersAttached) return;
+        _navPointerHandlersAttached = true;
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavSecureDelete, NavActivity, NavSettings, NavUpdates })
+        {
+            button.PointerEntered += (s, _) => { var b = (Button)s; if (!IsNavActive(b)) b.Background = NavHoverBrush; };
+            button.PointerExited += (s, _) => { var b = (Button)s; b.Background = IsNavActive(b) ? NavActiveBrush : NavIdleBrush; };
+            button.PointerPressed += (s, _) => { var b = (Button)s; if (!IsNavActive(b)) b.Background = NavPressedBrush; };
+            button.PointerReleased += (s, _) => { var b = (Button)s; b.Background = IsNavActive(b) ? NavActiveBrush : NavHoverBrush; };
+        }
+    }
     private async Task LoadAgentStateAsync() { var settings = await AppSettings.LoadAsync(); AgentStatusText.Text = settings.BackgroundAgentEnabled ? "●  Background Agent  ON" : "●  Background Agent  OFF"; }
     private void Overview_Click(object sender, RoutedEventArgs e) => Navigate<OverviewPage>();
     private void Cleaner_Click(object sender, RoutedEventArgs e) => Navigate<CleanerPage>();
