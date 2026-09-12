@@ -27,9 +27,9 @@ jobs:
             runtime: win-arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "8.0.x"
       - name: Resolve version and publisher
@@ -133,7 +133,7 @@ jobs:
           (Get-FileHash "$env:MSIX_NAME.msix" -Algorithm SHA256).Hash | Out-File -NoNewline "$env:MSIX_NAME.sha256"
           Write-Host "Hash created."
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: CleanMachine-${{ matrix.platform }}
           path: |
@@ -146,7 +146,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release
       - name: Build and validate release manifest
