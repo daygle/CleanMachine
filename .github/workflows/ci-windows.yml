@@ -34,22 +34,7 @@ jobs:
 
       - name: Run tests (x64)
         shell: pwsh
-        # Flaky runner: retry once on failure so a transient MSB4062 / file-lock
-        # error does not mark the whole workflow red when the underlying code is fine.
-        run: |
-          $max = 2
-          $attempt = 0
-          $fail = $null
-          while ($attempt -lt $max) {
-            $attempt++
-            Write-Host "test attempt $attempt of $max"
-            dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore
-            if ($LASTEXITCODE -eq 0) { exit 0 }
-            $fail = "attempt $attempt failed with exit code $LASTEXITCODE"
-            if ($attempt -lt $max) { Start-Sleep -Seconds 5 }
-          }
-          Write-Error $fail
-          exit 1
+        run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore
 
       - name: Publish MSIX package (x64)
         shell: pwsh
