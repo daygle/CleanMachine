@@ -203,8 +203,8 @@ jobs:
             }
           }
           if (-not $iscc) { throw 'Inno Setup 6 (ISCC.exe) was not found on this runner.' }
-          # Pass the tag version into the script; the .iss picks it up via /D.
-          & $iscc '/DAppVersion=$env:VERSION' 'CleanMachine.Windows\installer\cleanmachine.iss'
+          # Pass the tag version into the script via /D (double quotes so PowerShell expands the variable).
+          & $iscc "/DAppVersion=$env:VERSION" 'CleanMachine.Windows\installer\cleanmachine.iss'
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
           $setup = Get-ChildItem 'CleanMachine.Windows/bin/installer/CleanMachine-Setup-*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($null -eq $setup) { throw 'Installer exe was not produced by ISCC.' }
