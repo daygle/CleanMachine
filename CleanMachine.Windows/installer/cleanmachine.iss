@@ -4,7 +4,7 @@
 
 #define MyAppName "CleanMachine"
 ; Version comes from the release workflow via ISCC /DAppVersion=x.y.z;
-# the /D syntax sets a preprocessor define whose value is substituted with {#AppVersion}.
+; the /D syntax sets a preprocessor define whose value is substituted with {#AppVersion}.
 #ifndef AppVersion
 #define AppVersion "0.0.1"
 #endif
