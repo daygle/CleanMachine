@@ -24,9 +24,22 @@ public sealed class RegistryCareService
             .Where(f => f.LowRisk && f.Confidence >= 70)
             .Take(250)
             .ToArray();
-        return safe.Length == 0
-            ? new RegistryReview([], null)
-            : new RegistryReview(safe, await ExportCurrentUserUninstallKeyAsync(token));
+        if (safe.Length == 0)
+            return new RegistryReview([], null);
+
+        RegistryBackup? backup;
+        try
+        {
+            backup = await ExportCurrentUserUninstallKeyAsync(token);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or OperationCanceledException)
+        {
+            // Best-effort: if we cannot back up the uninstall key (fresh profile,
+            // no permissions, reg.exe unavailable), still surface the review and let
+            // the user decide without a restore point.
+            backup = null;
+        }
+        return new RegistryReview(safe, backup);
     }
 
     public static async Task<bool> ValidateBackupAsync(

@@ -29,11 +29,14 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
-    public void EmptyRegistryReviewDoesNotCreateBackup()
-        => Assert.Empty(new RegistryCareService().PrepareReviewAsync([]).GetAwaiter().GetResult().Findings);
+    public async Task EmptyRegistryReviewDoesNotCreateBackup()
+    {
+        var review = await new RegistryCareService().PrepareReviewAsync([]);
+        Assert.Empty(review.Findings);
+    }
 
     [Fact]
-    public void RegistryReviewRequiresLowRiskAndConfidence()
+    public async Task RegistryReviewRequiresLowRiskAndConfidence()
     {
         var service = new RegistryCareService();
         var findings = new[]
@@ -42,7 +45,7 @@ public sealed class ManifestAndSafetyTests
             new RegistryFinding("HKCU", "low", "review", true, 69),
             new RegistryFinding("HKCU", "unsafe", "review", false, 100)
         };
-        var review = service.PrepareReviewAsync(findings).GetAwaiter().GetResult();
+        var review = await service.PrepareReviewAsync(findings);
         Assert.Single(review.Findings);
         Assert.Equal("safe", review.Findings[0].Path);
     }
@@ -78,14 +81,14 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
-    public void SecureDeleteOptionsRequiresSsdAcknowledgement()
+    public async Task SecureDeleteOptionsRequiresSsdAcknowledgement()
     {
         var options = new SecureDeleteOptions(WipeMethod.SimpleZeroFill, 1, false);
         Assert.False(options.ConfirmSolidStateDriveWarning);
-        Assert.Throws<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new SecureDeleteService().DeleteAsync(
                 new[] { "/tmp/test" },
-                options).GetAwaiter().GetResult());
+                options));
     }
 
     [Fact]
