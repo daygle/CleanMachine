@@ -336,7 +336,9 @@ public sealed class ManifestAndSafetyTests
         var settings = new AppSettings();
         Assert.NotNull(settings.FindBrowserMonitor("Chrome"));
         Assert.NotNull(settings.FindBrowserMonitor("EDGE"));
-        Assert.NotNull(settings.FindBrowserMonitor("msedge"));
+        // "msedge" is the process name, not a settings id — the agent maps it to
+        // "edge" before lookup, so it must not match here.
+        Assert.Null(settings.FindBrowserMonitor("msedge"));
         Assert.Null(settings.FindBrowserMonitor("safari"));
     }
 
