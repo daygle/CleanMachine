@@ -85,7 +85,7 @@ public sealed partial class WindowsCleanupPage : Page
         finally { _saveGate.Release(); }
     }
 
-    private IReadOnlyList<CleanupCategory> EnabledCategories() =>
+    private CleanupCategory[] EnabledCategories() =>
         WindowsCleanupService.Catalog.Where(c => WindowsCleanupService.IsEnabled(c, _settings)).ToArray();
 
     /// <summary>Analysis: measure every enabled category and render a CCleaner-style
