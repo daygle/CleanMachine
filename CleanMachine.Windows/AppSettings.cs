@@ -2,9 +2,29 @@ using System.Text.Json;
 
 namespace CleanMachine.Windows;
 
+/// <summary>What should happen automatically when a monitored event fires
+/// (a monitored browser closes, or free disk space crosses the threshold).</summary>
+public enum ExitAction
+{
+    DoNothing = 0,
+    CleanSilently = 1,
+    CleanAndNotify = 2
+}
+
+/// <summary>Per-browser monitoring preferences: whether exit cleanup runs for
+/// this browser and which action it takes.</summary>
+public sealed class BrowserMonitorSetting
+{
+    public string Browser { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public ExitAction AfterExit { get; set; } = ExitAction.CleanAndNotify;
+}
+
 public sealed class AppSettings
 {
     public bool BackgroundAgentEnabled { get; set; } = true;
+    // Master switch: no browser-exit cleanup runs when this is off, regardless
+    // of the per-browser entries below.
     public bool CleanOnBrowserExit { get; set; } = true;
     public bool CheckForUpdatesAutomatically { get; set; } = true;
     // When false the main window is hidden from the taskbar and, when minimized,
@@ -18,6 +38,24 @@ public sealed class AppSettings
     // listed here as enabled, or when it is enabled by default and not explicitly disabled.
     public HashSet<string> DisabledCleanupCategories { get; set; } = [];
     public HashSet<string> EnabledCleanupCategories { get; set; } = [];
+
+    // Per-browser monitoring: entries use canonical ids (chrome, edge, firefox).
+    public List<BrowserMonitorSetting> BrowserMonitors { get; set; } =
+    [
+        new() { Browser = "chrome" },
+        new() { Browser = "edge" },
+        new() { Browser = "firefox" }
+    ];
+
+    // System monitoring: clean safe categories when free disk space on the
+    // Windows drive drops below the threshold. Opt-in; never fires more than
+    // once per hour and only re-arms after free space recovers.
+    public bool SystemMonitoringEnabled { get; set; }
+    public double SystemMonitorFreeSpaceGb { get; set; } = 1.0;
+    public ExitAction SystemMonitorAction { get; set; } = ExitAction.CleanSilently;
+
+    public BrowserMonitorSetting? FindBrowserMonitor(string browser) =>
+        BrowserMonitors.FirstOrDefault(m => m.Browser.Equals(browser, StringComparison.OrdinalIgnoreCase));
 
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

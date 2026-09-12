@@ -24,7 +24,20 @@ public static class AppNotifications
         catch { /* notifications are best-effort */ }
     }
 
-    private static string FormatBytes(long bytes)
+    public static void ShowSystemCleanupComplete(CleanupResult result)
+    {
+        try
+        {
+            var notification = new AppNotificationBuilder()
+                .AddText("CleanMachine")
+                .AddText($"System cleanup complete: {result.ItemsRemoved:N0} items removed, {FormatBytes(result.BytesRecovered)} recovered.")
+                .BuildNotification();
+            AppNotificationManager.Default.Show(notification);
+        }
+        catch { /* notifications are best-effort */ }
+    }
+
+    public static string FormatBytes(long bytes)
     {
         if (bytes >= 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024 * 1024):0.0} GB";
         if (bytes >= 1024L * 1024) return $"{bytes / (1024.0 * 1024):0.0} MB";

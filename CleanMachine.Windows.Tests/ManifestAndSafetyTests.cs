@@ -312,4 +312,74 @@ public sealed class ManifestAndSafetyTests
         Assert.Equal(0, result.Removed);
         Assert.Single(result.Skipped);
     }
+
+    [Fact]
+    public void BrowserMonitoringDefaultsMatchSpec()
+    {
+        var settings = new AppSettings();
+        Assert.True(settings.CleanOnBrowserExit);
+        Assert.Equal(3, settings.BrowserMonitors.Count);
+        Assert.All(settings.BrowserMonitors, m =>
+        {
+            Assert.True(m.Enabled);
+            Assert.Equal(ExitAction.CleanAndNotify, m.AfterExit);
+        });
+        // System monitoring is opt-in and conservative by default.
+        Assert.False(settings.SystemMonitoringEnabled);
+        Assert.Equal(ExitAction.CleanSilently, settings.SystemMonitorAction);
+        Assert.Equal(1.0, settings.SystemMonitorFreeSpaceGb);
+    }
+
+    [Fact]
+    public void FindBrowserMonitorIsCaseInsensitiveAndMissingReturnsNull()
+    {
+        var settings = new AppSettings();
+        Assert.NotNull(settings.FindBrowserMonitor("Chrome"));
+        Assert.NotNull(settings.FindBrowserMonitor("EDGE"));
+        Assert.NotNull(settings.FindBrowserMonitor("msedge"));
+        Assert.Null(settings.FindBrowserMonitor("safari"));
+    }
+
+    [Fact]
+    public void SettingsJsonRoundTripPreservesMonitoringConfiguration()
+    {
+        var settings = new AppSettings
+        {
+            BrowserMonitors =
+            [
+                new BrowserMonitorSetting { Browser = "chrome", Enabled = false, AfterExit = ExitAction.DoNothing },
+                new BrowserMonitorSetting { Browser = "edge", Enabled = true, AfterExit = ExitAction.CleanSilently },
+                new BrowserMonitorSetting { Browser = "firefox", Enabled = true, AfterExit = ExitAction.CleanAndNotify }
+            ],
+            SystemMonitoringEnabled = true,
+            SystemMonitorFreeSpaceGb = 2.5,
+            SystemMonitorAction = ExitAction.CleanAndNotify
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+
+        Assert.NotNull(clone);
+        Assert.False(clone!.FindBrowserMonitor("chrome")!.Enabled);
+        Assert.Equal(ExitAction.DoNothing, clone.FindBrowserMonitor("chrome")!.AfterExit);
+        Assert.Equal(ExitAction.CleanSilently, clone.FindBrowserMonitor("edge")!.AfterExit);
+        Assert.True(clone.SystemMonitoringEnabled);
+        Assert.Equal(2.5, clone.SystemMonitorFreeSpaceGb);
+        Assert.Equal(ExitAction.CleanAndNotify, clone.SystemMonitorAction);
+    }
+
+    [Fact]
+    public void SystemMonitorCandidateSetContainsOnlySafeEnabledCategories()
+    {
+        var settings = new AppSettings();
+        var selected = WindowsCleanupService.Catalog
+            .Where(c => c.Risk == CleanupRisk.Safe && WindowsCleanupService.IsEnabled(c, settings))
+            .ToList();
+
+        Assert.NotEmpty(selected);
+        Assert.All(selected, c => Assert.Equal(CleanupRisk.Safe, c.Risk));
+        Assert.Contains(selected, c => c.Id == "system-temp");
+        // Review-risk categories (Recycle Bin, Downloads) must never be auto-cleaned.
+        Assert.DoesNotContain(selected, c => c.Risk != CleanupRisk.Safe);
+    }
 }
