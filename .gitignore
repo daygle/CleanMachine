@@ -35,3 +35,6 @@ artifacts/
 # Local CleanMachine state
 CleanMachine.Backups/
 CleanMachine.Updates/
+
+# Local signing cert material (never commit)
+.signing-cert/
