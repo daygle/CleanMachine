@@ -104,7 +104,10 @@ jobs:
             /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:RuntimeIdentifier=${{ matrix.runtime }} `
             /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundle=Never `
             /p:AppxPackageSigningEnabled=true "/p:PackageCertificateKeyFile=$pfx" "/p:PackageCertificatePassword=$password" `
-            "/p:ApplicationDisplayVersion=$env:VERSION3"
+            "/p:ApplicationDisplayVersion=$env:VERSION3" `
+            /p:GenerateAppxPackageOnBuild=true
+            # GenerateAppxPackageOnBuild is what actually invokes MakeAppx; without it
+            # /t:Publish only lays out the publish folder and the *.msix search below fails.
 
           $package = Get-ChildItem -Path CleanMachine.Windows/bin -Recurse -Filter *.msix | Select-Object -First 1
           if ($null -eq $package) { throw "MSIX package was not generated." }
