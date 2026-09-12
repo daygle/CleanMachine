@@ -1,0 +1,20 @@
+# Dependabot keeps GitHub Actions version pins current so workflows never
+# drift behind runner deprecations (e.g. the Node 20 -> Node 24 transition).
+# Updates arrive as PRs grouped by ecosystem; minor/patch action bumps are
+# batched weekly to keep noise low.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      # Batch all action bumps into one PR - they're low-risk version pins.
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "ci"
+    open-pull-requests-limit: 5
