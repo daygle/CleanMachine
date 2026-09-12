@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Imaging;
 using System.Runtime.InteropServices;
 
 namespace CleanMachine.Windows;
@@ -36,6 +37,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         SetWindowIcon();
+        LoadSidebarLogo();
         ApplyTitleBarTheme();
         Navigate<OverviewPage>();
         _ = LoadAgentStateAsync();
@@ -63,6 +65,24 @@ public sealed partial class MainWindow : Window
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
         if (File.Exists(iconPath))
             AppWindow.SetIcon(iconPath);
+    }
+
+    /// <summary>
+    /// Loads the sidebar mark from the file next to the executable rather than via
+    /// ms-appx: in unpackaged (installer) builds, ms-appx only resolves files that
+    /// are indexed in the app's PRI resource map, and loose Content files silently
+    /// fail there — which showed the sidebar logo as blank. A direct file path
+    /// works the same in packaged and unpackaged builds.
+    /// </summary>
+    private void LoadSidebarLogo()
+    {
+        try
+        {
+            var logoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppLogo.png");
+            if (File.Exists(logoPath))
+                SidebarLogo.Source = new BitmapImage(new Uri(logoPath));
+        }
+        catch { /* the logo is decorative; a blank image is an acceptable fallback */ }
     }
 
     /// <summary>Loads the app icon embedded in the executable (resource 32512),

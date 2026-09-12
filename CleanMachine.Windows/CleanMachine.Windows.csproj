@@ -41,6 +41,10 @@
     <!-- Ship the icon/tile assets with the app (unpackaged + MSIX) so the in-app
          logo and the window title-bar icon resolve at runtime. -->
     <Content Include="Assets\**" Exclude="Assets\generate_icons.py;Assets\icon-master.svg" />
+    <!-- Belt and braces: Remove always evaluates after Include, so these dev files
+         can never slip into the package even if the glob Exclude above is outfoxed
+         by wildcard evaluation order. -->
+    <Content Remove="Assets\generate_icons.py;Assets\icon-master.svg" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CleanMachine.Windows.Tests" />
