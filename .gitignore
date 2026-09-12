@@ -13,6 +13,7 @@ dist/
 *.log
 .DS_Store
 .freebuff/
+__pycache__/
 
 # .NET / Visual Studio
 [Bb]in/
