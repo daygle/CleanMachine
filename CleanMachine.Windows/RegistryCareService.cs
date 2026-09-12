@@ -36,6 +36,22 @@ public sealed class RegistryCareService
         => finding.LowRisk && finding.Confidence >= 70
            && finding.Hive == "HKCU" && IsDeletablePath(finding.Path);
 
+    /// <summary>A short, human-readable label for a finding, for list UIs.</summary>
+    public static string DisplayName(RegistryFinding finding)
+    {
+        if (finding.Path.StartsWith(UninstallRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            var name = finding.Path[UninstallRoot.Length..].TrimStart('\\');
+            return string.IsNullOrEmpty(name) ? "Leftover uninstall entry" : $"Leftover program: {name}";
+        }
+        if (finding.Path.StartsWith(ClassesRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            var ext = finding.Path[ClassesRoot.Length..].TrimStart('\\');
+            return string.IsNullOrEmpty(ext) ? "File association" : $"File association: {ext}";
+        }
+        return finding.Path;
+    }
+
     public async Task<RegistryReview> ScanAsync(CancellationToken token = default)
         => new((await _cleanup.ScanRegistrySafelyAsync(token))
             .OrderByDescending(f => f.Confidence)
