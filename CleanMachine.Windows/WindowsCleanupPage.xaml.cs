@@ -37,7 +37,7 @@ public sealed partial class WindowsCleanupPage : Page
             {
                 Text = group.Key.ToUpperInvariant(),
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x7F, 0x91, 0x89)),
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x7F, 0x91, 0x89)),
                 Margin = new Thickness(0, 12, 0, 2)
             });
             foreach (var category in group.OrderBy(c => c.Name))
@@ -151,7 +151,7 @@ public sealed partial class WindowsCleanupPage : Page
                 Text = $"{item.Category} — {item.Description}{size}",
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x53, 0x63, 0x5B))
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x53, 0x63, 0x5B))
             });
         }
         if (preview.Items.Count < preview.TotalItems)
@@ -159,7 +159,7 @@ public sealed partial class WindowsCleanupPage : Page
             {
                 Text = $"…and {preview.TotalItems - preview.Items.Count:N0} more items will be cleaned.",
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
         if (review.Count > 0)
             panel.Children.Add(new TextBlock
@@ -167,7 +167,7 @@ public sealed partial class WindowsCleanupPage : Page
                 Text = $"Warning: {string.Join(", ", review.Select(c => c.Name))} can remove data permanently.",
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D))
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D))
             });
 
         var dialog = new ContentDialog

@@ -26,7 +26,7 @@ public sealed class TrayIcon : IDisposable
     private readonly IntPtr _icon;
     private readonly uint _id;
     private readonly string _tip;
-    private readonly WndProc _wndProc;
+    private readonly TrayWndProc _wndProc;
     private string _className = string.Empty;
     private bool _added;
 
@@ -117,13 +117,13 @@ public sealed class TrayIcon : IDisposable
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
-    private delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    private delegate IntPtr TrayWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct WNDCLASSW
     {
         public uint style;
-        public WndProc lpfnWndProc;
+        public TrayWndProc lpfnWndProc;
         public int cbClsExtra;
         public int cbWndExtra;
         public IntPtr hInstance;

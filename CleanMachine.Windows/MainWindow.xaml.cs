@@ -114,7 +114,7 @@ public sealed partial class MainWindow : Window
         catch { /* title-bar theming is best-effort */ }
     }
 
-    private static Windows.UI.Color ColorFromHex(string hex) => new()
+    private static global::Windows.UI.Color ColorFromHex(string hex) => new()
     {
         A = 255,
         R = Convert.ToByte(hex.Substring(1, 2), 16),
