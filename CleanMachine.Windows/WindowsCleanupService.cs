@@ -198,7 +198,7 @@ public sealed class WindowsCleanupService
                     break;
                 case CleanupKind.RegistryValues:
                     var count = CountRegistryValues(category.Path!);
-                    total += count;
+                    total += (int)count;
                     if (count > 0) shown.Add(new CleanupPreviewItem(category.Name, $"{count:N0} registry value(s) to clear", 0));
                     break;
                 case CleanupKind.RecycleBin:
