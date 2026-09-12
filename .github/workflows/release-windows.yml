@@ -10,6 +10,7 @@ permissions:
 
 env:
   PROJECT: CleanMachine.Windows/CleanMachine.Windows.csproj
+  TESTS: CleanMachine.Windows.Tests/CleanMachine.Windows.Tests.csproj
   # Fallback publisher used for self-signed builds when WINDOWS_PUBLISHER is not set.
   # Must be a valid X.500 name; it is written into the package identity and the signing cert.
   DEFAULT_PUBLISHER: "CN=CleanMachine Publisher"
@@ -59,7 +60,12 @@ jobs:
           "MSIX_NAME=CleanMachine-${{ matrix.platform }}-$safeTag" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Restore
         shell: pwsh
-        run: dotnet restore $env:PROJECT
+        run: |
+          dotnet restore $env:PROJECT
+          dotnet restore $env:TESTS
+      - name: Run tests
+        shell: pwsh
+        run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore
       - name: Sign and package MSIX
         shell: pwsh
         env:
@@ -143,8 +149,67 @@ jobs:
             ${{ env.MSIX_NAME }}.msix
             ${{ env.MSIX_NAME }}.sha256
 
-  release:
+  installer:
+    # The classic setup exe: friendlier than sideloading an MSIX for users who
+    # do not want to trust a self-signed certificate first. Built from the same
+    # self-contained publish output the MSIX packs, stamped with the tag version.
+    name: Build installer (x64)
+    runs-on: windows-latest
     needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "8.0.x"
+      - name: Resolve version
+        shell: pwsh
+        run: |
+          $ref = "${env:GITHUB_REF_NAME}"
+          if ($ref -match '^v(\d+)\.(\d+)\.(\d+)$') {
+            $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          } else {
+            $version = "0.0.1"
+            Write-Host "Ref '$ref' is not a version tag; using placeholder version."
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore $env:PROJECT
+      - name: Publish self-contained app (x64)
+        shell: pwsh
+        run: |
+          dotnet publish $env:PROJECT -c Release -p:Platform=x64 -p:PublishProfile=win-x64 `
+            "/p:ApplicationDisplayVersion=$env:VERSION"
+      - name: Build Inno Setup installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            foreach ($p in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
+              if ($p -and (Test-Path $p)) { $iscc = $p; break }
+            }
+          }
+          if (-not $iscc) { throw 'Inno Setup 6 (ISCC.exe) was not found on this runner.' }
+          # Pass the tag version into the script; the .iss picks it up via /D.
+          & $iscc '/DAppVersion=$env:VERSION' 'CleanMachine.Windows\installer\cleanmachine.iss'
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
+          $setup = Get-ChildItem 'CleanMachine.Windows/bin/installer/CleanMachine-Setup-*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -eq $setup) { throw 'Installer exe was not produced by ISCC.' }
+          $stamped = "CleanMachine-Setup-$env:VERSION.exe"
+          Copy-Item $setup.FullName $stamped
+          Write-Host "Installer created: $stamped ($([math]::Round((Get-Item $stamped).Length/1MB,1)) MB)"
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: CleanMachine-Setup
+          path: CleanMachine-Setup-*.exe
+          if-no-files-found: error
+
+  release:
+    needs: [build, installer]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -186,5 +251,6 @@ jobs:
           files: |
             release/**/*.msix
             release/**/*.sha256
+            release/CleanMachine-Setup/*.exe
             update-manifest.json
           generate_release_notes: true

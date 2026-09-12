@@ -3,7 +3,12 @@
 ; Run with: iscc cleanmachine.iss
 
 #define MyAppName "CleanMachine"
-#define MyAppVersion "1.0.0"
+; Version comes from the release workflow via ISCC /DAppVersion=x.y.z;
+# the /D syntax sets a preprocessor define whose value is substituted with {#AppVersion}.
+#ifndef AppVersion
+#define AppVersion "0.0.1"
+#endif
+#define MyAppVersion AppVersion
 #define MyAppPublisher "CleanMachine contributors"
 #define MyAppExeName "CleanMachine.exe"
 
