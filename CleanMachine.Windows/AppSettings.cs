@@ -7,10 +7,17 @@ public sealed class AppSettings
     public bool BackgroundAgentEnabled { get; set; } = true;
     public bool CleanOnBrowserExit { get; set; } = true;
     public bool CheckForUpdatesAutomatically { get; set; } = true;
+    // When false the main window is hidden from the taskbar and, when minimized,
+    // it collapses to a system-tray icon instead.
+    public bool ShowInTaskbar { get; set; } = true;
     public WipeMethod SecureDeleteMethod { get; set; } = WipeMethod.SimpleZeroFill;
     public int CustomWipePasses { get; set; } = 1;
     public HashSet<string> ProtectedBrowsers { get; set; } = ["chrome", "edge", "firefox"];
     public HashSet<string> ExcludedPaths { get; set; } = [];
+    // Per-item Windows cleanup enable/disable overrides. A category is enabled when it is
+    // listed here as enabled, or when it is enabled by default and not explicitly disabled.
+    public HashSet<string> DisabledCleanupCategories { get; set; } = [];
+    public HashSet<string> EnabledCleanupCategories { get; set; } = [];
 
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

@@ -10,7 +10,7 @@
         <TextBlock x:Name="StatusText" Text="Ready to scan supported browser profiles."
                    TextWrapping="Wrap"/>
         <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed"/>
-        <Button x:Name="ScanButton" Content="Scan and review" Click="Scan_Click"
+        <Button x:Name="ScanButton" Content="Scan and Review" Click="Scan_Click"
                 HorizontalAlignment="Left" Background="#286E58" Foreground="White" Padding="18,10"/>
       </StackPanel>
     </Border>

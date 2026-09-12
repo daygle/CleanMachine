@@ -18,6 +18,7 @@ public partial class App : Application
     {
         MainWindow = new MainWindow();
         MainWindow.Activate();
+        AppNotifications.Register();
 
         var settings = await AppSettings.LoadAsync();
         if (settings.BackgroundAgentEnabled)
@@ -38,7 +39,9 @@ public partial class App : Application
                     var cleanup = new BrowserCleanupService();
                     var targets = await cleanup.ScanAsync(
                         settings.ProtectedBrowsers, token: token);
-                    await cleanup.CleanAsync(targets, requireBrowsersClosed: false, token);
+                    var result = await cleanup.CleanAsync(targets, requireBrowsersClosed: false, token);
+                    if (result.ItemsRemoved > 0)
+                        AppNotifications.ShowCleanupComplete(result);
                 }
             });
         _ = _agent.RunAsync(_agentCts.Token);

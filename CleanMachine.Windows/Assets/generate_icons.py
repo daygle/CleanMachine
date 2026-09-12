@@ -16,6 +16,7 @@ Outputs (same filenames the appxmanifest already references):
   Square44x44Logo.targetsize-256_altform-unplated.png (256),
   SplashScreen.scale-200.png (620x300), Wide310x150Logo.png (310x150),
   SmallTile.scale-200.png (120), LargeTile.scale-200.png (260),
+  AppLogo.png (96, in-app sidebar mark),
   app.ico (256/48/32/24/16, PNG-compressed frames).
 """
 
@@ -185,6 +186,9 @@ def main():
         ("Square44x44Logo.targetsize-256_altform-unplated.png", 256),
         ("SmallTile.scale-200.png", 120),
         ("LargeTile.scale-200.png", 260),
+        # Dedicated in-app mark: rendered at 96px so the 30px sidebar logo stays
+        # crisp up to 300% display scaling without borrowing a tile asset.
+        ("AppLogo.png", 96),
     ]
     for name, size in jobs:
         img = render_mark(size)

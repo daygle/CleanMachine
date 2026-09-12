@@ -7,11 +7,11 @@
                Foreground="#89958F" TextWrapping="Wrap"/>
 
     <StackPanel Orientation="Horizontal" Spacing="8">
-      <Button x:Name="CheckButton" Content="Check for updates" Click="Check_Click"
+      <Button x:Name="CheckButton" Content="Check for Updates" Click="Check_Click"
               Background="#286E58" Foreground="White" Padding="18,10"/>
-      <Button x:Name="InstallButton" Content="Install verified package" Click="Install_Click"
+      <Button x:Name="InstallButton" Content="Install Verified Package" Click="Install_Click"
               Visibility="Collapsed" Background="#286E58" Foreground="White" Padding="18,10"/>
-      <Button x:Name="RollbackButton" Content="Rollback to previous version" Click="Rollback_Click"
+      <Button x:Name="RollbackButton" Content="Rollback to Previous Version" Click="Rollback_Click"
               Visibility="Collapsed" Padding="18,10"/>
     </StackPanel>
 

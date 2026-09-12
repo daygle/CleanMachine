@@ -14,6 +14,10 @@ public sealed record UpdateCheckResult(bool Available, UpdateManifest? Manifest,
 public sealed class UpdateService
 {
     private static readonly Uri ManifestUri = new("https://github.com/daygle/CleanMachine/releases/latest/download/update-manifest.json");
+    // The published manifest is generated with camelCase keys (version, releaseNotes,
+    // packages, ...). System.Text.Json is case-sensitive by default, so binding must
+    // be case-insensitive for the record properties to populate.
+    private static readonly JsonSerializerOptions ManifestJsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly UpdateStateStore _stateStore = new();
 
@@ -22,7 +26,7 @@ public sealed class UpdateService
         try
         {
             await using var stream = await _httpClient.GetStreamAsync(ManifestUri, cancellationToken);
-            var manifest = await JsonSerializer.DeserializeAsync<UpdateManifest>(stream, cancellationToken: cancellationToken);
+            var manifest = await ParseManifestAsync(stream, cancellationToken);
             if (manifest is null || !Version.TryParse(manifest.Version, out _) || string.IsNullOrWhiteSpace(manifest.ReleaseNotes)) return new(false, null, null, "The release manifest was invalid.");
             var package = ResolvePackage(manifest);
             if (package is null || !IsValidPackage(package)) return new(false, null, null, "No signed update package is available for this device.");
@@ -30,6 +34,9 @@ public sealed class UpdateService
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return new(false, null, null, "Update check could not be completed."); }
     }
+
+    internal static async Task<UpdateManifest?> ParseManifestAsync(Stream stream, CancellationToken cancellationToken = default)
+        => await JsonSerializer.DeserializeAsync<UpdateManifest>(stream, ManifestJsonOptions, cancellationToken: cancellationToken);
 
     public async Task<string> DownloadAndVerifyAsync(UpdatePackage package, CancellationToken cancellationToken = default)
     {

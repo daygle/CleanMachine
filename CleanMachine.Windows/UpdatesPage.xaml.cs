@@ -50,7 +50,7 @@ public sealed partial class UpdatesPage : Page
             {
                 Title = $"Version {result.Manifest!.Version} available",
                 Content = result.Manifest.ReleaseNotes,
-                PrimaryButtonText = "Download and verify",
+                PrimaryButtonText = "Download and Verify",
                 CloseButtonText = "Later",
                 XamlRoot = XamlRoot
             };
@@ -83,7 +83,7 @@ public sealed partial class UpdatesPage : Page
         {
             Title = "Install update?",
             Content = "The application will restart after installation. A rollback copy will be saved.",
-            PrimaryButtonText = "Install now",
+            PrimaryButtonText = "Install Now",
             CloseButtonText = "Cancel",
             XamlRoot = XamlRoot
         };

@@ -60,7 +60,7 @@ public sealed partial class CleanerPage : Page
             {
                 Title = "Review browser cleanup",
                 Content = list,
-                PrimaryButtonText = "Clean selected",
+                PrimaryButtonText = "Clean Selected",
                 CloseButtonText = "Cancel",
                 XamlRoot = XamlRoot
             };

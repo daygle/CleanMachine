@@ -1,61 +1,271 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 
 namespace CleanMachine.Windows;
 
 public enum CleanupRisk { Safe, Review, Advanced }
-public sealed record WindowsCleanupFinding(string Id, string Name, string Description, string Location, long Bytes, CleanupRisk Risk, bool Selected);
+public enum CleanupKind { Files, RegistryValues, RecycleBin, DnsCache }
+
+public sealed record CleanupCategory(
+    string Id,
+    string Group,
+    string Name,
+    string Description,
+    CleanupRisk Risk,
+    bool EnabledByDefault,
+    CleanupKind Kind,
+    string? Path = null,
+    string? Pattern = null,
+    string[]? Extensions = null);
+
+public sealed record CleanupItem(CleanupCategory Category, long Bytes);
+public sealed record CleanupPreviewItem(string Category, string Description, long Bytes);
+public sealed record CleanupPreview(IReadOnlyList<CleanupPreviewItem> Items, int TotalItems);
+
 public sealed record WindowsCleanupOptions(bool ConfirmReviewCategories = false, bool AllowElevation = false, IReadOnlySet<string>? ExcludedPaths = null);
 
 public sealed class WindowsCleanupService
 {
-    private static readonly string[] SafeExtensions = [".tmp", ".dmp", ".log"];
     private const int MaxFiles = 10_000;
-    private const string RecycleBinId = "recycle-bin";
-    private const string WindowsUpdateId = "old-updates";
 
-    public Task<IReadOnlyList<WindowsCleanupFinding>> ScanAsync(CancellationToken cancellationToken = default)
+    private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    private static readonly string LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    private static readonly string AppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    private static readonly string Temp = Environment.GetEnvironmentVariable("TEMP") ?? Path.GetTempPath();
+    private static readonly string Downloads = Path.Combine(UserProfile, "Downloads");
+
+    /// <summary>Well-known, recreatable locations the app is allowed to clean.</summary>
+    private static readonly string[] TrustedCleanupRoots =
+    [
+        LocalAppData, AppData, Temp, Downloads,
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Prefetch"),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "winevt", "Logs"),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF"),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution")
+    ];
+
+    public static IReadOnlyList<CleanupCategory> Catalog { get; } =
+    [
+        // ---- Windows Explorer ----
+        new("explorer-recent", "Windows Explorer", "Recent Items", "Recently opened documents and files", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "Recent"), Pattern: "*.lnk"),
+        new("explorer-run-history", "Windows Explorer", "Start Menu Run History", "Commands typed into the Run dialog", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU"),
+        new("explorer-search-history", "Windows Explorer", "Windows Search History", "Searches typed into the Start menu / search box", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\WordWheelQuery"),
+        new("explorer-open-save-history", "Windows Explorer", "Open & Save Dialog History", "Recent locations in open/save dialogs", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32"),
+        new("explorer-jump-lists", "Windows Explorer", "Quick Access & Taskbar Jump Lists", "Pinned/recent jump-list entries", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "Recent", "AutomaticDestinations"), Pattern: "*"),
+        new("explorer-thumbnails", "Windows Explorer", "Thumbnail Cache", "Cached image previews Windows can recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Explorer"), Pattern: "thumbcache*.db"),
+        new("explorer-typed-paths", "Windows Explorer", "Other Explorer MRUs", "Typed paths and other Explorer history", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths"),
+
+        // ---- Windows System ----
+        new("system-temp", "Windows System", "Temporary Files", "Old temporary files no longer in use", CleanupRisk.Safe, true, CleanupKind.Files, Path: Temp, Pattern: "*"),
+        new("system-crash-dumps", "Windows System", "Memory Dumps", "Crash dump files from failed processes", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "CrashDumps"), Pattern: "*.dmp"),
+        new("system-error-reports", "Windows System", "Windows Error Reporting", "Old application crash reports and diagnostics", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "WER"), Pattern: "*"),
+        new("system-web-cache", "Windows System", "Windows Web Cache", "Cached web content used by Windows apps", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "WebCache"), Pattern: "*"),
+        new("system-dns-cache", "Windows System", "DNS Cache", "Cached DNS resolver entries", CleanupRisk.Safe, true, CleanupKind.DnsCache),
+        new("system-recycle-bin", "Windows System", "Recycle Bin", "Deleted items awaiting permanent removal", CleanupRisk.Review, false, CleanupKind.RecycleBin),
+
+        // ---- Windows Advanced Options ----
+        new("advanced-shader-cache", "Windows Advanced Options", "DirectX Shader Cache", "Compiled shaders for games and apps", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "D3DSCache"), Pattern: "*"),
+        new("advanced-user-assist", "Windows Advanced Options", "User Assist History", "Tracked program-launch history", CleanupRisk.Advanced, false, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist"),
+        new("advanced-prefetch", "Windows Advanced Options", "Windows Prefetch Files", "Prefetch data that can slow first launches", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Prefetch"), Pattern: "*"),
+        new("advanced-event-logs", "Windows Advanced Options", "Windows Event Logs", "Event log archives", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "winevt", "Logs"), Pattern: "*.evtx"),
+        new("advanced-setupapi-logs", "Windows Advanced Options", "Driver Installation Log Files", "Driver install/update logs", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF"), Pattern: "setupapi*.log"),
+        new("advanced-delivery-optimization", "Windows Advanced Options", "Delivery Optimization Files", "Cached update/install packages", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "DeliveryOptimization"), Pattern: "*"),
+
+        // ---- Windows Downloads (user files: disabled by default, require confirmation) ----
+        new("downloads-apps", "Windows Downloads", "Apps/Programs", "Downloaded installers (exe/msi) - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".exe", ".msi", ".msix", ".appx"]),
+        new("downloads-archives", "Windows Downloads", "Compressed Files", "Downloaded archives (zip/rar/7z) - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".zip", ".rar", ".7z", ".tar", ".gz", ".iso"]),
+        new("downloads-images", "Windows Downloads", "Pictures/Images", "Downloaded images - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"]),
+        new("downloads-media", "Windows Downloads", "Audio/Video", "Downloaded media - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".mp3", ".mp4", ".wav", ".flac", ".mov", ".mkv", ".avi"]),
+        new("downloads-docs", "Windows Downloads", "Documents", "Downloaded documents - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt"]),
+        new("downloads-other", "Windows Downloads", "Others", "Other downloaded files - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".dll", ".bin", ".dat", ".tmp"])
+    ];
+
+    public static bool IsEnabled(CleanupCategory category, AppSettings settings)
+        => settings.EnabledCleanupCategories.Contains(category.Id)
+           || (!settings.DisabledCleanupCategories.Contains(category.Id) && category.EnabledByDefault);
+
+    public IReadOnlyList<CleanupItem> Scan(IReadOnlySet<string>? excludedPaths = null)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var temp = Environment.GetEnvironmentVariable("TEMP") ?? Path.GetTempPath();
-        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var wer = Path.Combine(local, "Microsoft", "Windows", "WER");
-        var explorer = Path.Combine(local, "Microsoft", "Windows", "Explorer");
-        return Task.FromResult<IReadOnlyList<WindowsCleanupFinding>>([
-            CreateFinding("user-temp", "User temporary files", "Old temporary files no longer in use", temp, GetSafeSize(temp), true),
-            CreateFinding("thumbnail-cache", "Thumbnail cache", "Cached image previews Windows can recreate", explorer, GetFileSize(explorer, "thumbcache*.db"), true),
-            CreateFinding("error-reports", "Error reports", "Old application crash reports and diagnostics", wer, GetDirectorySize(wer), true),
-            new(RecycleBinId, "Recycle Bin", "Deleted items awaiting permanent removal", "All local drives", 0, CleanupRisk.Review, false),
-            new(WindowsUpdateId, "Windows Update leftovers", "Stale update downloads after installation", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "Download"), 0, CleanupRisk.Advanced, false)
-        ]);
+        var items = new List<CleanupItem>(Catalog.Count);
+        foreach (var category in Catalog)
+        {
+            long bytes = category.Kind switch
+            {
+                CleanupKind.Files => GetDirectorySize(category.Path!, category.Pattern, category.Extensions, excludedPaths),
+                CleanupKind.RegistryValues => CountRegistryValues(category.Path!),
+                _ => 0
+            };
+            items.Add(new CleanupItem(category, bytes));
+        }
+        return items;
     }
 
-    public async Task<CleanupReport> CleanSelectedAsync(IEnumerable<WindowsCleanupFinding> findings, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
+    public async Task<CleanupReport> CleanSelectedAsync(IEnumerable<CleanupCategory> categories, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
     {
-        var selected = findings.Where(f => f.Selected).ToArray();
-        var issues = new List<CleanupIssue>(); var removed = 0; long recovered = 0;
-        var fileFindings = selected.Where(f => f.Risk == CleanupRisk.Safe && Directory.Exists(f.Location) && NativeSafety.IsSafeFileCandidate(f.Location)).ToArray();
-        var files = fileFindings.SelectMany(f => EnumerateFiles(f.Location, f.Id == "thumbnail-cache" ? "thumbcache*.db" : "*", options.ExcludedPaths)).Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxFiles).ToArray();
-        for (var index = 0; index < files.Length; index++)
+        var selected = categories.ToArray();
+        var issues = new List<CleanupIssue>();
+        var removed = 0;
+        long recovered = 0;
+        var requiresConfirmation = selected.Any(c => c.Risk != CleanupRisk.Safe);
+        if (requiresConfirmation && !options.ConfirmReviewCategories)
         {
-            cancellationToken.ThrowIfCancellationRequested(); var file = files[index];
-            try
-            {
-                if (!NativeSafety.IsSafeFileCandidate(file) || IsExcluded(file, options.ExcludedPaths) || File.GetLastWriteTimeUtc(file) > DateTime.UtcNow.AddHours(-2)) { issues.Add(new(file, "Protected, excluded, reparse-point, or recently modified")); continue; }
-                var info = new FileInfo(file); var length = info.Length; File.Delete(file); removed++; recovered += length;
-            }
-            catch (IOException) { issues.Add(new(file, "Locked or unavailable")); }
-            catch (UnauthorizedAccessException) { issues.Add(new(file, "Access denied")); }
-            progress?.Report(new CleanupProgress("Windows cleanup", index + 1, files.Length, recovered));
+            var names = string.Join(", ", selected.Where(c => c.Risk != CleanupRisk.Safe).Select(c => c.Name));
+            issues.Add(new CleanupIssue("review-confirmation", $"Explicit review confirmation required for: {names}"));
+            return new CleanupReport(new CleanupResult(0, 0), issues);
         }
-        foreach (var finding in selected.Where(f => f.Risk != CleanupRisk.Safe))
+
+        foreach (var category in selected.Where(c => c.Kind == CleanupKind.Files))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!options.ConfirmReviewCategories) { issues.Add(new(finding.Location, "Explicit review confirmation required")); continue; }
-            if (finding.Id == RecycleBinId) { try { EmptyRecycleBin(); removed++; } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or COMException) { issues.Add(new(finding.Location, $"Recycle Bin cleanup failed: {ex.Message}")); } }
-            else if (finding.Id == WindowsUpdateId) { if (!options.AllowElevation) issues.Add(new(finding.Location, "Administrator elevation is required")); else issues.Add(new(finding.Location, "Windows Update cleanup requires a Windows service/API implementation and remains disabled")); }
+            var files = GetCleanableFiles(category, options.ExcludedPaths);
+            for (var index = 0; index < files.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var file = files[index];
+                try
+                {
+                    var length = new FileInfo(file).Length;
+                    File.Delete(file);
+                    removed++;
+                    recovered += length;
+                }
+                catch (IOException) { issues.Add(new(file, "Locked or unavailable")); }
+                catch (UnauthorizedAccessException) { issues.Add(new(file, "Access denied (administrator may be required)")); }
+                progress?.Report(new CleanupProgress(category.Name, index + 1, files.Count, recovered));
+            }
         }
+
+        foreach (var category in selected.Where(c => c.Kind == CleanupKind.RegistryValues))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var before = CountRegistryValues(category.Path!);
+                using var key = Registry.CurrentUser.OpenSubKey(category.Path!, writable: true);
+                if (key is null) { issues.Add(new(category.Path!, "Registry key not found")); continue; }
+                var names = key.GetValueNames();
+                foreach (var name in names)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    key.DeleteValue(name, throwOnMissingValue: false);
+                    removed++;
+                }
+                if (before == 0) issues.Add(new(category.Path!, "Nothing to clean"));
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
+            {
+                issues.Add(new(category.Path!, $"Registry cleanup failed: {ex.Message}"));
+            }
+        }
+
+        foreach (var category in selected.Where(c => c.Kind is CleanupKind.RecycleBin or CleanupKind.DnsCache))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (category.Kind == CleanupKind.RecycleBin) { EmptyRecycleBin(); removed++; }
+                else { FlushDnsCache(); removed++; }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or COMException)
+            {
+                issues.Add(new(category.Name, $"Cleanup failed: {ex.Message}"));
+            }
+        }
+
         return new CleanupReport(new CleanupResult(removed, recovered), issues);
     }
+
+    public CleanupPreview BuildPreview(IEnumerable<CleanupCategory> categories, IReadOnlySet<string>? excludedPaths = null, int maxFileItems = 100)
+    {
+        var shown = new List<CleanupPreviewItem>();
+        var total = 0;
+        var fileShown = 0;
+        foreach (var category in categories)
+        {
+            switch (category.Kind)
+            {
+                case CleanupKind.Files:
+                    foreach (var file in GetCleanableFiles(category, excludedPaths))
+                    {
+                        total++;
+                        if (fileShown < maxFileItems)
+                        {
+                            shown.Add(new CleanupPreviewItem(category.Name, file, GetLength(file)));
+                            fileShown++;
+                        }
+                    }
+                    break;
+                case CleanupKind.RegistryValues:
+                    var count = CountRegistryValues(category.Path!);
+                    total += count;
+                    if (count > 0) shown.Add(new CleanupPreviewItem(category.Name, $"{count:N0} registry value(s) to clear", 0));
+                    break;
+                case CleanupKind.RecycleBin:
+                    total++;
+                    shown.Add(new CleanupPreviewItem(category.Name, "Empty the Recycle Bin", 0));
+                    break;
+                case CleanupKind.DnsCache:
+                    total++;
+                    shown.Add(new CleanupPreviewItem(category.Name, "Flush the DNS cache", 0));
+                    break;
+            }
+        }
+        return new CleanupPreview(shown, total);
+    }
+
+    private static IReadOnlyList<string> GetCleanableFiles(CleanupCategory category, IReadOnlySet<string>? excludedPaths)
+        => EnumerateCleanableFiles(category.Path!, category.Pattern, category.Extensions, excludedPaths)
+            .Where(f => !IsRecentlyModified(f))
+            .ToArray();
+
+    private static bool IsRecentlyModified(string path)
+    {
+        try { return File.GetLastWriteTimeUtc(path) > DateTime.UtcNow.AddHours(-2); }
+        catch { return false; }
+    }
+
+    private static IEnumerable<string> EnumerateCleanableFiles(string directory, string? pattern, string[]? extensions, IReadOnlySet<string>? exclusions)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory) || !IsTrustedRoot(directory) || IsExcluded(directory, exclusions)) return [];
+        try
+        {
+            return Directory.EnumerateFiles(directory, pattern ?? "*", new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            })
+            .Where(f => !IsExcluded(f, exclusions) && !NativeSafety.IsReparsePoint(f) && MatchesExtensions(f, extensions))
+            .Take(MaxFiles)
+            .ToArray();
+        }
+        catch (IOException) { return []; }
+        catch (UnauthorizedAccessException) { return []; }
+    }
+
+    private static bool MatchesExtensions(string path, string[]? extensions)
+        => extensions is null || extensions.Length == 0
+           || extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsTrustedRoot(string directory)
+    {
+        try { return TrustedCleanupRoots.Any(root => NativeSafety.IsWithin(directory, root)); }
+        catch { return false; }
+    }
+
+    private static bool IsExcluded(string path, IReadOnlySet<string>? exclusions) => exclusions?.Any(root => NativeSafety.IsWithin(path, root)) == true;
+
+    private static long GetDirectorySize(string directory, string? pattern, string[]? extensions, IReadOnlySet<string>? exclusions)
+        => EnumerateCleanableFiles(directory, pattern, extensions, exclusions).Sum(GetLength);
+
+    private static long CountRegistryValues(string keyPath)
+    {
+        try { using var key = Registry.CurrentUser.OpenSubKey(keyPath); return key?.ValueCount ?? 0; }
+        catch { return 0; }
+    }
+
+    private static long GetLength(string path) { try { return new FileInfo(path).Length; } catch { return 0; } }
 
     private static void EmptyRecycleBin()
     {
@@ -64,19 +274,23 @@ public sealed class WindowsCleanupService
         if (result != 0) throw new IOException($"Windows returned error code {result}.");
     }
 
-    private static WindowsCleanupFinding CreateFinding(string id, string name, string description, string location, long bytes, bool selected) => new(id, name, description, location, bytes, CleanupRisk.Safe, selected);
-    private static IEnumerable<string> EnumerateFiles(string directory, string pattern, IReadOnlySet<string>? exclusions)
+    private static void FlushDnsCache()
     {
-        if (!Directory.Exists(directory) || NativeSafety.IsProtectedPath(directory) || IsExcluded(directory, exclusions)) return [];
-        try { return Directory.EnumerateFiles(directory, pattern, new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint }).Where(f => NativeSafety.IsSafeFileCandidate(f, directory) && !IsExcluded(f, exclusions)).ToArray(); }
-        catch (IOException) { return []; }
-        catch (UnauthorizedAccessException) { return []; }
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("DNS cache flush is supported on Windows only.");
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo("ipconfig", "/flushdns")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            }
+        };
+        process.Start();
+        process.WaitForExit();
+        if (process.ExitCode != 0) throw new IOException($"ipconfig /flushdns returned exit code {process.ExitCode}.");
     }
-    private static bool IsExcluded(string path, IReadOnlySet<string>? exclusions) => exclusions?.Any(root => NativeSafety.IsWithin(path, root)) == true;
-    private static long GetSafeSize(string directory) => EnumerateFiles(directory, "*", null).Where(f => SafeExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)).Sum(GetLength);
-    private static long GetFileSize(string directory, string pattern) => EnumerateFiles(directory, pattern, null).Sum(GetLength);
-    private static long GetDirectorySize(string directory) => EnumerateFiles(directory, "*", null).Sum(GetLength);
-    private static long GetLength(string path) { try { return new FileInfo(path).Length; } catch { return 0; } }
 
     [DllImport("Shell32.dll", CharSet = CharSet.Unicode)] private static extern int SHEmptyRecycleBin(IntPtr hwnd, string? rootPath, uint flags);
 }

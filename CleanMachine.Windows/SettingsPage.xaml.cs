@@ -19,6 +19,7 @@ public sealed partial class SettingsPage : Page
         AgentToggle.IsChecked = _settings.BackgroundAgentEnabled;
         CleanToggle.IsChecked = _settings.CleanOnBrowserExit;
         UpdateCheckToggle.IsChecked = _settings.CheckForUpdatesAutomatically;
+        ShowInTaskbarToggle.IsChecked = _settings.ShowInTaskbar;
         WipeMethodCombo.SelectedIndex = _settings.SecureDeleteMethod switch
         {
             WipeMethod.Dod522022M => 1,
@@ -35,6 +36,7 @@ public sealed partial class SettingsPage : Page
         _settings.BackgroundAgentEnabled = AgentToggle.IsChecked == true;
         _settings.CleanOnBrowserExit = CleanToggle.IsChecked == true;
         _settings.CheckForUpdatesAutomatically = UpdateCheckToggle.IsChecked == true;
+        _settings.ShowInTaskbar = ShowInTaskbarToggle.IsChecked == true;
         _settings.SecureDeleteMethod = WipeMethodCombo.SelectedIndex switch
         {
             1 => WipeMethod.Dod522022M,
@@ -55,6 +57,9 @@ public sealed partial class SettingsPage : Page
                 Environment.ProcessPath ?? string.Empty);
         }
         catch { /* startup registration is best-effort */ }
+
+        if (App.MainWindow is MainWindow mainWindow)
+            mainWindow.ApplyShowInTaskbar(_settings.ShowInTaskbar);
 
         StatusText.Text = "Settings saved.";
     }

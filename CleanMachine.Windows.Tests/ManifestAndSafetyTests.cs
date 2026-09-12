@@ -155,4 +155,79 @@ public sealed class ManifestAndSafetyTests
         Assert.Equal("/tmp/file.tmp", issue.Path);
         Assert.Equal("Locked", issue.Reason);
     }
+
+    [Fact]
+    public void CleanupCatalogIsGroupedWithUniqueIds()
+    {
+        var all = WindowsCleanupService.Catalog;
+        Assert.NotEmpty(all);
+        Assert.Equal(all.Count, all.Select(c => c.Id).Distinct().Count());
+        Assert.True(all.GroupBy(c => c.Group).Count() >= 4);
+        Assert.Contains(all, c => c.EnabledByDefault);
+        Assert.Contains(all, c => !c.EnabledByDefault);
+    }
+
+    [Fact]
+    public void CleanupEnabledStateUsesOverridesThenDefaults()
+    {
+        var settings = new AppSettings();
+        var safe = WindowsCleanupService.Catalog.First(c => c.EnabledByDefault);
+        var advanced = WindowsCleanupService.Catalog.First(c => !c.EnabledByDefault);
+
+        Assert.True(WindowsCleanupService.IsEnabled(safe, settings));
+        Assert.False(WindowsCleanupService.IsEnabled(advanced, settings));
+
+        settings.DisabledCleanupCategories.Add(safe.Id);
+        settings.EnabledCleanupCategories.Add(advanced.Id);
+        Assert.False(WindowsCleanupService.IsEnabled(safe, settings));
+        Assert.True(WindowsCleanupService.IsEnabled(advanced, settings));
+    }
+
+    [Fact]
+    public async Task CleaningNothingReturnsEmptyReport()
+    {
+        var report = await new WindowsCleanupService().CleanSelectedAsync([], new WindowsCleanupOptions());
+        Assert.Equal(0, report.Result.ItemsRemoved);
+        Assert.Empty(report.Skipped);
+    }
+
+    [Fact]
+    public void BuildPreviewWithNoCategoriesIsEmpty()
+    {
+        var preview = new WindowsCleanupService().BuildPreview([]);
+        Assert.Equal(0, preview.TotalItems);
+        Assert.Empty(preview.Items);
+    }
+
+    [Fact]
+    public async Task UpdateManifestParsesThePublishedCamelCaseFormat()
+    {
+        // The release workflow publishes the manifest with camelCase keys; UpdateService
+        // reads it case-insensitively. This guards the field binding from regressing.
+        const string json = """
+            {
+              "version": "1.2.3",
+              "releaseNotes": "See the GitHub release notes.",
+              "packages": {
+                "x64": {
+                  "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.2.3/CleanMachine-x64-v1.2.3.msix",
+                  "sha256": "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
+                  "architecture": "x64",
+                  "publisher": "CN=CleanMachine Publisher"
+                }
+              }
+            }
+            """;
+
+        await using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+        var manifest = await UpdateService.ParseManifestAsync(stream);
+
+        Assert.NotNull(manifest);
+        Assert.Equal("1.2.3", manifest.Version);
+        Assert.Equal("See the GitHub release notes.", manifest.ReleaseNotes);
+        Assert.NotNull(manifest.Packages);
+        Assert.True(manifest.Packages.ContainsKey("x64"));
+        Assert.Equal("x64", manifest.Packages["x64"].Architecture);
+        Assert.Equal("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789", manifest.Packages["x64"].Sha256);
+    }
 }

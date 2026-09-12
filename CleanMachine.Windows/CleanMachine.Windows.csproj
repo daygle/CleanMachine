@@ -31,4 +31,12 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.3916" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Ship the icon/tile assets with the app (unpackaged + MSIX) so the in-app
+         logo and the window title-bar icon resolve at runtime. -->
+    <Content Include="Assets\**" Exclude="Assets\generate_icons.py;Assets\icon-master.svg" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CleanMachine.Windows.Tests" />
+  </ItemGroup>
 </Project>

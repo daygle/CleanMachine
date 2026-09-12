@@ -11,6 +11,9 @@
     <TextBlock Text="UPDATES" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
     <CheckBox x:Name="UpdateCheckToggle" Content="Check for updates automatically"/>
 
+    <TextBlock Text="WINDOW" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
+    <CheckBox x:Name="ShowInTaskbarToggle" Content="Show in taskbar"/>
+
     <TextBlock Text="SECURE DELETE" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
     <StackPanel Spacing="4">
       <TextBlock Text="Default wipe method" FontSize="12" Foreground="#53635B"/>
@@ -29,7 +32,7 @@
     <TextBox x:Name="ExclusionsBox" AcceptsReturn="True" Height="80"
              TextWrapping="Wrap" FontSize="12" Padding="8"/>
 
-    <Button Content="Save settings" Click="Save_Click"
+    <Button Content="Save Settings" Click="Save_Click"
             HorizontalAlignment="Left" Background="#286E58"
             Foreground="White" Padding="18,10"/>
     <TextBlock x:Name="StatusText" Foreground="#6E8178"/>

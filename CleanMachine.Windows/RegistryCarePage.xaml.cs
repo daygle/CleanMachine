@@ -34,7 +34,7 @@ public sealed partial class RegistryCarePage : Page
             {
                 Title = "Review registry findings",
                 Content = list,
-                PrimaryButtonText = "Create backup",
+                PrimaryButtonText = "Create Backup",
                 CloseButtonText = "Cancel",
                 XamlRoot = XamlRoot
             };
