@@ -112,7 +112,7 @@ public sealed class InstalledAppsService
                         Id: $"Store|{package.Id.FullName}",
                         DisplayName: name,
                         DisplayVersion: $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}",
-                        Publisher: package.Publisher,
+                        Publisher: package.Id.Publisher,
                         EstimatedSizeBytes: 0,
                         InstallDate: null,
                         Kind: AppEntryKind.Store,

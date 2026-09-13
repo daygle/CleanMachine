@@ -81,32 +81,33 @@ public sealed partial class StartupPage : Page
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
         });
 
-        row.Children.Add(new ToggleSwitch
+        var toggle = new ToggleSwitch
         {
             IsOn = app.Enabled,
             OnContent = "On",
             OffContent = "Off",
-            Margin = new Thickness(0, -6, 0, -6),
-            Toggled += async (s, _) =>
+            Margin = new Thickness(0, -6, 0, -6)
+        };
+        // Events cannot be attached inside an object initializer, so wire Toggled here.
+        toggle.Toggled += async (s, _) =>
+        {
+            toggle.IsEnabled = false;
+            try
             {
-                var toggle = (ToggleSwitch)s;
-                toggle.IsEnabled = false;
-                try
-                {
-                    await _service.ToggleAsync(app);
-                    StatusText.Text = $"{app.Name} {(toggle.IsOn ? "enabled" : "disabled")}.";
-                }
-                catch (Exception ex)
-                {
-                    StatusText.Text = ex.Message;
-                    toggle.IsOn = !toggle.IsOn; // revert on failure
-                }
-                finally
-                {
-                    toggle.IsEnabled = true;
-                }
+                await _service.ToggleAsync(app);
+                StatusText.Text = $"{app.Name} {(toggle.IsOn ? "enabled" : "disabled")}.";
             }
-        });
+            catch (Exception ex)
+            {
+                StatusText.Text = ex.Message;
+                toggle.IsOn = !toggle.IsOn; // revert on failure
+            }
+            finally
+            {
+                toggle.IsEnabled = true;
+            }
+        };
+        row.Children.Add(toggle);
         row.Children.Add(texts);
 
         var remove = new Button
