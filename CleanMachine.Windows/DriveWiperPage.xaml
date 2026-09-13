@@ -1,0 +1,49 @@
+<Page x:Class="CleanMachine.Windows.DriveWiperPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid RowSpacing="14">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <StackPanel Grid.Row="0" Spacing="16">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <FontIcon Glyph="&#xEDA2;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
+        <TextBlock Text="Drive Wiper" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
+      </StackPanel>
+      <TextBlock Text="Overwrite the free space of a drive so that previously deleted files become unrecoverable. Existing files are never touched; the space is free again when the wipe completes."
+                 Foreground="#89958F" TextWrapping="Wrap"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="1" Spacing="10">
+      <ComboBox x:Name="DriveCombo" Header="DRIVE" MinWidth="360" HorizontalAlignment="Left"/>
+      <ComboBox x:Name="PassesCombo" Header="PASSES" MinWidth="360" HorizontalAlignment="Left" SelectedIndex="0">
+        <ComboBoxItem Content="1 pass (random + zero) - fast"/>
+        <ComboBoxItem Content="3 passes - thorough"/>
+        <ComboBoxItem Content="7 passes - maximum"/>
+      </ComboBox>
+      <TextBlock Text="SSD note: due to wear leveling, overwriting free space cannot guarantee sanitization on solid-state drives. For sensitive data use device encryption; wiping free space is most useful for traditional hard drives."
+                 Foreground="#C7775D" FontSize="11" TextWrapping="Wrap" MaxWidth="560"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10">
+      <Button x:Name="WipeButton" Content="Wipe Free Space" Click="Wipe_Click"
+              Background="#286E58" Foreground="White" Padding="18,10"/>
+      <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False" Padding="18,10"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="3" Spacing="6">
+      <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed"/>
+      <TextBlock x:Name="StatusText" Text="Select a drive and the number of passes."
+                 Foreground="#6E8178" TextWrapping="Wrap"/>
+    </StackPanel>
+
+    <!-- Row 4: filler to keep the footer-style layout when content is short. -->
+    <Border Grid.Row="4" Background="Transparent"/>
+  </Grid>
+</Page>

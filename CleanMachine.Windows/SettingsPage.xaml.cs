@@ -17,19 +17,6 @@ public sealed partial class SettingsPage : Page
     {
         _settings = await AppSettings.LoadAsync();
 
-        AgentToggle.IsChecked = _settings.BackgroundAgentEnabled;
-        CleanToggle.IsChecked = _settings.CleanOnBrowserExit;
-
-        var chrome = _settings.FindBrowserMonitor("chrome");
-        var edge = _settings.FindBrowserMonitor("edge");
-        var firefox = _settings.FindBrowserMonitor("firefox");
-        ChromeEnabled.IsChecked = chrome?.Enabled ?? true;
-        ChromeAction.SelectedIndex = ToComboIndex(chrome?.AfterExit ?? ExitAction.CleanAndNotify);
-        EdgeEnabled.IsChecked = edge?.Enabled ?? true;
-        EdgeAction.SelectedIndex = ToComboIndex(edge?.AfterExit ?? ExitAction.CleanAndNotify);
-        FirefoxEnabled.IsChecked = firefox?.Enabled ?? true;
-        FirefoxAction.SelectedIndex = ToComboIndex(firefox?.AfterExit ?? ExitAction.CleanAndNotify);
-
         SystemMonitoringToggle.IsChecked = _settings.SystemMonitoringEnabled;
         FreeSpaceBox.Value = _settings.SystemMonitorFreeSpaceGb;
         SystemMonitorAction.SelectedIndex = ToComboIndex(_settings.SystemMonitorAction);
@@ -66,13 +53,6 @@ public sealed partial class SettingsPage : Page
 
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
-        _settings.BackgroundAgentEnabled = AgentToggle.IsChecked == true;
-        _settings.CleanOnBrowserExit = CleanToggle.IsChecked == true;
-
-        ApplyMonitor("chrome", ChromeEnabled, ChromeAction);
-        ApplyMonitor("edge", EdgeEnabled, EdgeAction);
-        ApplyMonitor("firefox", FirefoxEnabled, FirefoxAction);
-
         _settings.SystemMonitoringEnabled = SystemMonitoringToggle.IsChecked == true;
         _settings.SystemMonitorFreeSpaceGb = Math.Clamp(FreeSpaceBox.Value, 0.1, 100);
         _settings.SystemMonitorAction = FromComboIndex(SystemMonitorAction.SelectedIndex);
@@ -101,7 +81,7 @@ public sealed partial class SettingsPage : Page
                 _settings.BackgroundAgentEnabled,
                 Environment.ProcessPath ?? string.Empty);
         }
-        catch { /* startup registration is best-effort */ }
+        catch { /* startup registration is best-effort; the toggle lives on Browser Cleaner */ }
 
         if (App.MainWindow is MainWindow mainWindow)
         {
@@ -110,9 +90,8 @@ public sealed partial class SettingsPage : Page
             mainWindow.ApplyCloseToTray(_settings.CloseToTray);
         }
 
-        // Restart the agent so enabling/disabling it takes effect immediately.
-        // Its handlers reload settings on every event, so action changes apply
-        // live either way.
+        // Re-apply the agent state from settings so an externally changed agent
+        // flag (Browser Cleaner page) takes effect after any settings save.
         if (App.Current is App app)
         {
             if (_settings.BackgroundAgentEnabled)
@@ -124,26 +103,9 @@ public sealed partial class SettingsPage : Page
         StatusText.Text = "Settings saved.";
     }
 
-    private void ApplyMonitor(string id, CheckBox enabled, ComboBox action)
-    {
-        var monitor = _settings.FindBrowserMonitor(id);
-        if (monitor is null)
-        {
-            monitor = new BrowserMonitorSetting { Browser = id };
-            _settings.BrowserMonitors.Add(monitor);
-        }
-        monitor.Enabled = enabled.IsChecked == true;
-        monitor.AfterExit = FromComboIndex(action.SelectedIndex);
-    }
-
     private void RestoreDefaults_Click(object sender, RoutedEventArgs e)
     {
         var defaults = new AppSettings();
-        AgentToggle.IsChecked = defaults.BackgroundAgentEnabled;
-        CleanToggle.IsChecked = defaults.CleanOnBrowserExit;
-        ChromeEnabled.IsChecked = true;   ChromeAction.SelectedIndex = 2;
-        EdgeEnabled.IsChecked = true;     EdgeAction.SelectedIndex = 2;
-        FirefoxEnabled.IsChecked = true;  FirefoxAction.SelectedIndex = 2;
         SystemMonitoringToggle.IsChecked = defaults.SystemMonitoringEnabled;
         FreeSpaceBox.Value = defaults.SystemMonitorFreeSpaceGb;
         SystemMonitorAction.SelectedIndex = 1;

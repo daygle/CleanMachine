@@ -515,6 +515,7 @@ public sealed class ManifestAndSafetyTests
     {
         Assert.False(ScheduledTask.HasWork(new CleanupSchedule()));
         Assert.True(ScheduledTask.HasWork(new CleanupSchedule { CleanBrowserCache = true }));
+        Assert.True(ScheduledTask.HasWork(new CleanupSchedule { CleanAppTempFiles = true }));
         Assert.True(ScheduledTask.HasWork(new CleanupSchedule { WindowsCategoryIds = ["system-temp"] }));
         Assert.True(ScheduledTask.HasWork(new CleanupSchedule { RegistryCategories = ["MUI Cache"] }));
     }
@@ -535,6 +536,7 @@ public sealed class ManifestAndSafetyTests
                     Minute = 15,
                     AfterClean = ScheduleAction.Shutdown,
                     CleanBrowserCache = true,
+                    CleanAppTempFiles = true,
                     WindowsCategoryIds = ["system-temp", "system-dns-cache"],
                     RegistryCategories = ["MUI Cache"]
                 }
@@ -552,6 +554,7 @@ public sealed class ManifestAndSafetyTests
         Assert.Equal(15, schedule.Minute);
         Assert.Equal(ScheduleAction.Shutdown, schedule.AfterClean);
         Assert.True(schedule.CleanBrowserCache);
+        Assert.True(schedule.CleanAppTempFiles);
         Assert.Equal(new[] { "system-temp", "system-dns-cache" }, schedule.WindowsCategoryIds);
         Assert.Equal(new[] { "MUI Cache" }, schedule.RegistryCategories);
     }

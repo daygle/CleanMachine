@@ -1,7 +1,14 @@
 <Page x:Class="CleanMachine.Windows.CleanerPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <StackPanel Spacing="16">
+  <Grid RowSpacing="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
     <StackPanel Orientation="Horizontal" Spacing="12">
       <FontIcon Glyph="&#xE72C;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
       <TextBlock Text="Browser Cleaner" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
@@ -9,22 +16,97 @@
     <TextBlock Text="Tick what to clear for each installed browser. Destructive items - cookies, history, saved passwords - are off by default. Close the browser before cleaning."
                TextWrapping="Wrap" Foreground="#89958F"/>
 
-    <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
-      <StackPanel Spacing="12">
-        <StackPanel Orientation="Horizontal" Spacing="10">
+    <!-- Background agent: runs the monitoring below plus the system monitor. -->
+    <Border Grid.Row="2" Background="#EAF4EE" BorderBrush="#DCE8E1" BorderThickness="1" CornerRadius="10" Padding="16">
+      <Grid ColumnSpacing="16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" Spacing="4">
+          <TextBlock Text="BACKGROUND AGENT" Foreground="#7F9189" FontSize="10"/>
+          <TextBlock x:Name="AgentStatusText" Text="●  Background Agent  ON" Foreground="#254239" FontSize="15" FontWeight="SemiBold"/>
+          <TextBlock Text="Runs in the background so browser caches are cleaned automatically when a monitored browser closes, and so the system monitor can free space."
+                     Foreground="#709086" FontSize="12" TextWrapping="Wrap"/>
+        </StackPanel>
+        <ToggleSwitch Grid.Column="1" x:Name="AgentToggle" OnContent="ON" OffContent="OFF"
+                      VerticalAlignment="Center" Toggled="AgentToggle_Toggled"/>
+      </Grid>
+    </Border>
+
+    <!-- Browser monitoring: what happens when each browser closes. -->
+    <Border Grid.Row="3" Background="#EAF4EE" BorderBrush="#DCE8E1" BorderThickness="1" CornerRadius="10" Padding="16">
+      <StackPanel Spacing="10">
+        <CheckBox x:Name="CleanToggle" Content="Monitor supported browsers and clean caches when they close"
+                  FontSize="13" Checked="CleanToggle_Changed" Unchecked="CleanToggle_Changed"/>
+        <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="8" Padding="14">
+          <Grid MinWidth="460">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="230"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Browser" FontSize="11" Foreground="#7F9189" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="After closing" FontSize="11" Foreground="#7F9189" Margin="0,0,0,6"/>
+            <CheckBox Grid.Row="1" Grid.Column="0" x:Name="ChromeEnabled" Content="Google Chrome" Margin="0,4,0,4"
+                      Checked="BrowserMonitor_Changed" Unchecked="BrowserMonitor_Changed"/>
+            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="ChromeAction" SelectedIndex="2" Margin="0,4,0,4"
+                      SelectionChanged="BrowserMonitor_Changed">
+              <ComboBoxItem Content="Do nothing"/>
+              <ComboBoxItem Content="Clean silently"/>
+              <ComboBoxItem Content="Clean and notify"/>
+            </ComboBox>
+            <CheckBox Grid.Row="2" Grid.Column="0" x:Name="EdgeEnabled" Content="Microsoft Edge" Margin="0,4,0,4"
+                      Checked="BrowserMonitor_Changed" Unchecked="BrowserMonitor_Changed"/>
+            <ComboBox Grid.Row="2" Grid.Column="1" x:Name="EdgeAction" SelectedIndex="2" Margin="0,4,0,4"
+                      SelectionChanged="BrowserMonitor_Changed">
+              <ComboBoxItem Content="Do nothing"/>
+              <ComboBoxItem Content="Clean silently"/>
+              <ComboBoxItem Content="Clean and notify"/>
+            </ComboBox>
+            <CheckBox Grid.Row="3" Grid.Column="0" x:Name="FirefoxEnabled" Content="Firefox" Margin="0,4,0,4"
+                      Checked="BrowserMonitor_Changed" Unchecked="BrowserMonitor_Changed"/>
+            <ComboBox Grid.Row="3" Grid.Column="1" x:Name="FirefoxAction" SelectedIndex="2" Margin="0,4,0,4"
+                      SelectionChanged="BrowserMonitor_Changed">
+              <ComboBoxItem Content="Do nothing"/>
+              <ComboBoxItem Content="Clean silently"/>
+              <ComboBoxItem Content="Clean and notify"/>
+            </ComboBox>
+          </Grid>
+        </Border>
+        <TextBlock x:Name="MonitoringHint"
+                   Text="Caches only. Open browsers are skipped; passwords, bookmarks, cookies, and history are never touched."
+                   FontSize="11" Foreground="#709086" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="4" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
+      <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10">
           <Button x:Name="ScanButton" Content="Scan Browsers" Click="Scan_Click"
                   Background="#286E58" Foreground="White" Padding="18,10"/>
           <Button x:Name="CleanButton" Content="Clean Selected" Click="Clean_Click"
                   Padding="18,10" IsEnabled="False"/>
-          <CheckBox x:Name="SecureDeleteCheck" Content="Secure delete" VerticalAlignment="Center"/>
+          <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete" VerticalAlignment="Center"/>
         </StackPanel>
-        <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" IsIndeterminate="True" Visibility="Collapsed"/>
-        <TextBlock x:Name="StatusText" Text="Click Scan browsers to detect installed browsers and measure what can be cleaned."
+        <ProgressBar Grid.Row="1" x:Name="Progress" Minimum="0" Maximum="1" IsIndeterminate="True" Visibility="Collapsed"/>
+        <TextBlock Grid.Row="2" x:Name="StatusText" Text="Click Scan browsers to detect installed browsers and measure what can be cleaned."
                    TextWrapping="Wrap" Foreground="#6E8178" FontSize="12"/>
-        <ScrollViewer MaxHeight="520" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
           <StackPanel x:Name="BrowserPanel" Spacing="10"/>
         </ScrollViewer>
-      </StackPanel>
+      </Grid>
     </Border>
-  </StackPanel>
+  </Grid>
 </Page>

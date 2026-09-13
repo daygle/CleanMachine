@@ -4,7 +4,7 @@
   <Grid RowSpacing="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
@@ -17,7 +17,7 @@
                  Foreground="#89958F" TextWrapping="Wrap"/>
     </StackPanel>
 
-    <Grid Grid.Row="1" ColumnSpacing="14" MaxHeight="480">
+    <Grid Grid.Row="1" ColumnSpacing="14">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="320"/>
         <ColumnDefinition Width="*"/>
@@ -32,7 +32,7 @@
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" Text="SCHEDULES" FontSize="10" Foreground="#7F9189" Margin="0,0,0,8"/>
-          <ScrollViewer Grid.Row="1" MaxHeight="370" VerticalScrollBarVisibility="Auto">
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="ScheduleList" Spacing="4"/>
           </ScrollViewer>
           <Button Grid.Row="2" x:Name="AddButton" Content="+ Add Schedule" Click="Add_Click"
@@ -42,7 +42,7 @@
 
       <!-- Right: editor -->
       <Border Grid.Column="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="440">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel x:Name="EditorPanel" Spacing="10">
             <TextBlock x:Name="EditorHeadline" Text="No schedule selected"
                        FontSize="16" FontWeight="SemiBold" Foreground="#273630"/>
@@ -90,7 +90,7 @@
               <TextBlock x:Name="AfterWarning" Foreground="#C7775D" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed"
                          Text="The PC will power off 60 seconds after a successful clean. Run 'shutdown /a' to abort."/>
 
-              <CheckBox x:Name="SecureDeleteCheck" Content="Secure delete (overwrite files before removal)" Checked="SecureDelete_Changed" Unchecked="SecureDelete_Changed"/>
+              <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete (overwrite files before removal)" Checked="SecureDelete_Changed" Unchecked="SecureDelete_Changed"/>
               <TextBlock x:Name="SecureDeleteHint" Foreground="#89958F" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed"
                          Text="Uses the wipe method from Settings > Secure Delete. Slower but makes data harder to recover."/>
 

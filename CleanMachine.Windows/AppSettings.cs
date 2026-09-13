@@ -37,6 +37,9 @@ public sealed class AppSettings
     public bool CloseToTray { get; set; }
     // Minimize button sends to tray (keeps taskbar button).
     public bool MinimizeToTray { get; set; } = true;
+    // Application Cleanup page: when true, detected apps with nothing to clean
+    // are shown in the list (greyed out) instead of being hidden.
+    public bool ShowCleanApps { get; set; }
     public WipeMethod SecureDeleteMethod { get; set; } = WipeMethod.SimpleZeroFill;
     public int CustomWipePasses { get; set; } = 1;
     public HashSet<string> ProtectedBrowsers { get; set; } = ["chrome", "edge", "firefox"];
