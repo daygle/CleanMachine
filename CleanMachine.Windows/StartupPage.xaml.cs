@@ -41,7 +41,7 @@ public sealed partial class StartupPage : Page
 
             StatusText.Text = _apps.Count == 0
                 ? "No startup entries were found."
-                : $"{_apps.Count} startup entr{_apps.Count == 1 ? "y" : "ies"} found. Disabling keeps the program installed; removing deletes the auto-start entry only.";
+                : $"{_apps.Count} startup entr{(_apps.Count == 1 ? "y" : "ies")} found. Disabling keeps the program installed; removing deletes the auto-start entry only.";
         }
         catch (Exception ex)
         {

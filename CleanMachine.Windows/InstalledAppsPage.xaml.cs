@@ -25,7 +25,7 @@ public sealed partial class InstalledAppsPage : Page
             _apps = await _service.ScanAsync();
             Render(_apps);
             var shown = _apps.Count(a => !a.SystemComponent);
-            StatusText.Text = $"{shown} application{shown == 1 ? "" : "s"} found.";
+            StatusText.Text = $"{shown} application{(shown == 1 ? "" : "s")} found.";
         }
         catch (Exception ex)
         {
