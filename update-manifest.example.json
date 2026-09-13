@@ -1,22 +1,22 @@
 {
-  "version": "1.0.9",
-  "releaseNotes": "Improved cleanup reliability and added safer scan reporting.",
+  "version": "1.0.10",
+  "releaseNotes": "New: Clean All Safe Items, Drive Wiper, Startup Apps manager, Installed Apps viewer, Application Cleanup filtering, and a live Overview dashboard.",
   "packages": {
     "x64": {
-      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.9/CleanMachine-x64-v1.0.9.msix",
+      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.10/CleanMachine-x64-v1.0.10.msix",
       "sha256": "64_CHARACTER_SHA256_OF_SIGNED_MSIX_PACKAGE",
       "architecture": "x64",
       "publisher": "CN=YOUR_PRODUCTION_PUBLISHER"
     },
     "ARM64": {
-      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.9/CleanMachine-ARM64-v1.0.9.msix",
+      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.10/CleanMachine-ARM64-v1.0.10.msix",
       "sha256": "64_CHARACTER_SHA256_OF_SIGNED_MSIX_PACKAGE",
       "architecture": "ARM64",
       "publisher": "CN=YOUR_PRODUCTION_PUBLISHER"
     }
   },
   "installer": {
-    "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.9/CleanMachine-Setup-1.0.9.exe",
+    "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.10/CleanMachine-Setup-1.0.10.exe",
     "sha256": "64_CHARACTER_SHA256_OF_SETUP_EXE",
     "architecture": "x64"
   }
