@@ -34,6 +34,7 @@ public sealed partial class SchedulesPage : Page
         _itemBoxes.Clear();
 
         AddItemBox("browser", "Browser caches", "Clears Chrome, Edge, and Firefox cache files (locked files are skipped)");
+        AddItemBox("apps", "Application temp files", "Cleans temp files for every detected application, same as the Application Cleanup page");
 
         foreach (var group in WindowsCleanupService.Catalog.GroupBy(c => c.Group))
         {
@@ -162,6 +163,7 @@ public sealed partial class SchedulesPage : Page
             box.IsChecked = key switch
             {
                 "browser" => schedule.CleanBrowserCache,
+                "apps" => schedule.CleanAppTempFiles,
                 var k when k.StartsWith("win:") => schedule.WindowsCategoryIds.Contains(k[4..], StringComparer.OrdinalIgnoreCase),
                 var k when k.StartsWith("reg:") => schedule.RegistryCategories.Contains(k[4..], StringComparer.OrdinalIgnoreCase),
                 _ => false
@@ -238,6 +240,7 @@ public sealed partial class SchedulesPage : Page
             AfterClean = (ScheduleAction)Math.Max(0, AfterCombo.SelectedIndex),
             SecureDelete = SecureDeleteCheck.IsChecked == true,
             CleanBrowserCache = _itemBoxes.Any(b => b.Key == "browser" && b.Box.IsChecked == true),
+            CleanAppTempFiles = _itemBoxes.Any(b => b.Key == "apps" && b.Box.IsChecked == true),
             WindowsCategoryIds = _itemBoxes.Where(b => b.Key.StartsWith("win:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList(),
             RegistryCategories = _itemBoxes.Where(b => b.Key.StartsWith("reg:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList()
         };

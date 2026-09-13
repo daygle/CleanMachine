@@ -41,6 +41,9 @@ public sealed class CleanupSchedule
     /// <summary>Clean every monitored browser's cache.</summary>
     public bool CleanBrowserCache { get; set; }
 
+    /// <summary>Clean temp files for every detected application (Application Cleanup).</summary>
+    public bool CleanAppTempFiles { get; set; }
+
     /// <summary>Registry Care category names (e.g. "MUI Cache", "Windows Startup").</summary>
     public List<string> RegistryCategories { get; set; } = [];
 
@@ -92,7 +95,8 @@ public static class ScheduledTask
 
     /// <summary>True when the schedule actually has something to clean.</summary>
     public static bool HasWork(CleanupSchedule schedule)
-        => schedule.WindowsCategoryIds.Count > 0 || schedule.CleanBrowserCache || schedule.RegistryCategories.Count > 0;
+        => schedule.WindowsCategoryIds.Count > 0 || schedule.CleanBrowserCache
+           || schedule.CleanAppTempFiles || schedule.RegistryCategories.Count > 0;
 
     private static string Clock(CleanupSchedule schedule)
         => $"{Math.Clamp(schedule.Hour, 0, 23):00}:{Math.Clamp(schedule.Minute, 0, 59):00}";

@@ -81,13 +81,31 @@
             <Button x:Name="NavAppCleanup" Style="{StaticResource NavButton}" Click="AppCleanup_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE7B8;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
-                <TextBlock Text="App Cleanup" VerticalAlignment="Center"/>
+                <TextBlock Text="Application Cleanup" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="NavSecureDelete" Style="{StaticResource NavButton}" Click="SecureDeleteNav_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE7C3;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
                 <TextBlock Text="Secure Delete" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="NavDriveWiper" Style="{StaticResource NavButton}" Click="DriveWiper_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <FontIcon Glyph="&#xEDA2;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
+                <TextBlock Text="Drive Wiper" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="NavStartupApps" Style="{StaticResource NavButton}" Click="StartupApps_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <FontIcon Glyph="&#xE9A9;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
+                <TextBlock Text="Startup Apps" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="NavInstalledApps" Style="{StaticResource NavButton}" Click="InstalledApps_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <FontIcon Glyph="&#xE71D;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
+                <TextBlock Text="Installed Apps" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="NavActivity" Style="{StaticResource NavButton}" Click="Activity_Click">
@@ -123,11 +141,11 @@
       </Grid>
     </Border>
 
-    <!-- Content -->
-    <ScrollViewer Grid.Column="1">
-      <StackPanel Margin="0,45,0,0" Spacing="18">
-        <Frame x:Name="ContentFrame" Margin="36,0,36,0"/>
-      </StackPanel>
-    </ScrollViewer>
+    <!-- Content: the Frame must receive a definite height (a Grid cell, not a
+         StackPanel inside a ScrollViewer) so each page can stretch to the full
+         window height and manage its own internal scrolling. -->
+    <Grid Grid.Column="1" Margin="0,45,0,18">
+      <Frame x:Name="ContentFrame" Margin="36,0,36,0"/>
+    </Grid>
   </Grid>
 </Window>

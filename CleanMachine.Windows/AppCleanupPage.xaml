@@ -37,10 +37,13 @@
         </Grid>
       </Border>
 
-      <!-- Right: details / status -->
+      <!-- Right: details / status. The detail list fills the remaining height
+           directly from the Grid cell (a StackPanel would measure it with
+           infinite height and let it overflow the card). -->
       <Border Grid.Column="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14">
         <Grid>
           <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -49,12 +52,10 @@
                      FontSize="16" FontWeight="SemiBold" Foreground="#273630" Margin="0,0,0,4" TextWrapping="Wrap"/>
           <TextBlock Grid.Row="1" x:Name="StatusText" Text="Click Scan to detect installed applications and measure their temp files."
                      FontSize="12" Foreground="#6E8178" Margin="0,0,0,8" TextWrapping="Wrap"/>
-          <StackPanel Grid.Row="2">
-            <ProgressBar x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed" Margin="0,0,0,8"/>
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-              <StackPanel x:Name="DetailPanel" Spacing="2"/>
-            </ScrollViewer>
-          </StackPanel>
+          <ProgressBar Grid.Row="2" x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed" Margin="0,0,0,8"/>
+          <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="DetailPanel" Spacing="2"/>
+          </ScrollViewer>
         </Grid>
       </Border>
     </Grid>
@@ -63,7 +64,9 @@
       <Button x:Name="ScanButton" Content="Scan" Click="Scan_Click"
               Background="#286E58" Foreground="White" Padding="26,10" HorizontalAlignment="Left"/>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
-        <CheckBox x:Name="SecureDeleteCheck" Content="Secure delete" VerticalAlignment="Center"/>
+        <CheckBox x:Name="ShowCleanAppsCheck" Content="Show clean apps" VerticalAlignment="Center"
+                  Checked="ShowCleanApps_Changed" Unchecked="ShowCleanApps_Changed"/>
+        <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete" VerticalAlignment="Center"/>
         <Button x:Name="CleanButton" Content="Clean Selected" Click="Clean_Click"
                 Padding="18,10" IsEnabled="False"/>
       </StackPanel>

@@ -14,6 +14,8 @@ public sealed partial class WindowsCleanupPage : Page
     private AppSettings _settings = new();
     private CancellationTokenSource? _cancel;
     private CleanupPreview? _lastPreview;
+    // Guards against a double BuildPanelAsync finishing out of order.
+    private bool _listBuilt;
 
     public WindowsCleanupPage()
     {
@@ -24,15 +26,56 @@ public sealed partial class WindowsCleanupPage : Page
     private async Task LoadAsync()
     {
         _settings = await AppSettings.LoadAsync();
-        BuildPanel();
+        await BuildPanelAsync();
     }
 
-    private void BuildPanel()
+    /// <summary>Builds the left list from the shared (cached) Windows scan: categories
+    /// with nothing to clean are hidden, mirroring the Application Cleanup list. If
+    /// the scan fails, the full catalog is shown so nothing becomes unreachable.</summary>
+    private async Task BuildPanelAsync()
     {
         CategoryPanel.Children.Clear();
-        foreach (var group in WindowsCleanupService.Catalog
-                     .GroupBy(c => c.Group)
-                     .OrderBy(g => GroupIndex(g.Key)))
+        CategoryPanel.Children.Add(new TextBlock
+        {
+            Text = "Measuring categories…",
+            FontSize = 12,
+            Margin = new Thickness(0, 4, 0, 2),
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+        });
+        _listBuilt = false;
+
+        // Served from the same cached scan that fills the Overview card, so opening
+        // this page right after Overview costs no extra disk walk.
+        var items = await OverviewScanService.ScanWindowsItemsAsync();
+        if (_listBuilt) return; // a concurrent build already finished
+        _listBuilt = true;
+        CategoryPanel.Children.Clear();
+
+        var withData = items?
+            .Where(i => i.Bytes > 0)
+            .Select(i => i.Category.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var visible = WindowsCleanupService.Catalog
+            .Where(c => withData is null || withData.Contains(c.Id))
+            .GroupBy(c => c.Group)
+            .OrderBy(g => GroupIndex(g.Key))
+            .ToList();
+
+        if (visible.Count == 0)
+        {
+            CategoryPanel.Children.Add(new TextBlock
+            {
+                Text = "Everything is clean - no category has anything to clean.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 8, 0, 2),
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x6E, 0x81, 0x78))
+            });
+            return;
+        }
+
+        foreach (var group in visible)
         {
             CategoryPanel.Children.Add(new TextBlock
             {
@@ -210,6 +253,7 @@ public sealed partial class WindowsCleanupPage : Page
                 progress,
                 _cancel.Token);
 
+            _ = new CleanupStatsStore().RecordAsync(result.Result.ItemsRemoved, result.Result.BytesRecovered);
             ReportHeadline.Text = "Cleaning complete.";
             _lastPreview = null;
             StatusText.Text =
@@ -217,6 +261,11 @@ public sealed partial class WindowsCleanupPage : Page
 
             foreach (var category in enabled)
                 ReportPanel.Children.Add(BuildResultRow(category, result));
+
+            // The clean changed what the categories hold: rebuild the left list so
+            // emptied categories disappear (the scan cache is already invalidated
+            // by the stats recording above).
+            await BuildPanelAsync();
         }
         catch (OperationCanceledException) { ReportHeadline.Text = "Cleaning cancelled."; }
         catch (Exception ex) { ReportHeadline.Text = "Cleaning failed."; StatusText.Text = ex.Message; }

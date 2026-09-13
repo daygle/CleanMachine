@@ -9,11 +9,120 @@ public sealed partial class CleanerPage : Page
     private readonly BrowserCleanupService _service = new();
     private readonly List<(string BrowserId, string ItemId, bool Destructive, CheckBox Box)> _itemBoxes = [];
     private AppSettings _settings = new();
+    // Guards the change handlers while the page loads settings into the controls.
+    private bool _monitorReady;
 
     public CleanerPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); await CheckInterruptedAsync(); };
+        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); LoadMonitoring(); await CheckInterruptedAsync(); };
+    }
+
+    /// <summary>Browser monitoring (clean cache on browser close) and the background
+    /// agent it runs under live here on the Browser Cleaner page, next to the
+    /// cleaning flow they control. Changes apply immediately - there is no save
+    /// button on this page.</summary>
+    private void LoadMonitoring()
+    {
+        _monitorReady = false;
+
+        AgentToggle.IsOn = _settings.BackgroundAgentEnabled;
+        ShowAgentState(_settings.BackgroundAgentEnabled);
+
+        CleanToggle.IsChecked = _settings.CleanOnBrowserExit;
+        var chrome = _settings.FindBrowserMonitor("chrome");
+        var edge = _settings.FindBrowserMonitor("edge");
+        var firefox = _settings.FindBrowserMonitor("firefox");
+        ChromeEnabled.IsChecked = chrome?.Enabled ?? true;
+        ChromeAction.SelectedIndex = ToComboIndex(chrome?.AfterExit ?? ExitAction.CleanAndNotify);
+        EdgeEnabled.IsChecked = edge?.Enabled ?? true;
+        EdgeAction.SelectedIndex = ToComboIndex(edge?.AfterExit ?? ExitAction.CleanAndNotify);
+        FirefoxEnabled.IsChecked = firefox?.Enabled ?? true;
+        FirefoxAction.SelectedIndex = ToComboIndex(firefox?.AfterExit ?? ExitAction.CleanAndNotify);
+        UpdateMonitorHint();
+
+        _monitorReady = true;
+    }
+
+    private async void AgentToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_monitorReady) return;
+        var enabled = AgentToggle.IsOn;
+        _settings.BackgroundAgentEnabled = enabled;
+        await _settings.SaveAsync();
+
+        try { StartupRegistration.SetEnabled(enabled, Environment.ProcessPath ?? string.Empty); }
+        catch { /* startup registration is best-effort */ }
+
+        if (App.Current is App app)
+        {
+            if (enabled) app.StartBackgroundAgent(_settings);
+            else app.StopBackgroundAgent();
+        }
+        ShowAgentState(enabled);
+    }
+
+    private void ShowAgentState(bool enabled)
+    {
+        AgentStatusText.Text = enabled ? "●  Background Agent  ON" : "○  Background Agent  OFF";
+        AgentStatusText.Foreground = new SolidColorBrush(enabled
+            ? global::Windows.UI.Color.FromArgb(255, 0x25, 0x42, 0x39)
+            : global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F));
+    }
+
+    private async void CleanToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_monitorReady) return;
+        _settings.CleanOnBrowserExit = CleanToggle.IsChecked == true;
+        await _settings.SaveAsync();
+        // The agent re-reads settings on every browser exit, so this applies live.
+        UpdateMonitorHint();
+    }
+
+    private async void BrowserMonitor_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_monitorReady) return;
+        ApplyMonitor("chrome", ChromeEnabled, ChromeAction);
+        ApplyMonitor("edge", EdgeEnabled, EdgeAction);
+        ApplyMonitor("firefox", FirefoxEnabled, FirefoxAction);
+        await _settings.SaveAsync();
+        UpdateMonitorHint();
+    }
+
+    private void ApplyMonitor(string id, CheckBox enabled, ComboBox action)
+    {
+        var monitor = _settings.FindBrowserMonitor(id);
+        if (monitor is null)
+        {
+            monitor = new BrowserMonitorSetting { Browser = id };
+            _settings.BrowserMonitors.Add(monitor);
+        }
+        monitor.Enabled = enabled.IsChecked == true;
+        monitor.AfterExit = FromComboIndex(action.SelectedIndex);
+    }
+
+    private static int ToComboIndex(ExitAction action) => action switch
+    {
+        ExitAction.DoNothing => 0,
+        ExitAction.CleanSilently => 1,
+        _ => 2
+    };
+
+    private static ExitAction FromComboIndex(int index) => index switch
+    {
+        0 => ExitAction.DoNothing,
+        1 => ExitAction.CleanSilently,
+        _ => ExitAction.CleanAndNotify
+    };
+
+    private void UpdateMonitorHint()
+    {
+        if (!_settings.CleanOnBrowserExit)
+            MonitoringHint.Text = "Monitoring is off - browser caches are only cleaned when you run it manually here.";
+        else if (!_settings.BackgroundAgentEnabled)
+            MonitoringHint.Text = "Monitoring is on, but the Background Agent is off - turn it on above so exits are detected.";
+        else
+            MonitoringHint.Text = "Caches only. Open browsers are skipped; passwords, bookmarks, cookies, and history are never touched.";
     }
 
     private async Task CheckInterruptedAsync()
@@ -164,6 +273,7 @@ public sealed partial class CleanerPage : Page
                 ? new SecureDeleteOptions(_settings.SecureDeleteMethod, _settings.CustomWipePasses)
                 : null;
             var report = await _service.CleanItemsAsync(selected, secureDelete);
+            _ = new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered);
             StatusText.Text = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
                               $"{AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered, " +
                               $"{report.Skipped.Count:N0} skipped.";

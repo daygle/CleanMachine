@@ -86,6 +86,7 @@ public partial class App : Application
             var cleanup = new BrowserCleanupService();
             var targets = await cleanup.ScanAsync([browser], token: token);
             var result = await cleanup.CleanAsync(targets, requireBrowsersClosed: false, token);
+            _ = new CleanupStatsStore().RecordAsync(result.ItemsRemoved, result.BytesRecovered, token);
 
             var displayName = char.ToUpperInvariant(browser[0]) + browser[1..];
             if (monitor.AfterExit == ExitAction.CleanAndNotify && result.ItemsRemoved > 0)
@@ -141,6 +142,7 @@ public partial class App : Application
 
             _systemMonitorLastRun = DateTimeOffset.UtcNow;
             _systemMonitorArmed = false; // wait for recovery before firing again
+            _ = new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
 
             if (settings.SystemMonitorAction == ExitAction.CleanAndNotify && report.Result.ItemsRemoved > 0)
                 AppNotifications.ShowSystemCleanupComplete(report.Result);

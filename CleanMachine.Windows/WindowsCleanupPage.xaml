@@ -4,7 +4,7 @@
   <Grid RowSpacing="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
@@ -17,7 +17,7 @@
                  Foreground="#89958F" TextWrapping="Wrap"/>
     </StackPanel>
 
-    <Grid Grid.Row="1" ColumnSpacing="14" MaxHeight="470">
+    <Grid Grid.Row="1" ColumnSpacing="14">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="320"/>
         <ColumnDefinition Width="*"/>
@@ -31,16 +31,19 @@
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" Text="ITEMS TO CLEAN" FontSize="10" Foreground="#7F9189" Margin="0,0,0,8"/>
-          <ScrollViewer Grid.Row="1" MaxHeight="410" VerticalScrollBarVisibility="Auto">
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="CategoryPanel" Spacing="2"/>
           </ScrollViewer>
         </Grid>
       </Border>
 
-      <!-- Right box: analysis / cleaning report -->
+      <!-- Right box: analysis / cleaning report. The report list fills the
+           remaining height directly from the Grid cell (a StackPanel would
+           measure it with infinite height and let it overflow the card). -->
       <Border Grid.Column="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14">
         <Grid>
           <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -49,12 +52,10 @@
                      FontSize="16" FontWeight="SemiBold" Foreground="#273630" Margin="0,0,0,4" TextWrapping="Wrap"/>
           <TextBlock Grid.Row="1" x:Name="StatusText" Text="Select items and click Analyze."
                      FontSize="12" Foreground="#6E8178" Margin="0,0,0,8" TextWrapping="Wrap"/>
-          <StackPanel Grid.Row="2">
-            <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed" Margin="0,0,0,8"/>
-            <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
-              <StackPanel x:Name="ReportPanel" Spacing="2"/>
-            </ScrollViewer>
-          </StackPanel>
+          <ProgressBar Grid.Row="2" x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed" Margin="0,0,0,8"/>
+          <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="ReportPanel" Spacing="2"/>
+          </ScrollViewer>
         </Grid>
       </Border>
     </Grid>
@@ -63,7 +64,7 @@
       <Button x:Name="AnalyzeButton" Content="Analyze" Click="Analyze_Click"
               Background="#286E58" Foreground="White" Padding="26,10" HorizontalAlignment="Left"/>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
-        <CheckBox x:Name="SecureDeleteCheck" Content="Secure delete" VerticalAlignment="Center"/>
+        <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete" VerticalAlignment="Center"/>
         <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False" Padding="18,10"/>
         <Button x:Name="CleanButton" Content="Clean" Click="Clean_Click"
                 Background="#286E58" Foreground="White" Padding="26,10"/>

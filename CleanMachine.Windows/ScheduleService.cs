@@ -107,6 +107,32 @@ public sealed class ScheduleService
             }
         }
 
+        if (schedule.CleanAppTempFiles)
+        {
+            try
+            {
+                var appService = new AppCleanupService();
+                var scans = await appService.ScanAllAsync(token);
+                // Reuse the page's "apps with items" rule: nothing to clean, nothing to do.
+                var selection = scans
+                    .Where(s => s.Installed && s.Items.Count > 0)
+                    .SelectMany(s => s.Items.Select((_, index) => (s.Id, index)))
+                    .ToList();
+                if (selection.Count > 0)
+                {
+                    var report = await Task.Run(
+                        () => appService.CleanAsync(selection, secureDelete, token), token);
+                    items += report.Result.ItemsRemoved;
+                    bytes += report.Result.BytesRecovered;
+                    issues.AddRange(report.Skipped.Select(s => $"{s.Path}: {s.Reason}"));
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                issues.Add($"Application cleanup failed: {ex.Message}");
+            }
+        }
+
         if (schedule.RegistryCategories.Count > 0)
         {
             try
@@ -129,6 +155,7 @@ public sealed class ScheduleService
             }
         }
 
+        _ = new CleanupStatsStore().RecordAsync(items, bytes, token);
         await new ActivityStore().AddAsync(new ActivityEntry(
             DateTimeOffset.UtcNow,
             "Scheduled cleanup",
