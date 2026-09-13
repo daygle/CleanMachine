@@ -163,7 +163,7 @@ public sealed partial class InstalledAppsPage : Page
             HorizontalAlignment = HorizontalAlignment.Right
         };
 
-        if (!string.IsNullOrWhiteSpace(app.ModifyCommand) && !app.IsSystemComponent)
+        if (!string.IsNullOrWhiteSpace(app.ModifyCommand) && !app.IsSystemComponent && app.Kind == AppEntryKind.Win32)
         {
             var modifyBtn = new Button
             {
@@ -175,7 +175,7 @@ public sealed partial class InstalledAppsPage : Page
             modifyBtn.Click += OnModify;
             actions.Children.Add(modifyBtn);
         }
-        if (!string.IsNullOrWhiteSpace(app.UninstallCommand) && !app.IsSystemComponent)
+        if (!string.IsNullOrWhiteSpace(app.UninstallCommand) && !app.IsSystemComponent && app.Kind == AppEntryKind.Win32)
         {
             var uninstallBtn = new Button
             {
@@ -186,6 +186,18 @@ public sealed partial class InstalledAppsPage : Page
             };
             uninstallBtn.Click += OnUninstall;
             actions.Children.Add(uninstallBtn);
+        }
+        if (app.Kind == AppEntryKind.Store && !app.IsSystemComponent)
+        {
+            var storeRemoveBtn = new Button
+            {
+                Content = "Uninstall",
+                Padding = new Thickness(14, 5, 14, 5),
+                FontSize = 12,
+                Tag = app
+            };
+            storeRemoveBtn.Click += OnUninstall;
+            actions.Children.Add(storeRemoveBtn);
         }
         Grid.SetColumn(actions, 2);
 
@@ -237,7 +249,9 @@ public sealed partial class InstalledAppsPage : Page
 
         if (!string.IsNullOrWhiteSpace(app.Version))
             AddPart(app.Version);
-        if (!string.IsNullOrWhiteSpace(app.Publisher))            AddPart(app.Publisher, "#53635B");
+        if (app.Kind == AppEntryKind.Store)
+            AddPart("Store", "#4B7769");
+        if (!string.IsNullOrWhiteSpace(app.Publisher)) AddPart(app.Publisher, "#53635B");
         if (app.EstimatedSize is > 0)
             AddPart(FormatBytes(app.EstimatedSize.Value));
         if (!string.IsNullOrWhiteSpace(app.InstallDate))
@@ -268,7 +282,9 @@ public sealed partial class InstalledAppsPage : Page
         var confirm = new ContentDialog
         {
             Title = $"Uninstall {app.Name}?",
-            Content = "This will launch the vendor's own uninstaller. CleanMachine does not perform the removal directly.",
+            Content = app.Kind == AppEntryKind.Store
+                ? "This Microsoft Store package will be removed for the current user."
+                : "This will launch the vendor's own uninstaller. CleanMachine does not perform the removal directly.",
             PrimaryButtonText = "Uninstall",
             CloseButtonText = "Cancel",
             XamlRoot = XamlRoot

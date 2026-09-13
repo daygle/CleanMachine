@@ -3,7 +3,9 @@ using System.Diagnostics;
 
 namespace CleanMachine.Windows;
 
-/// <summary>A single installed application enumerated from the Windows registry.</summary>
+public enum AppEntryKind { Win32, Store }
+
+/// <summary>A single installed application: a Win32 uninstall registry entry or a Microsoft Store package.</summary>
 public sealed record InstalledApp(
     string Name,
     string Version,
@@ -16,9 +18,14 @@ public sealed record InstalledApp(
     string QuietUninstallCommand,
     string ModifyCommand,
     string RegistryKey,
-    string Architecture);
+    string Architecture,
+    AppEntryKind Kind = AppEntryKind.Win32,
+    string PackageFullName = "");
 
-/// <summary>Enumerates all installed applications from the Windows Uninstall registry keys.</summary>
+/// <summary>Enumerates installed applications: Win32 entries from the uninstall
+/// registry keys (both registry views) and Microsoft Store packages from the
+/// deployment API. Uninstall and Modify hand control to the vendor's own
+/// uninstaller; CleanMachine never removes another program's files itself.</summary>
 public sealed class InstalledAppsService
 {
     private static readonly string[] UninstallRoots =
@@ -29,25 +36,26 @@ public sealed class InstalledAppsService
 
     public IReadOnlyList<InstalledApp> Scan()
     {
-        var apps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var results = new List<InstalledApp>();
 
-        // HKLM (all users)
-        ScanHive(RegistryHive.LocalMachine, results, apps);
-
+        // HKLM 64-bit view (all users)
+        ScanHive(RegistryHive.LocalMachine, RegistryView.Registry64, results, seen);
         // HKCU (current user)
-        ScanHive(RegistryHive.CurrentUser, results, apps);
+        ScanHive(RegistryHive.CurrentUser, RegistryView.Default, results, seen);
+        // Store packages
+        CollectStoreApps(results, seen);
 
         return results
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
-    private static void ScanHive(RegistryHive hive, List<InstalledApp> results, HashSet<string> seen)
+    private static void ScanHive(RegistryHive hive, RegistryView view, List<InstalledApp> results, HashSet<string> seen)
     {
         try
         {
-            using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
+            using var root = RegistryKey.OpenBaseKey(hive, view);
             foreach (var rootPath in UninstallRoots)
             {
                 using var key = root.OpenSubKey(rootPath);
@@ -59,16 +67,10 @@ public sealed class InstalledAppsService
 
                     var name = subKey.GetValue("DisplayName") as string;
                     if (string.IsNullOrWhiteSpace(name)) continue;
-                    if (!seen.Add(name)) continue; // deduplicate HKLM + HKCU
 
                     var systemComponent = GetInt(subKey, "SystemComponent") == 1;
                     var releaseType = subKey.GetValue("ReleaseType") as string ?? "";
                     var parentName = subKey.GetValue("ParentDisplayName") as string;
-                    var estimatedSize = GetInt(subKey, "EstimatedSize");
-                    var uninstallCmd = subKey.GetValue("UninstallString") as string ?? "";
-                    var quietUninstallCmd = subKey.GetValue("QuietUninstallString") as string ?? "";
-                    var modifyCmd = subKey.GetValue("ModifyString") as string ?? subKey.GetValue("Modify") as string ?? "";
-                    var publisher = subKey.GetValue("Publisher") as string ?? "";
 
                     // Skip hidden Windows updates and patch packages
                     if (string.Equals(releaseType, "Update", StringComparison.OrdinalIgnoreCase)
@@ -78,6 +80,19 @@ public sealed class InstalledAppsService
                     // Skip child entries (they appear under their parent)
                     if (!string.IsNullOrWhiteSpace(parentName)) continue;
 
+                    // Deduplicate: the same app can appear in both views/hives.
+                    var version = subKey.GetValue("DisplayVersion") as string ?? "";
+                    if (!seen.Add($"{name}|{version}")) continue;
+
+                    var estimatedSize = GetInt(subKey, "EstimatedSize");
+                    var uninstallCmd = subKey.GetValue("UninstallString") as string ?? "";
+                    var quietUninstallCmd = subKey.GetValue("QuietUninstallString") as string ?? "";
+                    var modifyCmd = subKey.GetValue("ModifyPath") as string
+                        ?? subKey.GetValue("ModifyString") as string
+                        ?? subKey.GetValue("Modify") as string
+                        ?? "";
+                    var publisher = subKey.GetValue("Publisher") as string ?? "";
+
                     var arch = rootPath.Contains("Wow6432Node", StringComparison.OrdinalIgnoreCase)
                         ? "32-bit"
                         : DetectArchitecture(subKey);
@@ -86,7 +101,7 @@ public sealed class InstalledAppsService
 
                     results.Add(new InstalledApp(
                         CleanName(name),
-                        subKey.GetValue("DisplayVersion") as string ?? "",
+                        version,
                         CleanPublisher(publisher),
                         FormatInstallDate(installDate),
                         estimatedSize > 0 ? estimatedSize * 1024L : null,
@@ -101,6 +116,48 @@ public sealed class InstalledAppsService
             }
         }
         catch { /* inaccessible hive – skip silently */ }
+    }
+
+    private static void CollectStoreApps(List<InstalledApp> results, HashSet<string> seen)
+    {
+        try
+        {
+            var manager = new global::Windows.Management.Deployment.PackageManager();
+            var packages = manager.FindPackagesForUser(string.Empty);
+            foreach (var package in packages)
+            {
+                try
+                {
+                    var name = package.DisplayName;
+                    if (string.IsNullOrWhiteSpace(name)) name = package.Id.Name;
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    if (!seen.Add($"{name}|Store")) continue;
+
+                    var version = package.Id.Version;
+                    results.Add(new InstalledApp(
+                        Name: name,
+                        Version: $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}",
+                        Publisher: CleanPublisher(package.Id.Publisher ?? ""),
+                        InstallDate: null,
+                        EstimatedSize: null,
+                        IsSystemComponent: package.IsFramework || package.IsResourcePackage,
+                        IsProtected: false,
+                        UninstallCommand: "",
+                        QuietUninstallCommand: "",
+                        ModifyCommand: "",
+                        RegistryKey: $"Store\\{package.Id.FullName}",
+                        Architecture: "Store",
+                        Kind: AppEntryKind.Store,
+                        PackageFullName: package.Id.FullName));
+                }
+                catch { /* a malformed package entry is skipped */ }
+            }
+        }
+        catch
+        {
+            // Store enumeration can fail in restricted environments; the Win32
+            // list is still shown.
+        }
     }
 
     /// <summary>Cleans up display names: strips GUID suffixes, normalizes whitespace.</summary>
@@ -167,7 +224,6 @@ public sealed class InstalledAppsService
         var installer = GetInt(subKey, "WindowsInstaller");
         if (installer == 1) return "MSI";
 
-        // Check for the "架构" pattern in the key name or other hints
         return "";
     }
 
@@ -193,41 +249,93 @@ public sealed class InstalledAppsService
     /// <summary>Launches the modify installer for the given app.</summary>
     public bool LaunchModify(InstalledApp app)
     {
+        if (app.Kind == AppEntryKind.Store) return false;
+
         var cmd = app.ModifyCommand;
         if (string.IsNullOrWhiteSpace(cmd)) return false;
 
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = cmd,
-                UseShellExecute = true,
-                Verb = "runas"
-            };
-            Process.Start(psi);
-            return true;
-        }
-        catch { return false; }
+        return LaunchCommand(cmd);
     }
 
-    /// <summary>Launches the uninstaller for the given app. Returns true if started.</summary>
+    /// <summary>Launches the uninstaller for the given app. Returns true if started.
+    /// Store packages are removed through the deployment API.</summary>
     public bool LaunchUninstall(InstalledApp app, bool quiet = false)
     {
+        if (app.Kind == AppEntryKind.Store)
+        {
+            try
+            {
+                var manager = new global::Windows.Management.Deployment.PackageManager();
+                var package = manager.FindPackagesForUser(string.Empty)
+                    .FirstOrDefault(p => p.Id.FullName == app.PackageFullName);
+                if (package is null) return false;
+                manager.RemovePackageAsync(package.Id.FullName).AsTask().GetAwaiter().GetResult();
+                return true;
+            }
+            catch { return false; }
+        }
+
         var cmd = quiet && !string.IsNullOrWhiteSpace(app.QuietUninstallCommand)
             ? app.QuietUninstallCommand
             : app.UninstallCommand;
 
         if (string.IsNullOrWhiteSpace(cmd)) return false;
 
+        return LaunchCommand(cmd);
+    }
+
+    /// <summary>Starts a vendor command, splitting executable path from arguments
+    /// correctly for both quoted and unquoted command strings.</summary>
+    private static bool LaunchCommand(string command)
+    {
         try
         {
-            var psi = new ProcessStartInfo
+            var trimmed = command.Trim();
+            string fileName;
+            string arguments = "";
+
+            if (trimmed.StartsWith('"'))
             {
-                FileName = cmd,
-                UseShellExecute = true,
-                Verb = "runas"
-            };
-            Process.Start(psi);
+                var end = trimmed.IndexOf('"', 1);
+                if (end < 0) return false;
+                fileName = trimmed[1..end];
+                arguments = trimmed[(end + 1)..].Trim();
+            }
+            else
+            {
+                var space = trimmed.IndexOf(' ');
+                if (space < 0)
+                {
+                    fileName = trimmed;
+                }
+                else
+                {
+                    // Prefer the longest prefix that exists as a file (handles
+                    // unquoted "C:\Program Files\..." paths with spaces).
+                    fileName = trimmed[..space];
+                    var searchEnd = trimmed.Length;
+                    while (space > 0)
+                    {
+                        var candidate = trimmed[..space];
+                        if (File.Exists(candidate)) { fileName = candidate; break; }
+                        var next = trimmed.IndexOf(' ', space + 1);
+                        if (next < 0 || next >= searchEnd) break;
+                        space = next;
+                    }
+                    arguments = trimmed[fileName.Length..].Trim();
+                }
+            }
+
+            if (fileName.Length == 0) return false;
+
+            // Let the shell resolve the rest (e.g. msiexec, rundll32 templates).
+            if (!Path.IsPathRooted(fileName) && !File.Exists(fileName))
+            {
+                Process.Start(new ProcessStartInfo(trimmed) { UseShellExecute = true });
+                return true;
+            }
+
+            Process.Start(new ProcessStartInfo(fileName, arguments) { UseShellExecute = true });
             return true;
         }
         catch { return false; }

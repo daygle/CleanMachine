@@ -4,7 +4,7 @@
   <Grid RowSpacing="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
@@ -43,18 +43,17 @@
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" x:Name="ReportHeadline" Text="No analysis performed yet."
                      FontSize="16" FontWeight="SemiBold" Foreground="#273630" Margin="0,0,0,4" TextWrapping="Wrap"/>
           <TextBlock Grid.Row="1" x:Name="StatusText" Text="Select items and click Analyze."
                      FontSize="12" Foreground="#6E8178" Margin="0,0,0,8" TextWrapping="Wrap"/>
-          <StackPanel Grid.Row="2">
-            <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed" Margin="0,0,0,8"/>
-            <ScrollViewer x:Name="ReportScroller" MaxHeight="420" VerticalScrollBarVisibility="Auto">
-              <StackPanel x:Name="ReportPanel" Spacing="2"/>
-            </ScrollViewer>
-          </StackPanel>
+          <ProgressBar Grid.Row="2" x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed" Margin="0,0,0,8"/>
+          <ScrollViewer Grid.Row="3" x:Name="ReportScroller" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="ReportPanel" Spacing="2"/>
+          </ScrollViewer>
         </Grid>
       </Border>
     </Grid>
@@ -63,7 +62,7 @@
       <Button x:Name="AnalyzeButton" Content="Analyze" Click="Analyze_Click"
               Background="#286E58" Foreground="White" Padding="26,10" HorizontalAlignment="Left"/>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
-        <CheckBox x:Name="SecureDeleteCheck" Content="Secure delete" VerticalAlignment="Center"/>
+        <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete" VerticalAlignment="Center"/>
         <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False" Padding="18,10"/>
         <Button x:Name="CleanButton" Content="Clean" Click="Clean_Click"
                 Background="#286E58" Foreground="White" Padding="26,10"/>

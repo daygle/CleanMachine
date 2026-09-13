@@ -11,7 +11,10 @@ public sealed record StartupEntry(
     StartupSource Source,
     bool Enabled,
     string Section,
-    bool IsOrphan = false);
+    bool IsOrphan = false,
+    string RegistryPath = "",
+    string ValueName = "",
+    string? FilePath = null);
 
 public enum StartupSource
 {
@@ -20,13 +23,22 @@ public enum StartupSource
     StartupFolder
 }
 
-/// <summary>Enumerates and manages Windows startup entries from the Run keys and
-/// the per-user and all-users Startup folders.</summary>
+/// <summary>Enumerates and manages Windows startup entries from the Run and RunOnce
+/// keys and the per-user and all-users Startup folders. Enable/disable uses the
+/// Explorer StartupApproved convention (the same one Task Manager uses), so changes
+/// made here are visible in Task Manager and vice versa. Disabling a startup-folder
+/// file also uses the StartupApproved\StartupFolder key rather than renaming, so the
+/// file itself is never touched.</summary>
 public sealed class StartupAppsService
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunOnceKey = @"Software\Microsoft\Windows\CurrentVersion\RunOnce";
     private const string ExplorerRunKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+    private const string ExplorerRunOnceKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\RunOnce";
+    private const string ExplorerStartupFolderKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
+
+    /// <summary>Binary value Explorer writes for a disabled entry (first byte odd).</summary>
+    private static readonly byte[] DisabledApproval = [0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     public IReadOnlyList<StartupEntry> Scan()
     {
@@ -42,38 +54,50 @@ public sealed class StartupAppsService
         try
         {
             using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
-            using var runKey = root.OpenSubKey(RunKey);
-            if (runKey is null) return;
-
-            foreach (var valueName in runKey.GetValueNames())
+            foreach (var (keyPath, approvalPath) in new[] { (RunKey, ExplorerRunKey), (RunOnceKey, ExplorerRunOnceKey) })
             {
-                if (string.IsNullOrWhiteSpace(valueName)) continue;
-                var command = runKey.GetValue(valueName) as string ?? "";
-                var exePath = ResolveExecutable(command);
-                var enabled = IsRegistryEntryEnabled(root, valueName);
-                var isOrphan = exePath is not null && !File.Exists(exePath);
-                entries.Add(new StartupEntry(
-                    FriendlyName(valueName),
-                    command,
-                    exePath,
-                    source,
-                    enabled,
-                    section,
-                    isOrphan));
+                using var runKey = root.OpenSubKey(keyPath);
+                if (runKey is null) continue;
+
+                foreach (var valueName in runKey.GetValueNames())
+                {
+                    if (string.IsNullOrWhiteSpace(valueName)) continue;
+                    try
+                    {
+                        if (runKey.GetValueKind(valueName) is not (RegistryValueKind.String or RegistryValueKind.ExpandString)) continue;
+                    }
+                    catch { continue; }
+
+                    var command = runKey.GetValue(valueName) as string ?? "";
+                    if (string.IsNullOrWhiteSpace(command)) continue;
+                    var exePath = ResolveExecutable(command);
+                    var enabled = IsRegistryEntryEnabled(root, approvalPath, valueName);
+                    var isOrphan = exePath is not null && !File.Exists(exePath);
+                    entries.Add(new StartupEntry(
+                        FriendlyName(valueName),
+                        command,
+                        exePath,
+                        source,
+                        enabled,
+                        section,
+                        isOrphan,
+                        RegistryPath: $"{(hive == RegistryHive.LocalMachine ? "HKLM" : "HKCU")}\\{keyPath}",
+                        ValueName: valueName));
+                }
             }
         }
         catch { /* inaccessible hive – skip silently */ }
     }
 
-    private static bool IsRegistryEntryEnabled(RegistryKey root, string valueName)
+    private static bool IsRegistryEntryEnabled(RegistryKey root, string approvalPath, string valueName)
     {
-        // The StartupApproved\Run key stores a binary value where the first byte
-        // determines enabled (0x02 or 0x06) vs disabled (0x03).
+        // The StartupApproved key stores a binary value where the first byte
+        // determines enabled (even) vs disabled (odd).
         try
         {
-            using var approved = root.OpenSubKey(ExplorerRunKey);
+            using var approved = root.OpenSubKey(approvalPath);
             if (approved?.GetValue(valueName) is byte[] data && data.Length >= 1)
-                return data[0] is 0x02 or 0x06;
+                return (data[0] & 1) == 0;
         }
         catch { /* fall through */ }
 
@@ -86,9 +110,7 @@ public sealed class StartupAppsService
         var folders = new[]
         {
             Environment.GetFolderPath(Environment.SpecialFolder.Startup),
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                @"Microsoft\Windows\Start Menu\Programs\Startup")
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup)
         };
 
         foreach (var folder in folders)
@@ -100,20 +122,36 @@ public sealed class StartupAppsService
                 var ext = Path.GetExtension(file).ToLowerInvariant();
                 // Only include executables and shortcuts; skip desktop.ini etc.
                 if (ext is not (".exe" or ".lnk" or ".bat" or ".cmd" or ".vbs" or ".ps1")) continue;
+                var enabled = IsFolderEntryEnabled(Path.GetFileName(file));
                 entries.Add(new StartupEntry(
                     name,
                     file,
                     ext == ".exe" ? file : null,
                     source,
-                    true,
-                    section));
+                    enabled,
+                    section,
+                    FilePath: file));
             }
         }
     }
 
+    private static bool IsFolderEntryEnabled(string fileName)
+    {
+        try
+        {
+            using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+            using var approved = root.OpenSubKey(ExplorerStartupFolderKey);
+            if (approved?.GetValue(fileName) is byte[] data && data.Length >= 1)
+                return (data[0] & 1) == 0;
+        }
+        catch { /* fall through */ }
+        return true;
+    }
+
     /// <summary>Disables or enables a startup entry. For registry entries this
-    /// toggles the StartupApproved value; for startup folder entries it renames
-    /// the file with a leading dot to hide it from Explorer.</summary>
+    /// toggles the StartupApproved value (per-user when possible); for startup
+    /// folder entries it toggles the StartupApproved\StartupFolder flag so the
+    /// file itself is never modified.</summary>
     public bool ToggleEnabled(StartupEntry entry, bool enable)
     {
         if (entry.Source is StartupSource.StartupFolder)
@@ -125,104 +163,103 @@ public sealed class StartupAppsService
     {
         try
         {
-            var hive = entry.Source == StartupSource.RegistryCurrentUser
-                ? RegistryHive.CurrentUser
-                : RegistryHive.LocalMachine;
+            // Current-user entries (and HKLM entries flagged per-user via
+            // StartupApproved under HKCU) are toggled without elevation.
+            using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+            using var approved = root.OpenSubKey(entry.RegistryPath.EndsWith("RunOnce", StringComparison.Ordinal)
+                ? ExplorerRunOnceKey : ExplorerRunKey, writable: true)
+                ?? root.CreateSubKey(entry.RegistryPath.EndsWith("RunOnce", StringComparison.Ordinal)
+                    ? ExplorerRunOnceKey : ExplorerRunKey, writable: true);
+            if (approved is null) return false;
 
-            using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
-            using var approved = root.OpenSubKey(ExplorerRunKey, writable: true);
-
-            // Find the original value name from the command (reverse-engineer from the friendly display).
-            var valueName = FindOriginalValueName(root, entry);
-            if (valueName is null) return false;
+            var valueName = entry.ValueName;
+            if (string.IsNullOrEmpty(valueName)) return false;
 
             if (enable)
-            {
-                // Delete the StartupApproved entry so the Run value is active again.
-                approved?.DeleteValue(valueName, false);
-            }
+                approved.DeleteValue(valueName, throwOnMissingValue: false);
             else
-            {
-                // Write a disabled marker (0x03).
-                approved?.SetValue(valueName, new byte[] { 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, RegistryValueKind.Binary);
-            }
+                approved.SetValue(valueName, DisabledApproval, RegistryValueKind.Binary);
             return true;
         }
-        catch { return false; }
-    }
-
-    private static string? FindOriginalValueName(RegistryKey root, StartupEntry entry)
-    {
-        using var runKey = root.OpenSubKey(RunKey);
-        if (runKey is null) return null;
-        foreach (var name in runKey.GetValueNames())
+        catch
         {
-            var cmd = runKey.GetValue(name) as string ?? "";
-            if (string.Equals(FriendlyName(name), entry.Name, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(cmd, entry.Command, StringComparison.OrdinalIgnoreCase))
-                return name;
+            // HKLM values may deny write access to the per-user approval key is
+            // not the issue — the approval key is always under HKCU, so failures
+            // here are unexpected; report failure so the UI can revert the toggle.
+            return false;
         }
-        return null;
     }
 
     private static bool ToggleFolderEntry(StartupEntry entry, bool enable)
     {
         try
         {
-            var path = entry.Command;
-            if (!File.Exists(path) && !enable)
-            {
-                // Check for the dotted version.
-                var dotted = DotPath(path);
-                if (File.Exists(dotted)) path = dotted;
-                else return false;
-            }
+            var fileName = Path.GetFileName(entry.FilePath ?? entry.Command);
+            using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+            using var approved = root.CreateSubKey(ExplorerStartupFolderKey, writable: true);
+            if (approved is null || string.IsNullOrEmpty(fileName)) return false;
 
             if (enable)
-            {
-                var dotted = DotPath(path);
-                if (File.Exists(dotted) && !File.Exists(path))
-                    File.Move(dotted, path);
-            }
+                approved.DeleteValue(fileName, throwOnMissingValue: false);
             else
-            {
-                if (File.Exists(path) && !File.Exists(DotPath(path)))
-                    File.Move(path, DotPath(path));
-            }
+                approved.SetValue(fileName, DisabledApproval, RegistryValueKind.Binary);
             return true;
         }
         catch { return false; }
     }
 
-    private static string DotPath(string path) => Path.Combine(Path.GetDirectoryName(path) ?? ".", "." + Path.GetFileName(path));
-
     /// <summary>Removes a startup entry entirely: deletes the registry value or
-    /// deletes the file from the startup folder.</summary>
-    public bool Remove(StartupEntry entry)
+    /// deletes the file from the startup folder. All-users entries require
+    /// administrator rights and are refused with a clear message rather than
+    /// attempted silently.</summary>
+    public bool Remove(StartupEntry entry, out string? error)
     {
+        error = null;
+
         if (entry.Source is StartupSource.StartupFolder)
         {
-            try { File.Delete(entry.Command); return true; } catch { return false; }
+            var path = entry.FilePath ?? entry.Command;
+            if (path.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup), StringComparison.OrdinalIgnoreCase))
+            {
+                error = "Administrator rights are required to remove entries from the all-users startup folder. Disable it instead, or run CleanMachine as administrator.";
+                return false;
+            }
+            try
+            {
+                File.Delete(path);
+                try
+                {
+                    using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+                    using var approved = root.OpenSubKey(ExplorerStartupFolderKey, writable: true);
+                    approved?.DeleteValue(Path.GetFileName(path), throwOnMissingValue: false);
+                }
+                catch { /* approval cleanup is best-effort */ }
+                return true;
+            }
+            catch (Exception ex) { error = ex.Message; return false; }
+        }
+
+        if (entry.Source is StartupSource.RegistryLocalMachine)
+        {
+            error = "Administrator rights are required to remove entries that apply to all users. Disable it instead, or run CleanMachine as administrator.";
+            return false;
         }
 
         try
         {
-            var hive = entry.Source == StartupSource.RegistryCurrentUser
-                ? RegistryHive.CurrentUser
-                : RegistryHive.LocalMachine;
-            using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
+            using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64);
+            var keyPath = entry.RegistryPath.EndsWith("RunOnce", StringComparison.Ordinal) ? RunOnceKey : RunKey;
+            var valueName = entry.ValueName;
+            if (string.IsNullOrEmpty(valueName)) return false;
 
-            var valueName = FindOriginalValueName(root, entry);
-            if (valueName is null) return false;
-
-            using (var runKey = root.OpenSubKey(RunKey, writable: true))
-                runKey?.DeleteValue(valueName, false);
-            using (var approved = root.OpenSubKey(ExplorerRunKey, writable: true))
-                approved?.DeleteValue(valueName, false);
+            using (var runKey = root.OpenSubKey(keyPath, writable: true))
+                runKey?.DeleteValue(valueName, throwOnMissingValue: false);
+            using (var approved = root.OpenSubKey(keyPath.EndsWith("RunOnce", StringComparison.Ordinal) ? ExplorerRunOnceKey : ExplorerRunKey, writable: true))
+                approved?.DeleteValue(valueName, throwOnMissingValue: false);
 
             return true;
         }
-        catch { return false; }
+        catch (Exception ex) { error = ex.Message; return false; }
     }
 
     /// <summary>Strips the GUID suffix that Windows appends to UWP / packaged app

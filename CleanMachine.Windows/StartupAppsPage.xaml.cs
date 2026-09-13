@@ -249,20 +249,33 @@ public sealed partial class StartupAppsPage : Page
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
 
-        var success = await Task.Run(() => _service.Remove(entry));
-        if (success)
+        var success = false;
+        string? error = null;
+        try { success = _service.Remove(entry, out error); }
+        catch (Exception ex) { error = ex.Message; }
+        if (!success)
         {
-            // Re-scan to refresh the list
-            ScanButton.IsEnabled = false;
-            try
+            var failure = new ContentDialog
             {
-                _entries = await Task.Run(() => _service.Scan());
-                RenderEntries();
-            }
-            finally
-            {
-                ScanButton.IsEnabled = true;
-            }
+                Title = "Could not remove entry",
+                Content = error ?? "The entry could not be removed.",
+                CloseButtonText = "OK",
+                XamlRoot = XamlRoot
+            };
+            await failure.ShowAsync();
+            return;
+        }
+
+        // Re-scan to refresh the list
+        ScanButton.IsEnabled = false;
+        try
+        {
+            _entries = await Task.Run(() => _service.Scan());
+            RenderEntries();
+        }
+        finally
+        {
+            ScanButton.IsEnabled = true;
         }
     }
 }
