@@ -212,9 +212,10 @@ public sealed class CleanAllService
             }
         }
 
-        // One stats entry and one activity entry for the whole run. Recorded with a
-        // fresh token so a cancelled run still keeps its partial results.
-        _ = new CleanupStatsStore().RecordAsync(items, bytes);
+        // One stats entry and one activity entry for the whole run. Awaited with a
+        // fresh (uncancellable) token so a cancelled run still keeps its partial
+        // results, and so the write is guaranteed to finish before we return.
+        await new CleanupStatsStore().RecordAsync(items, bytes, CancellationToken.None);
         await new ActivityStore().AddAsync(new ActivityEntry(
             DateTimeOffset.UtcNow,
             "Clean All",

@@ -235,10 +235,13 @@ public sealed class BrowserCleanupService
             if (File.Exists(path))
             {
                 var length = new FileInfo(path).Length;
-                if (secureDelete is not null)
-                    _ = SecureDeleteService.SecureDeleteFileAsync(path, secureDelete).GetAwaiter().GetResult();
-                else
-                    File.Delete(path);
+                if (secureDelete is not null
+                    && !SecureDeleteService.SecureDeleteFileAsync(path, secureDelete).GetAwaiter().GetResult())
+                {
+                    skipped.Add(new CleanupIssue(path, "Protected, locked, or empty - not securely deleted"));
+                    return (0, 0, skipped);
+                }
+                if (secureDelete is null) File.Delete(path);
                 return (1, length, skipped);
             }
             if (!Directory.Exists(path)) return (0, 0, skipped);
@@ -248,10 +251,13 @@ public sealed class BrowserCleanupService
                 try
                 {
                     var length = new FileInfo(file).Length;
-                    if (secureDelete is not null)
-                        _ = SecureDeleteService.SecureDeleteFileAsync(file, secureDelete).GetAwaiter().GetResult();
-                    else
-                        File.Delete(file);
+                    if (secureDelete is not null
+                        && !SecureDeleteService.SecureDeleteFileAsync(file, secureDelete).GetAwaiter().GetResult())
+                    {
+                        skipped.Add(new CleanupIssue(file, "Protected, locked, or empty - not securely deleted"));
+                        continue;
+                    }
+                    if (secureDelete is null) File.Delete(file);
                     removed++;
                     bytes += length;
                 }

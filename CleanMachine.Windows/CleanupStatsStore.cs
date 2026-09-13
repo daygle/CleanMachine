@@ -64,8 +64,14 @@ public sealed class CleanupStatsStore
     {
         var stats = await new CleanupStatsStore().LoadAsync(token);
         var cutoff = DateTimeOffset.UtcNow.AddDays(-RecentWindowDays);
-        return (stats.Runs.Where(r => r.Time >= cutoff).Sum(r => r.ItemsRemoved),
-                stats.Runs.Where(r => r.Time >= cutoff).Sum(r => r.BytesRecovered));
+        long items = 0, bytes = 0;
+        foreach (var run in stats.Runs)
+        {
+            if (run.Time < cutoff) continue;
+            items += run.ItemsRemoved;
+            bytes += run.BytesRecovered;
+        }
+        return (items, bytes);
     }
 
     private static async Task SaveAsync(CleanupStatsFile stats, CancellationToken token)

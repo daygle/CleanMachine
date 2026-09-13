@@ -138,12 +138,13 @@ public sealed class WindowsCleanupService
                 try
                 {
                     var length = new FileInfo(file).Length;
+                    var deleted = true;
                     if (options.SecureDelete && options.SecureDeleteOptions is not null)
-                        await SecureDeleteService.SecureDeleteFileAsync(file, options.SecureDeleteOptions, cancellationToken);
+                        deleted = await SecureDeleteService.SecureDeleteFileAsync(file, options.SecureDeleteOptions, cancellationToken);
                     else
                         File.Delete(file);
-                    removed++;
-                    recovered += length;
+                    if (deleted) { removed++; recovered += length; }
+                    else issues.Add(new(file, "Protected, locked, or empty - not securely deleted"));
                 }
                 catch (IOException) { issues.Add(new(file, "Locked or unavailable")); }
                 catch (UnauthorizedAccessException) { issues.Add(new(file, "Access denied (administrator may be required)")); }
@@ -156,17 +157,16 @@ public sealed class WindowsCleanupService
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var before = CountRegistryValues(category.Path!);
                 using var key = Registry.CurrentUser.OpenSubKey(category.Path!, writable: true);
                 if (key is null) { issues.Add(new(category.Path!, "Registry key not found")); continue; }
                 var names = key.GetValueNames();
+                if (names.Length == 0) { issues.Add(new(category.Path!, "Nothing to clean")); continue; }
                 foreach (var name in names)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     key.DeleteValue(name, throwOnMissingValue: false);
                     removed++;
                 }
-                if (before == 0) issues.Add(new(category.Path!, "Nothing to clean"));
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
             {

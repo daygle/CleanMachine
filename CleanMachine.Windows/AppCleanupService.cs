@@ -61,10 +61,13 @@ public sealed class AppCleanupService
                                 var info = new FileInfo(file);
                                 if (info.IsReadOnly) { skipped.Add(new(file, "Read-only")); continue; }
                                 var len = info.Length;
-                                if (secureDelete is not null)
-                                    _ = SecureDeleteService.SecureDeleteFileAsync(file, secureDelete, token).GetAwaiter().GetResult();
-                                else
-                                    File.Delete(file);
+                                if (secureDelete is not null
+                                    && !SecureDeleteService.SecureDeleteFileAsync(file, secureDelete, token).GetAwaiter().GetResult())
+                                {
+                                    skipped.Add(new(file, "Protected, locked, or empty - not securely deleted"));
+                                    continue;
+                                }
+                                if (secureDelete is null) File.Delete(file);
                                 removed++;
                                 bytes += len;
                             }
@@ -79,10 +82,13 @@ public sealed class AppCleanupService
                         var info = new FileInfo(item.FullPath);
                         if (info.IsReadOnly) { skipped.Add(new(item.FullPath, "Read-only")); continue; }
                         var len = info.Length;
-                        if (secureDelete is not null)
-                            _ = SecureDeleteService.SecureDeleteFileAsync(item.FullPath, secureDelete, token).GetAwaiter().GetResult();
-                        else
-                            File.Delete(item.FullPath);
+                        if (secureDelete is not null
+                            && !SecureDeleteService.SecureDeleteFileAsync(item.FullPath, secureDelete, token).GetAwaiter().GetResult())
+                        {
+                            skipped.Add(new(item.FullPath, "Protected, locked, or empty - not securely deleted"));
+                            continue;
+                        }
+                        if (secureDelete is null) File.Delete(item.FullPath);
                         removed++;
                         bytes += len;
                     }

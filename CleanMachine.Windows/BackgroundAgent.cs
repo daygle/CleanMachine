@@ -29,7 +29,10 @@ public sealed class BackgroundAgent : IDisposable
         Func<CancellationToken, Task>? onTick = null)
     {
         _pollInterval = pollInterval ?? TimeSpan.FromSeconds(5);
-        _onBrowserExit = onBrowserExit ?? ((_, token) => new CleanupService().CleanSelectedBrowsersAsync(token));
+        // Real callers always pass a handler (see App.OnBrowserExitAsync); the default
+        // is an explicit no-op so an agent constructed without one does nothing rather
+        // than silently invoking a placeholder that never cleaned anything.
+        _onBrowserExit = onBrowserExit ?? ((_, _) => Task.CompletedTask);
         _onTick = onTick;
         _timer = new PeriodicTimer(_pollInterval);
     }
