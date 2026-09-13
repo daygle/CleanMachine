@@ -36,19 +36,7 @@ public sealed partial class AppCleanupPage : Page
                 return;
             }
 
-            foreach (var group in installed.GroupBy(s => s.Group))
-            {
-                AppListPanel.Children.Add(new TextBlock
-                {
-                    Text = $"{group.Key.ToUpperInvariant()} ({group.Count()})",
-                    FontSize = 11,
-                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69)),
-                    Margin = new Thickness(0, 10, 0, 4)
-                });
-
-                foreach (var scan in group)
-                    AppListPanel.Children.Add(BuildAppCard(scan));
-            }
+            RenderAppList(installed);
 
             var totalItems = installed.Sum(s => s.Items.Count);
             var totalBytes = installed.Sum(s => s.Items.Sum(i => i.Bytes));
@@ -64,6 +52,41 @@ public sealed partial class AppCleanupPage : Page
             ScanButton.IsEnabled = true;
             Progress.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private void RenderAppList(IReadOnlyList<AppScan> installed)
+    {
+        var showClean = ShowCleanCheck.IsChecked == true;
+        var visible = showClean ? installed : installed.Where(s => s.Items.Count > 0).ToList();
+
+        AppListPanel.Children.Clear();
+        _itemBoxes.Clear();
+        DetailHeadline.Text = "Select an application";
+        StatusText.Text = visible.Count == 0
+            ? "All apps are clean. Check 'Show Clean' to see them."
+            : $"{visible.Count} app(s) with cleanable files.";
+        DetailPanel.Children.Clear();
+
+        foreach (var group in visible.GroupBy(s => s.Group))
+        {
+            AppListPanel.Children.Add(new TextBlock
+            {
+                Text = $"{group.Key.ToUpperInvariant()} ({group.Count()})",
+                FontSize = 11,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69)),
+                Margin = new Thickness(0, 10, 0, 4)
+            });
+
+            foreach (var scan in group)
+                AppListPanel.Children.Add(BuildAppCard(scan));
+        }
+    }
+
+    private void Filter_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_lastScans.Count == 0) return;
+        var installed = _lastScans.Where(s => s.Installed).ToList();
+        RenderAppList(installed);
     }
 
     private Expander BuildAppCard(AppScan scan)
@@ -86,7 +109,7 @@ public sealed partial class AppCleanupPage : Page
         var totalBytes = scan.Items.Sum(i => i.Bytes);
         header.Children.Add(new TextBlock
         {
-            Text = totalBytes > 0 ? WindowsCleanupPage.FormatBytes(totalBytes) : "clean",
+            Text = totalBytes > 0 ? WindowsCleanupPage.FormatBytes(totalBytes) : "Clean",
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69))
@@ -107,6 +130,7 @@ public sealed partial class AppCleanupPage : Page
         for (var i = 0; i < scan.Items.Count; i++)
         {
             var item = scan.Items[i];
+            var itemIndex = i;
             var text = new StackPanel { Spacing = 0 };
             text.Children.Add(new TextBlock
             {
@@ -129,6 +153,7 @@ public sealed partial class AppCleanupPage : Page
                 MinHeight = 30,
                 Tag = (scan.Id, i)
             };
+            box.Click += (_, _) => OnItemClicked(scan, itemIndex);
             ToolTipService.SetToolTip(box, item.FullPath);
             _itemBoxes.Add((scan.Id, i, box));
             content.Children.Add(box);
@@ -136,6 +161,96 @@ public sealed partial class AppCleanupPage : Page
 
         expander.Content = content;
         return expander;
+    }
+
+    private void OnItemClicked(AppScan scan, int itemIndex)
+    {
+        var item = scan.Items.ElementAtOrDefault(itemIndex);
+        if (item is null) return;
+
+        DetailHeadline.Text = $"{scan.Name} — {item.Description}";
+        StatusText.Text = $"{item.FileCount:N0} file(s), {WindowsCleanupPage.FormatBytes(item.Bytes)}";
+        DetailPanel.Children.Clear();
+
+        try
+        {
+            if (Directory.Exists(item.FullPath))
+            {
+                var files = Directory.EnumerateFiles(item.FullPath, "*", SearchOption.AllDirectories)
+                    .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                    .Take(200)
+                    .ToList();
+
+                foreach (var file in files)
+                {
+                    var info = new FileInfo(file);
+                    var relPath = file[item.FullPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 2, 0, 2) };
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = relPath,
+                        FontSize = 11,
+                        Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        MaxWidth = 260
+                    });
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = WindowsCleanupPage.FormatBytes(info.Length),
+                        FontSize = 10,
+                        Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                    DetailPanel.Children.Add(row);
+                }
+
+                if (item.FileCount > 200)
+                {
+                    DetailPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"…and {item.FileCount - 200:N0} more file(s)",
+                        FontSize = 11,
+                        Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+                        Margin = new Thickness(0, 6, 0, 0)
+                    });
+                }
+            }
+            else if (File.Exists(item.FullPath))
+            {
+                var info = new FileInfo(item.FullPath);
+                DetailPanel.Children.Add(new TextBlock
+                {
+                    Text = $"{item.FullPath}",
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
+                    TextWrapping = TextWrapping.Wrap
+                });
+                DetailPanel.Children.Add(new TextBlock
+                {
+                    Text = WindowsCleanupPage.FormatBytes(info.Length),
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+                });
+            }
+            else
+            {
+                DetailPanel.Children.Add(new TextBlock
+                {
+                    Text = "Path not found",
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D))
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            DetailPanel.Children.Add(new TextBlock
+            {
+                Text = $"Unable to list files: {ex.Message}",
+                FontSize = 11,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D))
+            });
+        }
     }
 
     private async void Clean_Click(object sender, RoutedEventArgs e)

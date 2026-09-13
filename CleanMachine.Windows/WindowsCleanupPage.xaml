@@ -17,7 +17,7 @@
                  Foreground="#89958F" TextWrapping="Wrap"/>
     </StackPanel>
 
-    <Grid Grid.Row="1" ColumnSpacing="14" MaxHeight="470">
+    <Grid Grid.Row="1" ColumnSpacing="14">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="320"/>
         <ColumnDefinition Width="*"/>
@@ -31,7 +31,7 @@
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" Text="ITEMS TO CLEAN" FontSize="10" Foreground="#7F9189" Margin="0,0,0,8"/>
-          <ScrollViewer Grid.Row="1" MaxHeight="410" VerticalScrollBarVisibility="Auto">
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="CategoryPanel" Spacing="2"/>
           </ScrollViewer>
         </Grid>
@@ -51,7 +51,7 @@
                      FontSize="12" Foreground="#6E8178" Margin="0,0,0,8" TextWrapping="Wrap"/>
           <StackPanel Grid.Row="2">
             <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed" Margin="0,0,0,8"/>
-            <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
+            <ScrollViewer x:Name="ReportScroller" MaxHeight="420" VerticalScrollBarVisibility="Auto">
               <StackPanel x:Name="ReportPanel" Spacing="2"/>
             </ScrollViewer>
           </StackPanel>

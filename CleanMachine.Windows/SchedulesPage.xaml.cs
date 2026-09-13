@@ -33,7 +33,7 @@ public sealed partial class SchedulesPage : Page
         ItemsPanel.Children.Clear();
         _itemBoxes.Clear();
 
-        AddItemBox("browser", "Browser caches", "Clears Chrome, Edge, and Firefox cache files (locked files are skipped)");
+        AddItemBox("browser", "Browser Caches", "Clears Chrome, Edge, and Firefox cache files (locked files are skipped)");
 
         foreach (var group in WindowsCleanupService.Catalog.GroupBy(c => c.Group))
         {

@@ -20,6 +20,7 @@ public sealed record CleanupCategory(
     string[]? Extensions = null);
 
 public sealed record CleanupItem(CleanupCategory Category, long Bytes);
+public sealed record CleanupFileDetail(string Path, long Bytes);
 public sealed record CleanupPreviewItem(string Category, string Description, long Bytes);
 public sealed record CleanupPreview(IReadOnlyList<CleanupPreviewItem> Items, int TotalItems);
 
@@ -99,6 +100,17 @@ public sealed class WindowsCleanupService
             items.Add(new CleanupItem(category, bytes));
         }
         return items;
+    }
+
+    /// <summary>Returns the individual cleanable files for a file-based category,
+    /// with their sizes. Used by the UI to show a detailed file list when a
+    /// category is clicked after analysis.</summary>
+    public IReadOnlyList<CleanupFileDetail> ScanFiles(CleanupCategory category, IReadOnlySet<string>? excludedPaths = null)
+    {
+        if (category.Kind != CleanupKind.Files) return [];
+        return GetCleanableFiles(category, excludedPaths)
+            .Select(f => new CleanupFileDetail(f, GetLength(f)))
+            .ToList();
     }
 
     public async Task<CleanupReport> CleanSelectedAsync(IEnumerable<CleanupCategory> categories, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)

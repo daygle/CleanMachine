@@ -14,6 +14,7 @@ public sealed partial class WindowsCleanupPage : Page
     private AppSettings _settings = new();
     private CancellationTokenSource? _cancel;
     private CleanupPreview? _lastPreview;
+    private IReadOnlyList<CleanupItem> _lastScan = [];
 
     public WindowsCleanupPage()
     {
@@ -123,9 +124,10 @@ public sealed partial class WindowsCleanupPage : Page
                 .Sum(i => i.Bytes);
 
             _lastPreview = _service.BuildPreview(enabled, _settings.ExcludedPaths);
+            _lastScan = items;
 
             foreach (var item in enabledItems)
-                ReportPanel.Children.Add(BuildReportRow(item.Category.Name, item.Category.Group, item));
+                ReportPanel.Children.Add(BuildReportRow(item.Category, item.Category.Group, item));
 
             ReportHeadline.Text = "Analysis complete.";
             StatusText.Text = registryEntries > 0
@@ -148,23 +150,40 @@ public sealed partial class WindowsCleanupPage : Page
         }
     }
 
-    private static StackPanel BuildReportRow(string title, string group, CleanupItem item)
+    private StackPanel BuildReportRow(CleanupCategory category, string group, CleanupItem item)
     {
+        var isFile = category.Kind == CleanupKind.Files;
+        var isHistory = category.Kind == CleanupKind.RegistryValues;
+
+        var border = new Border
+        {
+            Padding = new Thickness(8, 5, 8, 5),
+            CornerRadius = new CornerRadius(6),
+            Margin = new Thickness(0, 1, 0, 1),
+            Tag = category,
+            Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0))
+        };
+        if (isFile)
+        {
+            border.PointerEntered += (_, _) => border.Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xF3, 0xF8, 0xF5));
+            border.PointerExited += (_, _) => border.Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0));
+            border.PointerPressed += (_, _) => OnReportRowClicked(category);
+        }
+
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, MinHeight = 26 };
         row.Children.Add(new FontIcon
         {
-            Glyph = "\xE8A5", // Document
+            Glyph = isFile ? "\xE8A5" : "\xEA18", // Document : Database
             FontSize = 13,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69))
         });
         row.Children.Add(new TextBlock
         {
-            Text = $"{group} · {title}",
+            Text = $"{group} · {category.Name}",
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
         });
-        var isHistory = item.Category.Kind == CleanupKind.RegistryValues;
         row.Children.Add(new TextBlock
         {
             Text = isHistory ? $"{item.Bytes:N0} entries" : FormatBytes(item.Bytes),
@@ -174,7 +193,126 @@ public sealed partial class WindowsCleanupPage : Page
             HorizontalAlignment = HorizontalAlignment.Right,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
         });
-        return row;
+        if (isFile)
+        {
+            row.Children.Add(new TextBlock
+            {
+                Text = "\uE974", // RightArrow
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe MDL2 Assets"),
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x9A, 0xA6, 0xA1))
+            });
+        }
+
+        border.Child = row;
+        var panel = new StackPanel { Spacing = 0 };
+        panel.Children.Add(border);
+        return panel;
+    }
+
+    private async void OnReportRowClicked(CleanupCategory category)
+    {
+        ReportPanel.Children.Clear();
+        ReportHeadline.Text = $"{category.Group} · {category.Name}";
+        StatusText.Text = "Loading files...";
+        Progress.Visibility = Visibility.Visible;
+
+        try
+        {
+            var files = await Task.Run(() => _service.ScanFiles(category, _settings.ExcludedPaths));
+
+            // Back button
+            var backRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 0, 8) };
+            var backBtn = new Button
+            {
+                Content = "\uE72B  Back to summary", // BackIcon
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe MDL2 Assets"),
+                FontSize = 12,
+                Padding = new Thickness(8, 4, 8, 4),
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderThickness = new Thickness(0)
+            };
+            backBtn.Click += (_, _) => RestoreSummary();
+            backRow.Children.Add(backBtn);
+            ReportPanel.Children.Add(backRow);
+
+            StatusText.Text = $"{files.Count:N0} file(s), {FormatBytes(files.Sum(f => f.Bytes))}";
+
+            if (files.Count == 0)
+            {
+                ReportPanel.Children.Add(new TextBlock
+                {
+                    Text = "No files found for this category.",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+                    Margin = new Thickness(0, 12, 0, 0)
+                });
+                return;
+            }
+
+            var display = files.Take(300).ToList();
+            foreach (var file in display)
+            {
+                var fileRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 2, 0, 2) };
+                fileRow.Children.Add(new TextBlock
+                {
+                    Text = Path.GetFileName(file.Path),
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    MaxWidth = 320,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                fileRow.Children.Add(new TextBlock
+                {
+                    Text = FormatBytes(file.Bytes),
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                ToolTipService.SetToolTip(fileRow, file.Path);
+                ReportPanel.Children.Add(fileRow);
+            }
+
+            if (files.Count > 300)
+            {
+                ReportPanel.Children.Add(new TextBlock
+                {
+                    Text = $"…and {files.Count - 300:N0} more file(s)",
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+                    Margin = new Thickness(0, 6, 0, 0)
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Unable to list files: {ex.Message}";
+        }
+        finally
+        {
+            Progress.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void RestoreSummary()
+    {
+        if (_lastScan.Count == 0) return;
+        var enabled = EnabledCategories();
+        var enabledItems = _lastScan
+            .Where(i => enabled.Any(c => c.Id == i.Category.Id))
+            .Where(i => i.Bytes > 0)
+            .OrderByDescending(i => i.Bytes)
+            .ToArray();
+        var totalBytes = enabledItems.Sum(i => i.Bytes);
+
+        ReportPanel.Children.Clear();
+        ReportHeadline.Text = "Analysis complete.";
+        StatusText.Text = $"{FormatBytes(totalBytes)} can be removed across {enabledItems.Length} item(s).";
+
+        foreach (var item in enabledItems)
+            ReportPanel.Children.Add(BuildReportRow(item.Category, item.Category.Group, item));
     }
 
     private async void Clean_Click(object sender, RoutedEventArgs e)

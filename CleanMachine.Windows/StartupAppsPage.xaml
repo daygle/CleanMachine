@@ -1,4 +1,4 @@
-<Page x:Class="CleanMachine.Windows.ActivityPage"
+<Page x:Class="CleanMachine.Windows.StartupAppsPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Grid RowSpacing="14">
@@ -6,16 +6,15 @@
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
     <!-- Header -->
     <StackPanel Grid.Row="0" Spacing="16">
       <StackPanel Orientation="Horizontal" Spacing="12">
-        <FontIcon Glyph="&#xE81C;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
-        <TextBlock Text="Activity" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
+        <FontIcon Glyph="&#xE7E8;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
+        <TextBlock Text="Startup Applications" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
       </StackPanel>
-      <TextBlock Text="A quiet history of a cleaner machine."
+      <TextBlock Text="Manage which programs start automatically when you sign in. Disabling an entry keeps it installed but prevents it from launching."
                  Foreground="#89958F" TextWrapping="Wrap"/>
     </StackPanel>
 
@@ -29,46 +28,46 @@
         </Grid.ColumnDefinitions>
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="20">
           <StackPanel Orientation="Horizontal" Spacing="6">
-            <FontIcon Glyph="&#xE81C;" FontSize="14" Foreground="#4B7769" VerticalAlignment="Center"/>
-            <TextBlock x:Name="TotalCount" Text="0 events" FontSize="13" FontWeight="SemiBold"
+            <FontIcon Glyph="&#xE7E8;" FontSize="14" Foreground="#4B7769" VerticalAlignment="Center"/>
+            <TextBlock x:Name="TotalCount" Text="0 entries" FontSize="13" FontWeight="SemiBold"
                        Foreground="#273630" VerticalAlignment="Center"/>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="6">
             <FontIcon Glyph="&#xE73E;" FontSize="14" Foreground="#286E58" VerticalAlignment="Center"/>
-            <TextBlock x:Name="TodayCount" Text="0 today" FontSize="13"
+            <TextBlock x:Name="EnabledCount" Text="0 enabled" FontSize="13"
                        Foreground="#6E8178" VerticalAlignment="Center"/>
           </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <FontIcon Glyph="&#xEA39;" FontSize="14" Foreground="#C7775D" VerticalAlignment="Center"/>
+            <TextBlock x:Name="OrphanCount" Text="0 orphaned" FontSize="13" Visibility="Collapsed"
+                       Foreground="#C7775D" VerticalAlignment="Center"/>
+          </StackPanel>
         </StackPanel>
-        <Button Grid.Column="2" Content="Clear History" x:Name="ClearButton" Click="Clear_Click"
-                Padding="16,8" FontSize="12"/>
+        <Button Grid.Column="2" Content="Scan" x:Name="ScanButton" Click="Scan_Click"
+                Background="#286E58" Foreground="White" Padding="20,8"/>
       </Grid>
     </Border>
 
-    <!-- Activity list -->
+    <!-- Entry list -->
     <Border Grid.Row="2" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14">
       <Grid>
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto"/>
           <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" x:Name="ListLabel" Text="RECENT ACTIVITY" FontSize="10"
+        <TextBlock Grid.Row="0" x:Name="ListLabel" Text="STARTUP ENTRIES" FontSize="10"
                    Foreground="#7F9189" Margin="0,0,0,8"/>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-          <StackPanel x:Name="ActivityPanel" Spacing="0"/>
+          <StackPanel x:Name="EntryPanel" Spacing="0"/>
         </ScrollViewer>
+        <!-- Placeholder when empty -->
         <StackPanel x:Name="EmptyState" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Spacing="8" Visibility="Collapsed">
-          <FontIcon Glyph="&#xE81C;" FontSize="32" Foreground="#D0DBD5" HorizontalAlignment="Center"/>
-          <TextBlock Text="No activity recorded yet"
+                    Spacing="8" Visibility="Visible">
+          <FontIcon Glyph="&#xE7E8;" FontSize="32" Foreground="#D0DBD5" HorizontalAlignment="Center"/>
+          <TextBlock Text="Click Scan to discover startup entries"
                      FontSize="13" Foreground="#9AA6A1" HorizontalAlignment="Center"/>
-          <TextBlock Text="Actions will appear here as CleanMachine works"
-                     FontSize="11" Foreground="#B0BBB6" HorizontalAlignment="Center"/>
         </StackPanel>
       </Grid>
     </Border>
-
-    <!-- Footer -->
-    <TextBlock Grid.Row="3" x:Name="FooterText" Text=""
-               FontSize="11" Foreground="#9AA6A1" TextWrapping="Wrap"/>
   </Grid>
 </Page>
