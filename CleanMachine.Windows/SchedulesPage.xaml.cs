@@ -95,7 +95,7 @@ public sealed partial class SchedulesPage : Page
 
             var runButton = new Button
             {
-                Content = "Run now",
+                Content = "Run Now",
                 FontSize = 11,
                 Padding = new Thickness(8, 2, 8, 2),
                 MinHeight = 28,
@@ -155,6 +155,8 @@ public sealed partial class SchedulesPage : Page
         DayOfWeekCombo.SelectedIndex = (int)schedule.DayOfWeek;
         DayOfMonthBox.Value = schedule.DayOfMonth;
         AfterCombo.SelectedIndex = (int)schedule.AfterClean;
+        SecureDeleteCheck.IsChecked = schedule.SecureDelete;
+        SecureDeleteHint.Visibility = schedule.SecureDelete ? Visibility.Visible : Visibility.Collapsed;
 
         foreach (var (key, box) in _itemBoxes)
             box.IsChecked = key switch
@@ -203,6 +205,9 @@ public sealed partial class SchedulesPage : Page
         }
     }
 
+    private void SecureDelete_Changed(object sender, RoutedEventArgs e)
+        => SecureDeleteHint.Visibility = SecureDeleteCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
     private void After_Changed(object sender, SelectionChangedEventArgs e) => UpdateAfterWarning();
 
     private void UpdateAfterWarning()
@@ -231,6 +236,7 @@ public sealed partial class SchedulesPage : Page
             DayOfWeek = (DayOfWeek)Math.Max(0, DayOfWeekCombo.SelectedIndex),
             DayOfMonth = double.IsNaN(DayOfMonthBox.Value) ? 1 : (int)Math.Clamp(DayOfMonthBox.Value, 1, 31),
             AfterClean = (ScheduleAction)Math.Max(0, AfterCombo.SelectedIndex),
+            SecureDelete = SecureDeleteCheck.IsChecked == true,
             CleanBrowserCache = _itemBoxes.Any(b => b.Key == "browser" && b.Box.IsChecked == true),
             WindowsCategoryIds = _itemBoxes.Where(b => b.Key.StartsWith("win:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList(),
             RegistryCategories = _itemBoxes.Where(b => b.Key.StartsWith("reg:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList()

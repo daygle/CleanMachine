@@ -246,7 +246,7 @@ public sealed class ManifestAndSafetyTests
     public void CurrentVersionFallsBackToAssemblyVersionNotHardcoded()
     {
         // The unpackaged (installer) build has no MSIX identity, so CurrentVersion
-        // must fall back to the assembly version stamped from the release tag —
+        // must fall back to the assembly version stamped from the release tag -
         // never a hardcoded constant, which made every release look like an update.
         // The test assembly itself is stamped 1.0.0.0 by default; the contract under
         // test is that the fallback is derived from the assembly, and that a manifest
@@ -347,7 +347,7 @@ public sealed class ManifestAndSafetyTests
         var settings = new AppSettings();
         Assert.NotNull(settings.FindBrowserMonitor("Chrome"));
         Assert.NotNull(settings.FindBrowserMonitor("EDGE"));
-        // "msedge" is the process name, not a settings id — the agent maps it to
+        // "msedge" is the process name, not a settings id - the agent maps it to
         // "edge" before lookup, so it must not match here.
         Assert.Null(settings.FindBrowserMonitor("msedge"));
         Assert.Null(settings.FindBrowserMonitor("safari"));
@@ -666,5 +666,110 @@ public sealed class ManifestAndSafetyTests
 
         Assert.NotNull(manifest);
         Assert.Null(manifest!.Installer);
+    }
+
+    [Fact]
+    public void CleanupScheduleSecureDeleteDefaultsOffAndRoundTrips()
+    {
+        Assert.False(new CleanupSchedule().SecureDelete);
+
+        var settings = new AppSettings
+        {
+            Schedules =
+            [
+                new CleanupSchedule
+                {
+                    Id = "sd1",
+                    Name = "Secure nightly",
+                    SecureDelete = true,
+                    WindowsCategoryIds = ["system-temp"]
+                }
+            ]
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+
+        Assert.NotNull(clone);
+        Assert.True(clone!.Schedules[0].SecureDelete);
+    }
+
+    [Fact]
+    public async Task SecureDeleteFileAsyncOverwritesAndDeletesFile()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"cm-sd-test-{Guid.NewGuid():N}.txt");
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, "This is test content for secure delete.");
+            Assert.True(File.Exists(tempFile));
+
+            var options = new SecureDeleteOptions(WipeMethod.SimpleZeroFill, 1, true);
+            var result = await SecureDeleteService.SecureDeleteFileAsync(tempFile, options);
+
+            Assert.True(result);
+            Assert.False(File.Exists(tempFile));
+        }
+        finally
+        {
+            try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
+        }
+    }
+
+    [Fact]
+    public void AppCatalogCoversDesktopAndStoreApps()
+    {
+        var defs = AppCatalog.Definitions;
+        Assert.NotEmpty(defs);
+        Assert.Contains(defs, d => !d.IsStoreApp);
+        Assert.Contains(defs, d => d.IsStoreApp);
+        // Every definition has a unique id.
+        Assert.Equal(defs.Count, defs.Select(d => d.Id).Distinct().Count());
+    }
+
+    [Fact]
+    public void AppCatalogFindIsCaseInsensitive()
+    {
+        Assert.NotNull(AppCatalog.Find("7zip"));
+        Assert.NotNull(AppCatalog.Find("7ZIP"));
+        Assert.Null(AppCatalog.Find("nonexistent-app-xyz"));
+    }
+
+    [Fact]
+    public void AppCatalogGroupsAreDistinct()
+    {
+        var groups = AppCatalog.Groups();
+        Assert.Contains("Desktop App", groups);
+        Assert.Contains("Microsoft Store App", groups);
+        Assert.Equal(groups.Count, groups.Distinct().Count());
+    }
+
+    [Fact]
+    public void TraySettingsDefaultsAreReasonable()
+    {
+        var settings = new AppSettings();
+        Assert.False(settings.StartMinimizedToTray);
+        Assert.False(settings.CloseToTray);
+        Assert.True(settings.MinimizeToTray);
+        Assert.True(settings.ShowInTaskbar);
+    }
+
+    [Fact]
+    public void TraySettingsRoundTripThroughJson()
+    {
+        var settings = new AppSettings
+        {
+            StartMinimizedToTray = true,
+            CloseToTray = true,
+            MinimizeToTray = false,
+            ShowInTaskbar = false
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+
+        Assert.NotNull(clone);
+        Assert.True(clone!.StartMinimizedToTray);
+        Assert.True(clone.CloseToTray);
+        Assert.False(clone.MinimizeToTray);
+        Assert.False(clone.ShowInTaskbar);
     }
 }

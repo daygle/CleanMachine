@@ -7,7 +7,7 @@ namespace CleanMachine.Windows;
 /// Win32 Shell_NotifyIcon API. A hidden top-level window receives the icon's callback
 /// messages (click to restore) and re-adds the icon when the taskbar is recreated
 /// (e.g. after an Explorer restart, which broadcasts "TaskbarCreated" to top-level
-/// windows only — a message-only window would never hear it).
+/// windows only - a message-only window would never hear it).
 /// </summary>
 public sealed class TrayIcon : IDisposable
 {

@@ -27,6 +27,8 @@ public sealed partial class MainWindow : Window
 
     private bool _showInTaskbar = true;
     private bool _minimizeToTray;
+    private bool _startMinimizedToTray;
+    private bool _closeToTray;
     private bool _inTray;
     private TrayIcon? _trayIcon;
     private WndProc? _baseWndProc;
@@ -50,6 +52,7 @@ public sealed partial class MainWindow : Window
         // preference (show) would be a no-op anyway.
         Activated += OnFirstActivated;
         SubclassForMinimizeToTray();
+        AppWindow.Closing += OnClosing;
         Closed += (_, _) =>
         {
             _trayIcon?.Dispose();
@@ -78,7 +81,7 @@ public sealed partial class MainWindow : Window
     /// Loads the sidebar mark from the file next to the executable rather than via
     /// ms-appx: in unpackaged (installer) builds, ms-appx only resolves files that
     /// are indexed in the app's PRI resource map, and loose Content files silently
-    /// fail there — which showed the sidebar logo as blank. A direct file path
+    /// fail there - which showed the sidebar logo as blank. A direct file path
     /// works the same in packaged and unpackaged builds.
     /// </summary>
     private void LoadSidebarLogo()
@@ -168,11 +171,108 @@ public sealed partial class MainWindow : Window
         _ = ApplyInitialTaskbarPreferenceAsync();
     }
 
+    /// <summary>Intercepts the window close: when CloseToTray is on, the close
+    /// button minimizes to the tray instead of exiting.</summary>
+    private void OnClosing(object sender, AppWindowClosingEventArgs args)
+    {
+        if (!_closeToTray || _inTray) return;
+        // Cancel the close and minimize to tray instead.
+        args.Cancel = true;
+        SendToTray(hideWindow: true);
+    }
+
     private async Task ApplyInitialTaskbarPreferenceAsync()
     {
         var settings = await AppSettings.LoadAsync();
         ApplyShowInTaskbar(settings.ShowInTaskbar);
         ApplyMinimizeToTray(settings.MinimizeToTray);
+        _startMinimizedToTray = settings.StartMinimizedToTray;
+        _closeToTray = settings.CloseToTray;
+
+        // Create desktop shortcut on first launch (for both MSIX and .exe installs).
+        if (!settings.DesktopShortcutCreated)
+        {
+            CreateDesktopShortcut();
+            settings.DesktopShortcutCreated = true;
+            await settings.SaveAsync();
+        }
+
+        // Start minimized to tray: hide the window immediately and show tray icon.
+        if (_startMinimizedToTray)
+        {
+            SendToTray(hideWindow: true);
+        }
+    }
+
+    /// <summary>Creates a desktop shortcut to the application. Works for both
+    /// MSIX and .exe installs by using the current executable path.</summary>
+    private void CreateDesktopShortcut()
+    {
+        try
+        {
+            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrEmpty(desktopPath)) return;
+
+            var shortcutPath = Path.Combine(desktopPath, "CleanMachine.lnk");
+            if (File.Exists(shortcutPath)) return;
+
+            var exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return;
+
+            // Create a simple .lnk shortcut using COM Shell.
+            var shell = (IShellLinkW)new CShellLink();
+            shell.SetPath(exePath);
+            shell.SetDescription("CleanMachine - Privacy cleanup utility");
+            shell.SetWorkingDirectory(Path.GetDirectoryName(exePath) ?? exePath);
+
+            var persistFile = (IPersistFile)shell;
+            persistFile.Save(shortcutPath, false);
+        }
+        catch
+        {
+            // Shortcut creation is best-effort; missing icon is acceptable.
+        }
+    }
+
+    [ComImport]
+    [Guid("00021401-0000-0000-C000-000000000046")]
+    private class CShellLink { }
+
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("000214F9-0000-0000-C000-000000000046")]
+    private interface IShellLinkW
+    {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszFile, int cch, IntPtr pfd, int fFlags);
+        void GetIDList(out IntPtr ppidl);
+        void SetIDList(IntPtr pidl);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszName, int cch);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszDir, int cch);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszArgs, int cch);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+        void GetHotkey(out short pwHotkey);
+        void SetHotkey(short wHotkey);
+        void GetShowCmd(out int piShowCmd);
+        void SetShowCmd(int iShowCmd);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszIconPath, int cch, out int piIcon);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, int dwReserved);
+        void Resolve(IntPtr hwnd, int fFlags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+    }
+
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("0000010b-0000-0000-C000-000000000046")]
+    private interface IPersistFile
+    {
+        void GetCurFile(out IntPtr ppszFileName);
+        void IsDirty();
+        void Load([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, int dwMode);
+        void Save([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, [MarshalAs(UnmanagedType.Bool)] bool fRemember);
+        void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string pszFileName);
     }
 
     public void ApplyShowInTaskbar(bool showInTaskbar)
@@ -200,7 +300,7 @@ public sealed partial class MainWindow : Window
     {
         _minimizeToTray = minimizeToTray;
         // Turning the option off while a minimized window is showing its tray icon:
-        // drop the icon — the taskbar button still restores the window.
+        // drop the icon - the taskbar button still restores the window.
         if (!minimizeToTray && _showInTaskbar && _inTray)
         {
             _inTray = false;
@@ -208,13 +308,16 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>When true, the close button minimizes to tray instead of exiting.</summary>
+    public void ApplyCloseToTray(bool closeToTray) => _closeToTray = closeToTray;
+
     private void ApplyTaskbarStyle(bool showInTaskbar)
     {
         try
         {
             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
             var exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
-            // Already in the requested state — do nothing. This matters at
+            // Already in the requested state - do nothing. This matters at
             // startup: even a redundant hide/reshow can race Explorer's initial
             // taskbar-button registration and permanently lose the button.
             if (((exStyle & (int)WS_EX_TOOLWINDOW) != 0) == !showInTaskbar) return;
@@ -240,7 +343,7 @@ public sealed partial class MainWindow : Window
         catch { /* best-effort */ }
     }
 
-    // Note: deliberately not sealed — the ComImport coclass is cast to
+    // Note: deliberately not sealed - the ComImport coclass is cast to
     // ITaskbarList, and a sealed-class-to-interface cast is a compile error
     // under classic conversion rules (COM coclasses cannot be derived from anyway).
     [ComImport]
@@ -288,7 +391,7 @@ public sealed partial class MainWindow : Window
         {
             _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
             // The field reference keeps the delegate (and its native thunk) alive
-            // for the lifetime of the window — required while the OS holds the pointer.
+            // for the lifetime of the window - required while the OS holds the pointer.
             WndProc hook = WndProcHook;
             _baseWndProc = hook;
             _originalWndProc = SetWindowLongPtr(_hwnd, GWL_WNDPROC,
@@ -329,7 +432,7 @@ public sealed partial class MainWindow : Window
         }
         else if (restored && _inTray && _showInTaskbar)
         {
-            // Minimize-to-tray mode: restored from the taskbar or the window itself —
+            // Minimize-to-tray mode: restored from the taskbar or the window itself -
             // drop the tray icon. (In tray-only mode the window is hidden, not
             // minimized, so the icon must stay until the tray click restores it.)
             _inTray = false;
@@ -415,7 +518,7 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Moves the white highlight to the nav item matching the open page,
-    /// so the highlight always tracks whatever is on the right — however it got there
+    /// so the highlight always tracks whatever is on the right - however it got there
     /// (sidebar click or an in-page quick link).</summary>
     private void HighlightNav(Type pageType)
     {
@@ -423,13 +526,14 @@ public sealed partial class MainWindow : Window
             : pageType == typeof(CleanerPage) ? NavCleaner
             : pageType == typeof(RegistryCarePage) ? NavRegistry
             : pageType == typeof(WindowsCleanupPage) ? NavWindowsCleanup
+            : pageType == typeof(AppCleanupPage) ? NavAppCleanup
             : pageType == typeof(SecureDeletePage) ? NavSecureDelete
             : pageType == typeof(ActivityPage) ? NavActivity
             : pageType == typeof(SchedulesPage) ? NavSchedules
             : pageType == typeof(SettingsPage) ? NavSettings
             : pageType == typeof(UpdatesPage) ? NavUpdates
             : null;
-        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavSecureDelete, NavActivity, NavSchedules, NavSettings, NavUpdates })
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavAppCleanup, NavSecureDelete, NavActivity, NavSchedules, NavSettings, NavUpdates })
             button.Background = ReferenceEquals(button, active) ? NavActiveBrush : NavIdleBrush;
 
         AttachNavPointerFeedback();
@@ -443,7 +547,7 @@ public sealed partial class MainWindow : Window
     {
         if (_navPointerHandlersAttached) return;
         _navPointerHandlersAttached = true;
-        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavSecureDelete, NavActivity, NavSchedules, NavSettings, NavUpdates })
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavAppCleanup, NavSecureDelete, NavActivity, NavSchedules, NavSettings, NavUpdates })
         {
             button.PointerEntered += (s, _) => { var b = (Button)s; if (!IsNavActive(b)) b.Background = NavHoverBrush; };
             button.PointerExited += (s, _) => { var b = (Button)s; b.Background = IsNavActive(b) ? NavActiveBrush : NavIdleBrush; };
@@ -455,6 +559,7 @@ public sealed partial class MainWindow : Window
     private void Cleaner_Click(object sender, RoutedEventArgs e) => Navigate<CleanerPage>();
     private void Registry_Click(object sender, RoutedEventArgs e) => Navigate<RegistryCarePage>();
     private void WindowsCleanup_Click(object sender, RoutedEventArgs e) => Navigate<WindowsCleanupPage>();
+    private void AppCleanup_Click(object sender, RoutedEventArgs e) => Navigate<AppCleanupPage>();
     private void SecureDeleteNav_Click(object sender, RoutedEventArgs e) => Navigate<SecureDeletePage>();
     private void Activity_Click(object sender, RoutedEventArgs e) => Navigate<ActivityPage>();
     private void Schedules_Click(object sender, RoutedEventArgs e) => Navigate<SchedulesPage>();

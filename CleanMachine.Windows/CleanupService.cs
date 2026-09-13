@@ -42,6 +42,7 @@ public sealed class CleanupService
     public async Task<CleanupReport> CleanBrowserTargetsAsync(
         IEnumerable<BrowserCleanupTarget> targets,
         IProgress<CleanupProgress>? progress = null,
+        SecureDeleteOptions? secureDelete = null,
         CancellationToken cancellationToken = default)
     {
         var allowed = targets
@@ -69,7 +70,10 @@ public sealed class CleanupService
                     skipped.Add(new(path, "Recently modified"));
                     continue;
                 }
-                File.Delete(path);
+                if (secureDelete is not null)
+                    await SecureDeleteService.SecureDeleteFileAsync(path, secureDelete, cancellationToken);
+                else
+                    File.Delete(path);
                 removed++;
                 recovered += info.Length;
             }
@@ -139,7 +143,7 @@ public sealed class CleanupService
 
     // Current-user auto-start entries (Run / RunOnce) whose executable no longer
     // exists on disk. Deleting a startup entry whose program is gone cannot break
-    // anything — the program is simply not there to run.
+    // anything - the program is simply not there to run.
     private static void ScanStartupEntries(ICollection<RegistryFinding> findings)
     {
         using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);

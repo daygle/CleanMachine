@@ -1,43 +1,43 @@
-<Page x:Class="CleanMachine.Windows.WindowsCleanupPage"
+<Page x:Class="CleanMachine.Windows.AppCleanupPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Grid RowSpacing="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
     <StackPanel Grid.Row="0" Spacing="16">
       <StackPanel Orientation="Horizontal" Spacing="12">
-        <FontIcon Glyph="&#xE9D5;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
-        <TextBlock Text="Windows Cleanup" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
+        <FontIcon Glyph="&#xE7B8;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
+        <TextBlock Text="Application Cleanup" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
       </StackPanel>
-      <TextBlock Text="Choose which items to clean on the left, then Analyze to see what would be removed. Selections are saved automatically."
+      <TextBlock Text="Remove temporary files from installed applications. Detected apps are shown with their cache sizes. Close apps before cleaning."
                  Foreground="#89958F" TextWrapping="Wrap"/>
     </StackPanel>
 
-    <Grid Grid.Row="1" ColumnSpacing="14" MaxHeight="470">
+    <Grid Grid.Row="1" ColumnSpacing="14">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="320"/>
         <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="320"/>
       </Grid.ColumnDefinitions>
 
-      <!-- Left box: items to clean -->
+      <!-- Left: app list grouped by category -->
       <Border Grid.Column="0" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14">
         <Grid>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
-          <TextBlock Grid.Row="0" Text="ITEMS TO CLEAN" FontSize="10" Foreground="#7F9189" Margin="0,0,0,8"/>
-          <ScrollViewer Grid.Row="1" MaxHeight="410" VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="CategoryPanel" Spacing="2"/>
+          <TextBlock Grid.Row="0" Text="APPLICATIONS" FontSize="10" Foreground="#7F9189" Margin="0,0,0,8"/>
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="AppListPanel" Spacing="2"/>
           </ScrollViewer>
         </Grid>
       </Border>
 
-      <!-- Right box: analysis / cleaning report -->
+      <!-- Right: details / status -->
       <Border Grid.Column="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14">
         <Grid>
           <Grid.RowDefinitions>
@@ -45,14 +45,14 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
-          <TextBlock Grid.Row="0" x:Name="ReportHeadline" Text="No analysis performed yet."
+          <TextBlock Grid.Row="0" x:Name="DetailHeadline" Text="Select an application"
                      FontSize="16" FontWeight="SemiBold" Foreground="#273630" Margin="0,0,0,4" TextWrapping="Wrap"/>
-          <TextBlock Grid.Row="1" x:Name="StatusText" Text="Select items and click Analyze."
+          <TextBlock Grid.Row="1" x:Name="StatusText" Text="Click Scan to detect installed applications and measure their temp files."
                      FontSize="12" Foreground="#6E8178" Margin="0,0,0,8" TextWrapping="Wrap"/>
           <StackPanel Grid.Row="2">
-            <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed" Margin="0,0,0,8"/>
-            <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
-              <StackPanel x:Name="ReportPanel" Spacing="2"/>
+            <ProgressBar x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed" Margin="0,0,0,8"/>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <StackPanel x:Name="DetailPanel" Spacing="2"/>
             </ScrollViewer>
           </StackPanel>
         </Grid>
@@ -60,13 +60,12 @@
     </Grid>
 
     <Grid Grid.Row="2">
-      <Button x:Name="AnalyzeButton" Content="Analyze" Click="Analyze_Click"
+      <Button x:Name="ScanButton" Content="Scan" Click="Scan_Click"
               Background="#286E58" Foreground="White" Padding="26,10" HorizontalAlignment="Left"/>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
         <CheckBox x:Name="SecureDeleteCheck" Content="Secure delete" VerticalAlignment="Center"/>
-        <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False" Padding="18,10"/>
-        <Button x:Name="CleanButton" Content="Clean" Click="Clean_Click"
-                Background="#286E58" Foreground="White" Padding="26,10"/>
+        <Button x:Name="CleanButton" Content="Clean Selected" Click="Clean_Click"
+                Padding="18,10" IsEnabled="False"/>
       </StackPanel>
     </Grid>
   </Grid>

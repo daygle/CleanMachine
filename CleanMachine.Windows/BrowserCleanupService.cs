@@ -7,7 +7,8 @@ namespace CleanMachine.Windows;
 public sealed record BrowserCleanupOptions(
     IReadOnlySet<string>? ExcludedPaths = null,
     IReadOnlyList<string>? AdditionalProfileRoots = null,
-    bool RequireBrowsersClosed = true);
+    bool RequireBrowsersClosed = true,
+    SecureDeleteOptions? SecureDelete = null);
 
 public sealed record BrowserCleanupState(
     string OperationId,
@@ -69,7 +70,7 @@ public sealed class BrowserCleanupService
         await SaveInterruptedStateAsync(
             new BrowserCleanupState(operationId, files, 0, 0, DateTimeOffset.UtcNow), token);
 
-        var report = await _cleanup.CleanBrowserTargetsAsync(allowed, progress, token);
+        var report = await _cleanup.CleanBrowserTargetsAsync(allowed, progress, options.SecureDelete, token);
         await ClearStateAsync(token);
         return report;
     }
@@ -157,7 +158,9 @@ public sealed class BrowserCleanupService
     /// <summary>Cleans the selected (browser, item) pairs using whole-file deletion.
     /// The browser must be closed; one item failing never aborts the rest.</summary>
     public Task<CleanupReport> CleanItemsAsync(
-        IEnumerable<(string BrowserId, string ItemId)> selection, CancellationToken token = default)
+        IEnumerable<(string BrowserId, string ItemId)> selection,
+        SecureDeleteOptions? secureDelete = null,
+        CancellationToken token = default)
     {
         var running = GetRunningBrowsers();
         if (running.Count > 0)
@@ -185,7 +188,7 @@ public sealed class BrowserCleanupService
 
             foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
             {
-                var result = DeletePath(path);
+                var result = DeletePath(path, secureDelete);
                 removed += result.Removed;
                 bytes += result.Bytes;
                 skipped.AddRange(result.Skipped);
@@ -222,7 +225,7 @@ public sealed class BrowserCleanupService
         return [];
     }
 
-    private static (int Removed, long Bytes, List<CleanupIssue> Skipped) DeletePath(string path)
+    private static (int Removed, long Bytes, List<CleanupIssue> Skipped) DeletePath(string path, SecureDeleteOptions? secureDelete = null)
     {
         var removed = 0;
         long bytes = 0;
@@ -232,7 +235,10 @@ public sealed class BrowserCleanupService
             if (File.Exists(path))
             {
                 var length = new FileInfo(path).Length;
-                File.Delete(path);
+                if (secureDelete is not null)
+                    _ = SecureDeleteService.SecureDeleteFileAsync(path, secureDelete).GetAwaiter().GetResult();
+                else
+                    File.Delete(path);
                 return (1, length, skipped);
             }
             if (!Directory.Exists(path)) return (0, 0, skipped);
@@ -242,7 +248,10 @@ public sealed class BrowserCleanupService
                 try
                 {
                     var length = new FileInfo(file).Length;
-                    File.Delete(file);
+                    if (secureDelete is not null)
+                        _ = SecureDeleteService.SecureDeleteFileAsync(file, secureDelete).GetAwaiter().GetResult();
+                    else
+                        File.Delete(file);
                     removed++;
                     bytes += length;
                 }

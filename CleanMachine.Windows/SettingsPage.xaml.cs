@@ -36,6 +36,8 @@ public sealed partial class SettingsPage : Page
 
         UpdateCheckToggle.IsChecked = _settings.CheckForUpdatesAutomatically;
         ShowInTaskbarToggle.IsChecked = _settings.ShowInTaskbar;
+        StartMinimizedToTrayToggle.IsChecked = _settings.StartMinimizedToTray;
+        CloseToTrayToggle.IsChecked = _settings.CloseToTray;
         MinimizeToTrayToggle.IsChecked = _settings.MinimizeToTray;
         WipeMethodCombo.SelectedIndex = _settings.SecureDeleteMethod switch
         {
@@ -77,6 +79,8 @@ public sealed partial class SettingsPage : Page
 
         _settings.CheckForUpdatesAutomatically = UpdateCheckToggle.IsChecked == true;
         _settings.ShowInTaskbar = ShowInTaskbarToggle.IsChecked == true;
+        _settings.StartMinimizedToTray = StartMinimizedToTrayToggle.IsChecked == true;
+        _settings.CloseToTray = CloseToTrayToggle.IsChecked == true;
         _settings.MinimizeToTray = MinimizeToTrayToggle.IsChecked == true;
         _settings.SecureDeleteMethod = WipeMethodCombo.SelectedIndex switch
         {
@@ -103,6 +107,7 @@ public sealed partial class SettingsPage : Page
         {
             mainWindow.ApplyShowInTaskbar(_settings.ShowInTaskbar);
             mainWindow.ApplyMinimizeToTray(_settings.MinimizeToTray);
+            mainWindow.ApplyCloseToTray(_settings.CloseToTray);
         }
 
         // Restart the agent so enabling/disabling it takes effect immediately.
@@ -144,6 +149,8 @@ public sealed partial class SettingsPage : Page
         SystemMonitorAction.SelectedIndex = 1;
         UpdateCheckToggle.IsChecked = defaults.CheckForUpdatesAutomatically;
         ShowInTaskbarToggle.IsChecked = defaults.ShowInTaskbar;
+        StartMinimizedToTrayToggle.IsChecked = defaults.StartMinimizedToTray;
+        CloseToTrayToggle.IsChecked = defaults.CloseToTray;
         MinimizeToTrayToggle.IsChecked = defaults.MinimizeToTray;
         WipeMethodCombo.SelectedIndex = 0;
         ExclusionsBox.Text = "";

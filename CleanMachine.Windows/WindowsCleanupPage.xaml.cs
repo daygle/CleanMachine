@@ -133,7 +133,7 @@ public sealed partial class WindowsCleanupPage : Page
                 : $"{FormatBytes(totalBytes)} can be removed across {enabledItems.Length} item(s).";
             if (enabledItems.Length == 0)
             {
-                StatusText.Text = "Nothing to clean — the selected items are already clear.";
+                StatusText.Text = "Nothing to clean - the selected items are already clear.";
             }
         }
         catch (OperationCanceledException) { ReportHeadline.Text = "Analysis cancelled."; StatusText.Text = ""; }
@@ -183,7 +183,7 @@ public sealed partial class WindowsCleanupPage : Page
         if (enabled.Length == 0) { StatusText.Text = "No items are enabled. Select at least one item to clean."; return; }
 
         var preview = _lastPreview ?? _service.BuildPreview(enabled, _settings.ExcludedPaths);
-        if (preview.TotalItems == 0) { StatusText.Text = "Run Analyze first — there is nothing to clean."; return; }
+        if (preview.TotalItems == 0) { StatusText.Text = "Run Analyze first - there is nothing to clean."; return; }
 
         var review = enabled.Where(c => c.Risk != CleanupRisk.Safe).ToArray();
         if (!await ConfirmPreviewAsync(preview, review)) { StatusText.Text = "Cleanup was not confirmed."; return; }
@@ -202,9 +202,11 @@ public sealed partial class WindowsCleanupPage : Page
                 Progress.Value = p.Total == 0 ? 0 : (double)p.Completed / p.Total;
                 StatusText.Text = $"Cleaning {p.Phase}: {p.Completed}/{p.Total}";
             });
+            var useSecureDelete = SecureDeleteCheck.IsChecked == true;
+            var secureDeleteOpts = useSecureDelete ? new SecureDeleteOptions(_settings.SecureDeleteMethod, _settings.CustomWipePasses) : null;
             var result = await _service.CleanSelectedAsync(
                 enabled,
-                new WindowsCleanupOptions(ConfirmReviewCategories: true, ExcludedPaths: _settings.ExcludedPaths),
+                new WindowsCleanupOptions(ConfirmReviewCategories: true, ExcludedPaths: _settings.ExcludedPaths, SecureDelete: useSecureDelete, SecureDeleteOptions: secureDeleteOpts),
                 progress,
                 _cancel.Token);
 
@@ -267,7 +269,7 @@ public sealed partial class WindowsCleanupPage : Page
             var size = item.Bytes > 0 ? $" ({FormatBytes(item.Bytes)})" : "";
             panel.Children.Add(new TextBlock
             {
-                Text = $"{item.Category} — {item.Description}{size}",
+                Text = $"{item.Category} - {item.Description}{size}",
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 12,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x53, 0x63, 0x5B))

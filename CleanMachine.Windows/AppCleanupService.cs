@@ -1,0 +1,233 @@
+using Microsoft.Win32;
+
+namespace CleanMachine.Windows;
+
+public sealed class AppCleanupService
+{
+    private static readonly string LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    private static readonly string RoamingAppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    private static readonly string ProgramFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+    private static readonly string ProgramFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+    private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    private static readonly string WindowsTemp = Path.GetTempPath();
+
+    /// <summary>Detects all catalog apps and scans their temp files.</summary>
+    public Task<IReadOnlyList<AppScan>> ScanAllAsync(CancellationToken token = default)
+        => Task.Run<IReadOnlyList<AppScan>>(() => AppCatalog.Definitions.Select(ScanApp).ToArray(), token);
+
+    /// <summary>Scans a single app by its catalog id.</summary>
+    public Task<AppScan?> ScanAsync(string appId, CancellationToken token = default)
+        => Task.Run(() =>
+        {
+            var def = AppCatalog.Find(appId);
+            return def is null ? null : ScanApp(def);
+        }, token);
+
+    /// <summary>Cleans the selected app temp items. Returns files removed and bytes recovered.</summary>
+    public Task<CleanupReport> CleanAsync(
+        IEnumerable<(string AppId, int ItemIndex)> selection,
+        SecureDeleteOptions? secureDelete = null,
+        CancellationToken token = default)
+    {
+        var removed = 0;
+        long bytes = 0;
+        var skipped = new List<CleanupIssue>();
+
+        // Group by app to avoid rescanning.
+        var byApp = selection
+            .GroupBy(s => s.AppId)
+            .ToDictionary(g => g.Key, g => g.Select(s => s.ItemIndex).ToHashSet());
+
+        foreach (var (appId, indices) in byApp)
+        {
+            token.ThrowIfCancellationRequested();
+            var def = AppCatalog.Find(appId);
+            if (def is null) continue;
+
+            var scan = ScanApp(def);
+            for (var i = 0; i < scan.Items.Count; i++)
+            {
+                if (!indices.Contains(i)) continue;
+                token.ThrowIfCancellationRequested();
+                var item = scan.Items[i];
+                try
+                {
+                    if (Directory.Exists(item.FullPath))
+                    {
+                        foreach (var file in Directory.EnumerateFiles(item.FullPath, "*", SearchOption.AllDirectories))
+                        {
+                            try
+                            {
+                                var info = new FileInfo(file);
+                                if (info.IsReadOnly) { skipped.Add(new(file, "Read-only")); continue; }
+                                var len = info.Length;
+                                if (secureDelete is not null)
+                                    _ = SecureDeleteService.SecureDeleteFileAsync(file, secureDelete, token).GetAwaiter().GetResult();
+                                else
+                                    File.Delete(file);
+                                removed++;
+                                bytes += len;
+                            }
+                            catch (IOException) { skipped.Add(new(file, "Locked")); }
+                            catch (UnauthorizedAccessException) { skipped.Add(new(file, "Access denied")); }
+                        }
+                        // Remove empty subdirectories bottom-up.
+                        RemoveEmptyDirs(item.FullPath);
+                    }
+                    else if (File.Exists(item.FullPath))
+                    {
+                        var info = new FileInfo(item.FullPath);
+                        if (info.IsReadOnly) { skipped.Add(new(item.FullPath, "Read-only")); continue; }
+                        var len = info.Length;
+                        if (secureDelete is not null)
+                            _ = SecureDeleteService.SecureDeleteFileAsync(item.FullPath, secureDelete, token).GetAwaiter().GetResult();
+                        else
+                            File.Delete(item.FullPath);
+                        removed++;
+                        bytes += len;
+                    }
+                }
+                catch (IOException) { skipped.Add(new(item.FullPath, "Locked")); }
+                catch (UnauthorizedAccessException) { skipped.Add(new(item.FullPath, "Access denied")); }
+            }
+        }
+
+        return Task.FromResult(new CleanupReport(new CleanupResult(removed, bytes), skipped));
+    }
+
+    private static AppScan ScanApp(AppDefinition def)
+    {
+        var installed = IsInstalled(def);
+        var items = new List<AppTempItem>();
+
+        if (!installed) return new AppScan(def.Id, def.Name, def.Group, def.IsStoreApp, false, items);
+
+        foreach (var (root, entries) in def.TempLocations)
+        {
+            var rootPath = ResolveRoot(root);
+            if (string.IsNullOrEmpty(rootPath) || !Directory.Exists(rootPath)) continue;
+
+            foreach (var entry in entries)
+            {
+                var fullPath = Path.Combine(rootPath, entry.RelativePath);
+                try
+                {
+                    if (Directory.Exists(fullPath))
+                    {
+                        var files = Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories).ToArray();
+                        var totalBytes = files.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0; } });
+                        if (files.Length > 0)
+                            items.Add(new AppTempItem(entry.Description, totalBytes, files.Length, fullPath));
+                    }
+                    else if (File.Exists(fullPath))
+                    {
+                        // Handle wildcard patterns in filenames.
+                        var dir = Path.GetDirectoryName(fullPath)!;
+                        var pattern = Path.GetFileName(fullPath);
+                        if (pattern.Contains('*') || pattern.Contains('?'))
+                        {
+                            if (Directory.Exists(dir))
+                            {
+                                var files = Directory.EnumerateFiles(dir, pattern).ToArray();
+                                var totalBytes = files.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0; } });
+                                if (files.Length > 0)
+                                    items.Add(new AppTempItem(entry.Description, totalBytes, files.Length, dir));
+                            }
+                        }
+                        else
+                        {
+                            var info = new FileInfo(fullPath);
+                            if (info.Exists && info.Length > 0)
+                                items.Add(new AppTempItem(entry.Description, info.Length, 1, fullPath));
+                        }
+                    }
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+
+        return new AppScan(def.Id, def.Name, def.Group, def.IsStoreApp, true, items);
+    }
+
+    private static bool IsInstalled(AppDefinition def)
+    {
+        // For Store apps, check if the package folder exists.
+        if (def.IsStoreApp)
+        {
+            foreach (var (root, entries) in def.TempLocations)
+            {
+                if (root != AppDataRoot.LocalAppData) continue;
+                var rootPath = ResolveRoot(root);
+                if (string.IsNullOrEmpty(rootPath)) continue;
+                foreach (var entry in entries)
+                {
+                    var fullPath = Path.Combine(rootPath, entry.RelativePath);
+                    // Check the package root (first path segment).
+                    var packageRoot = fullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        .TakeWhile(s => !s.Contains("AC") && !s.Contains("TempState"))
+                        .Aggregate((a, b) => Path.Combine(a, b));
+                    if (Directory.Exists(packageRoot)) return true;
+                }
+            }
+            return false;
+        }
+
+        // For desktop apps, check common install locations.
+        return def.Id switch
+        {
+            "7zip" => DirExists(ProgramFiles, "7-Zip") || DirExists(ProgramFilesX86, "7-Zip"),
+            "github-desktop" => DirExists(LocalAppData, "GitHub Desktop"),
+            "notepadpp" => DirExists(ProgramFilesX86, "Notepad++") || DirExists(ProgramFiles, "Notepad++"),
+            "nodejs" => DirExists(ProgramFiles, "nodejs") || DirExists(ProgramFilesX86, "nodejs"),
+            "steam" => DirExists(ProgramFilesX86, "Steam"),
+            "vlc" => DirExists(ProgramFiles, "VideoLAN") || DirExists(ProgramFilesX86, "VideoLAN"),
+            "zoom" => DirExists(LocalAppData, "Zoom"),
+            "microsoft-office" => DirExists(ProgramFiles, "Microsoft Office") || DirExists(ProgramFilesX86, "Microsoft Office"),
+            "onedrive" => DirExists(LocalAppData, "OneDrive"),
+            "microsoft-edge" => DirExists(LocalAppData, "Microsoft\\Edge"),
+            "activity-history" => DirExists(LocalAppData, "ConnectedDevicesPlatform"),
+            "defender" => FileExists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp"), "MpCmdRun.log"),
+            "mediaplayer" => DirExists(RoamingAppData, "Microsoft\\Media Player"),
+            "autoplay" => DirExists(LocalAppData, "Microsoft\\Windows\\Autoplay"),
+            "search" => DirExists(LocalAppData, "Microsoft\\Search"),
+            _ => false
+        };
+    }
+
+    private static string ResolveRoot(AppDataRoot root) => root switch
+    {
+        AppDataRoot.LocalAppData => LocalAppData,
+        AppDataRoot.RoamingAppData => RoamingAppData,
+        AppDataRoot.ProgramFiles => ProgramFiles,
+        AppDataRoot.ProgramFilesX86 => ProgramFilesX86,
+        AppDataRoot.UserProfile => UserProfile,
+        AppDataRoot.WindowsTemp => WindowsTemp,
+        _ => ""
+    };
+
+    private static bool DirExists(string root, string relative)
+        => Directory.Exists(Path.Combine(root, relative));
+
+    private static bool FileExists(string dir, string fileName)
+        => File.Exists(Path.Combine(dir, fileName));
+
+    private static void RemoveEmptyDirs(string root)
+    {
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
+            {
+                try
+                {
+                    if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                        Directory.Delete(dir);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+}

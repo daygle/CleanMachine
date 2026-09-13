@@ -43,7 +43,7 @@ public sealed partial class RegistryCarePage : Page
                 FindingsPanel.Children.Add(BuildCategoryGroup(group.Key, group.ToList()));
 
             var eligible = _findings.Count(RegistryCareService.IsCleanable);
-            ReportHeadline.Text = $"Analysis complete — {_findings.Count} issue(s) found.";
+            ReportHeadline.Text = $"Analysis complete - {_findings.Count} issue(s) found.";
             StatusText.Text = eligible > 0
                 ? $"{eligible} item(s) can be safely cleaned. Untick anything you want to keep."
                 : "Issues were found, but none are eligible for automatic cleaning.";

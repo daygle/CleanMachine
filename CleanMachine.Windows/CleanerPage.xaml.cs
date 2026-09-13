@@ -8,11 +8,12 @@ public sealed partial class CleanerPage : Page
 {
     private readonly BrowserCleanupService _service = new();
     private readonly List<(string BrowserId, string ItemId, bool Destructive, CheckBox Box)> _itemBoxes = [];
+    private AppSettings _settings = new();
 
     public CleanerPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => await CheckInterruptedAsync();
+        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); await CheckInterruptedAsync(); };
     }
 
     private async Task CheckInterruptedAsync()
@@ -34,7 +35,7 @@ public sealed partial class CleanerPage : Page
         try
         {
             var scans = await _service.DetectAndScanAsync();
-            foreach (var scan in scans)
+            foreach (var scan in scans.Where(s => s.Installed))
                 BrowserPanel.Children.Add(BuildCard(scan));
 
             var installed = scans.Count(s => s.Installed);
@@ -159,7 +160,10 @@ public sealed partial class CleanerPage : Page
         StatusText.Text = "Cleaning…";
         try
         {
-            var report = await _service.CleanItemsAsync(selected);
+            var secureDelete = SecureDeleteCheck.IsChecked == true
+                ? new SecureDeleteOptions(_settings.SecureDeleteMethod, _settings.CustomWipePasses)
+                : null;
+            var report = await _service.CleanItemsAsync(selected, secureDelete);
             StatusText.Text = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
                               $"{AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered, " +
                               $"{report.Skipped.Count:N0} skipped.";

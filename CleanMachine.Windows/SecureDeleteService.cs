@@ -26,6 +26,25 @@ public sealed class SecureDeleteService
         return new SecureDeleteResult(processed, bytes, skipped, options.Method, issues);
     }
     public Task<SecureDeleteResult> DeleteAsync(IEnumerable<string> files, SecureDeleteOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default) => DeleteAsync(files.Select(path => new SecureDeleteSelection(path, 0, true)), options, progress, cancellationToken);
+
+    /// <summary>Overwrites a single file in place and then deletes it. Used by the
+    /// integrated cleanup flow where the user has explicitly opted into secure delete.
+    /// Returns true on success, false if the file was skipped (locked, empty, etc.).</summary>
+    public static async Task<bool> SecureDeleteFileAsync(string path, SecureDeleteOptions options, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.IsReadOnly || info.Length == 0 || NativeSafety.IsProtectedPath(path)) return false;
+            var length = info.Length;
+            await OverwriteAsync(path, length, options, cancellationToken);
+            if (new FileInfo(path).Length != length) throw new IOException("File size changed during overwrite.");
+            File.Delete(path);
+            return true;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
     private static async Task OverwriteAsync(string path, long length, SecureDeleteOptions options, CancellationToken token) { const int bufferSize = 1024 * 1024; var buffer = new byte[Math.Min(bufferSize, Math.Max(1, length))]; await using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None, bufferSize, FileOptions.WriteThrough | FileOptions.Asynchronous); for (var pass = 0; pass < options.Passes; pass++) { stream.Position = 0; long remaining = length; while (remaining > 0) { token.ThrowIfCancellationRequested(); var count = (int)Math.Min(buffer.Length, remaining); FillPattern(buffer, count, options.Method, pass); await stream.WriteAsync(buffer.AsMemory(0, count), token); remaining -= count; } await stream.FlushAsync(token); } }
     private static void FillPattern(byte[] buffer, int count, WipeMethod method, int pass) { if (method == WipeMethod.SimpleZeroFill || (method == WipeMethod.Dod522022M && pass == 2) || (method == WipeMethod.Dod522022MEce && pass is 2 or 5)) { Array.Clear(buffer, 0, count); return; } if (method is WipeMethod.Dod522022M or WipeMethod.Dod522022MEce) { buffer.AsSpan(0, count).Fill(pass % 2 == 0 ? (byte)0xFF : (byte)0x00); return; } RandomNumberGenerator.Fill(buffer.AsSpan(0, count)); }
 }

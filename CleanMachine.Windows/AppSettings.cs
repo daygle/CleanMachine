@@ -30,8 +30,12 @@ public sealed class AppSettings
     // When false the main window is hidden from the taskbar and, when minimized,
     // it collapses to a system-tray icon instead.
     public bool ShowInTaskbar { get; set; } = true;
-    // Independent of ShowInTaskbar: when true, minimizing shows a system-tray icon
-    // but keeps the taskbar button, so the window can be restored from either place.
+    // Tray behavior: three independent options.
+    // Start minimized to tray on launch.
+    public bool StartMinimizedToTray { get; set; }
+    // Close button minimizes to tray instead of exiting.
+    public bool CloseToTray { get; set; }
+    // Minimize button sends to tray (keeps taskbar button).
     public bool MinimizeToTray { get; set; } = true;
     public WipeMethod SecureDeleteMethod { get; set; } = WipeMethod.SimpleZeroFill;
     public int CustomWipePasses { get; set; } = 1;
@@ -61,6 +65,9 @@ public sealed class AppSettings
     // even when the app is closed. An optional action (shutdown/restart/sleep) can
     // follow a successful run.
     public List<CleanupSchedule> Schedules { get; set; } = [];
+
+    // Track whether we've created the desktop shortcut on first launch.
+    public bool DesktopShortcutCreated { get; set; }
 
     public BrowserMonitorSetting? FindBrowserMonitor(string browser) =>
         BrowserMonitors.FirstOrDefault(m => m.Browser.Equals(browser, StringComparison.OrdinalIgnoreCase));

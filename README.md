@@ -4,7 +4,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 
 ## Project
 
-- `CleanMachine.Windows/` — native WinUI desktop application
+- `CleanMachine.Windows/` - native WinUI desktop application
 - Dedicated pages for Overview, Cleaner, Registry Care, Windows Cleanup, Secure Delete, Activity, Settings, and Updates
 - Safe browser-cache and Windows-cleanup review workflows
 - Read-only Registry Care with `.reg` backup/restore helpers
@@ -58,7 +58,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 ### Scheduled Cleanup
 - Recurring cleanup on Daily / Weekly / Monthly schedules or at logon, registered with Windows Task Scheduler so it runs even while the app is closed
 - Per-schedule item selection across Windows cleanup categories, browser caches, and Registry Care categories
-- Optional post-clean action — notify, shut down, restart, or sleep — with a 60-second abort window for shutdown and restart
+- Optional post-clean action - notify, shut down, restart, or sleep - with a 60-second abort window for shutdown and restart
 - Runs with least privilege, so only per-user items are touched
 
 ### Settings

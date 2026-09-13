@@ -1,7 +1,7 @@
 namespace CleanMachine.Windows;
 
 /// <summary>When a cleanup schedule fires. "AtLogon" is the practical, admin-free
-/// equivalent of "on PC startup" for a per-user app — a true machine-startup task
+/// equivalent of "on PC startup" for a per-user app - a true machine-startup task
 /// runs without a user session and cannot touch per-user data.</summary>
 public enum ScheduleTrigger
 {
@@ -45,6 +45,10 @@ public sealed class CleanupSchedule
     public List<string> RegistryCategories { get; set; } = [];
 
     public ScheduleAction AfterClean { get; set; } = ScheduleAction.Nothing;
+
+    /// <summary>When true, files are overwritten before deletion using the
+    /// method from AppSettings.SecureDeleteMethod.</summary>
+    public bool SecureDelete { get; set; }
 
     /// <summary>A short human-readable trigger summary for lists.</summary>
     public string TriggerSummary() => Trigger switch

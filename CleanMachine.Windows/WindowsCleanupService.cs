@@ -23,7 +23,7 @@ public sealed record CleanupItem(CleanupCategory Category, long Bytes);
 public sealed record CleanupPreviewItem(string Category, string Description, long Bytes);
 public sealed record CleanupPreview(IReadOnlyList<CleanupPreviewItem> Items, int TotalItems);
 
-public sealed record WindowsCleanupOptions(bool ConfirmReviewCategories = false, bool AllowElevation = false, IReadOnlySet<string>? ExcludedPaths = null);
+public sealed record WindowsCleanupOptions(bool ConfirmReviewCategories = false, bool AllowElevation = false, IReadOnlySet<string>? ExcludedPaths = null, bool SecureDelete = false, SecureDeleteOptions? SecureDeleteOptions = null);
 
 public sealed class WindowsCleanupService
 {
@@ -126,7 +126,10 @@ public sealed class WindowsCleanupService
                 try
                 {
                     var length = new FileInfo(file).Length;
-                    File.Delete(file);
+                    if (options.SecureDelete && options.SecureDeleteOptions is not null)
+                        await SecureDeleteService.SecureDeleteFileAsync(file, options.SecureDeleteOptions, cancellationToken);
+                    else
+                        File.Delete(file);
                     removed++;
                     recovered += length;
                 }

@@ -73,7 +73,9 @@
 
       <TextBlock Text="WINDOW" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
       <CheckBox x:Name="ShowInTaskbarToggle" Content="Show in taskbar"/>
-      <CheckBox x:Name="MinimizeToTrayToggle" Content="Minimize to tray (keep the taskbar button)"/>
+      <CheckBox x:Name="StartMinimizedToTrayToggle" Content="Minimize to system tray when program starts up"/>
+      <CheckBox x:Name="CloseToTrayToggle" Content="Minimize to system tray when program is closed"/>
+      <CheckBox x:Name="MinimizeToTrayToggle" Content="Minimize to system tray when minimized"/>
 
       <TextBlock Text="SECURE DELETE" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
       <StackPanel Spacing="4">

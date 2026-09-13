@@ -6,16 +6,17 @@
       <FontIcon Glyph="&#xE72C;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
       <TextBlock Text="Browser Cleaner" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
     </StackPanel>
-    <TextBlock Text="Tick what to clear for each installed browser. Destructive items — cookies, history, saved passwords — are off by default. Close the browser before cleaning."
+    <TextBlock Text="Tick what to clear for each installed browser. Destructive items - cookies, history, saved passwords - are off by default. Close the browser before cleaning."
                TextWrapping="Wrap" Foreground="#89958F"/>
 
     <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
       <StackPanel Spacing="12">
         <StackPanel Orientation="Horizontal" Spacing="10">
-          <Button x:Name="ScanButton" Content="Scan browsers" Click="Scan_Click"
+          <Button x:Name="ScanButton" Content="Scan Browsers" Click="Scan_Click"
                   Background="#286E58" Foreground="White" Padding="18,10"/>
-          <Button x:Name="CleanButton" Content="Clean selected" Click="Clean_Click"
+          <Button x:Name="CleanButton" Content="Clean Selected" Click="Clean_Click"
                   Padding="18,10" IsEnabled="False"/>
+          <CheckBox x:Name="SecureDeleteCheck" Content="Secure delete" VerticalAlignment="Center"/>
         </StackPanel>
         <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" IsIndeterminate="True" Visibility="Collapsed"/>
         <TextBlock x:Name="StatusText" Text="Click Scan browsers to detect installed browsers and measure what can be cleaned."

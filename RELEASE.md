@@ -37,7 +37,7 @@ The workflow signs with a PFX provided through two repository secrets:
 | `WINDOWS_SIGNING_CERTIFICATE_BASE64` | Base64 of the signing PFX |
 | `WINDOWS_SIGNING_CERTIFICATE_PASSWORD` | Password of that PFX |
 
-The certificate's subject must contain the package publisher (`CN=CleanMachine Publisher` by default, overridable via the `WINDOWS_PUBLISHER` repo variable) — the workflow and the in-app updater both validate the signer against it.
+The certificate's subject must contain the package publisher (`CN=CleanMachine Publisher` by default, overridable via the `WINDOWS_PUBLISHER` repo variable) - the workflow and the in-app updater both validate the signer against it.
 
 ### Stable self-signed cert (current setup)
 A long-lived self-signed code-signing cert is used so users trust it **once** instead of after every release:
@@ -47,10 +47,10 @@ A long-lived self-signed code-signing cert is used so users trust it **once** in
 - Thumbprints:
   - SHA-1: `FF954B01644555350E9411FEC586896BA4EF267D`
   - SHA-256: `9A8153067595DC6ED90408335AD2799534476772F81546371488101DC4364580`
-- Local material lives in `.signing-cert/` (gitignored — never commit it):
-  - `CleanMachine-signing-credentials.txt` — the secret values
-  - `CleanMachine-signing.cer` — public cert for user trust import
-  - `CleanMachine-signing.pfx` — offline backup of the key pair
+- Local material lives in `.signing-cert/` (gitignored - never commit it):
+  - `CleanMachine-signing-credentials.txt` - the secret values
+  - `CleanMachine-signing.cer` - public cert for user trust import
+  - `CleanMachine-signing.pfx` - offline backup of the key pair
 
 ### Fallback behavior
 If the secrets are not configured, the workflow mints a **throwaway self-signed cert per build**. The packages still sign, but the thumbprint changes every release, so users must re-trust the cert on each update. Avoid this; keep the secrets set.

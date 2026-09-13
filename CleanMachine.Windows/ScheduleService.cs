@@ -26,7 +26,7 @@ public sealed class ScheduleService
         if (IsMsix && TryGetPackageFamilyName(out var familyName))
         {
             // cmd.exe /c start with shell:AppsFolder activates the MSIX package
-            // by identity — the path is stable across updates.
+            // by identity - the path is stable across updates.
             return $"cmd.exe /c start \"\" \"shell:AppsFolder\\{familyName}!App\" --run-schedule {scheduleId}";
         }
         return $"\"{ExecutablePath}\" --run-schedule {scheduleId}";
@@ -62,6 +62,11 @@ public sealed class ScheduleService
         var items = 0;
         long bytes = 0;
 
+        // Build secure delete options once; null when the schedule doesn't use it.
+        SecureDeleteOptions? secureDelete = schedule.SecureDelete
+            ? new SecureDeleteOptions(settings.SecureDeleteMethod, settings.CustomWipePasses)
+            : null;
+
         try
         {
             var categories = WindowsCleanupService.Catalog
@@ -71,7 +76,7 @@ public sealed class ScheduleService
             {
                 var report = await new WindowsCleanupService().CleanSelectedAsync(
                     categories,
-                    new WindowsCleanupOptions(ConfirmReviewCategories: false, AllowElevation: false, ExcludedPaths: settings.ExcludedPaths),
+                    new WindowsCleanupOptions(ConfirmReviewCategories: false, AllowElevation: false, ExcludedPaths: settings.ExcludedPaths, SecureDelete: schedule.SecureDelete, SecureDeleteOptions: secureDelete),
                     cancellationToken: token);
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;
@@ -91,7 +96,7 @@ public sealed class ScheduleService
                 var targets = await service.ScanAsync(settings.ProtectedBrowsers, excludedPaths: settings.ExcludedPaths, token: token);
                 var report = await service.CleanWithReportAsync(
                     targets,
-                    new BrowserCleanupOptions(settings.ExcludedPaths, RequireBrowsersClosed: false),
+                    new BrowserCleanupOptions(settings.ExcludedPaths, RequireBrowsersClosed: false, SecureDelete: secureDelete),
                     token: token);
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;
@@ -188,7 +193,7 @@ public sealed class ScheduleService
         }
         catch
         {
-            // Not running as an MSIX package — standalone .exe install.
+            // Not running as an MSIX package - standalone .exe install.
             return false;
         }
     }
