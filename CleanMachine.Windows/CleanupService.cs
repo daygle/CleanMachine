@@ -12,9 +12,6 @@ public sealed class CleanupService
     private static readonly string[] SafeCacheDirectories = ["Cache", "Code Cache", "GPUCache", @"Service Worker\CacheStorage"];
     private static readonly string[] SupportedBrowsers = ["chrome", "edge", "firefox"];
 
-    public Task<CleanupResult> CleanSelectedBrowsersAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(new CleanupResult(0, 0));
-
     public Task<IReadOnlyList<BrowserCleanupTarget>> ScanBrowsersAsync(
         IEnumerable<string>? browsers = null,
         IEnumerable<string>? additionalProfileRoots = null,
@@ -70,12 +67,13 @@ public sealed class CleanupService
                     skipped.Add(new(path, "Recently modified"));
                     continue;
                 }
+                var deleted = true;
                 if (secureDelete is not null)
-                    await SecureDeleteService.SecureDeleteFileAsync(path, secureDelete, cancellationToken);
+                    deleted = await SecureDeleteService.SecureDeleteFileAsync(path, secureDelete, cancellationToken);
                 else
                     File.Delete(path);
-                removed++;
-                recovered += info.Length;
+                if (deleted) { removed++; recovered += info.Length; }
+                else skipped.Add(new(path, "Protected, locked, or empty - not securely deleted"));
             }
             catch (IOException) { skipped.Add(new(path, "File is locked or unavailable")); }
             catch (UnauthorizedAccessException) { skipped.Add(new(path, "Access denied")); }

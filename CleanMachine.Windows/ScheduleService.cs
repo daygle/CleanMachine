@@ -155,7 +155,9 @@ public sealed class ScheduleService
             }
         }
 
-        _ = new CleanupStatsStore().RecordAsync(items, bytes, token);
+        // Record with a fresh (uncancellable) token and await it, so a cancelled run
+        // still persists its partial results before the headless process exits.
+        await new CleanupStatsStore().RecordAsync(items, bytes, CancellationToken.None);
         await new ActivityStore().AddAsync(new ActivityEntry(
             DateTimeOffset.UtcNow,
             "Scheduled cleanup",
