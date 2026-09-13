@@ -84,16 +84,16 @@
                 <TextBlock Text="Application Cleanup" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
-            <Button x:Name="NavInstalledApps" Style="{StaticResource NavButton}" Click="InstalledApps_Click">
-              <StackPanel Orientation="Horizontal" Spacing="10">
-                <FontIcon Glyph="&#xE7B8;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
-                <TextBlock Text="Installed Applications" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
             <Button x:Name="NavStartupApps" Style="{StaticResource NavButton}" Click="StartupApps_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE7E8;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
                 <TextBlock Text="Startup Applications" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="NavInstalledApps" Style="{StaticResource NavButton}" Click="InstalledApps_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <FontIcon Glyph="&#xE7B8;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
+                <TextBlock Text="Installed Applications" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="NavSecureDelete" Style="{StaticResource NavButton}" Click="SecureDeleteNav_Click">
@@ -106,18 +106,6 @@
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xEDA2;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
                 <TextBlock Text="Drive Wiper" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
-            <Button x:Name="NavStartupApps" Style="{StaticResource NavButton}" Click="StartupApps_Click">
-              <StackPanel Orientation="Horizontal" Spacing="10">
-                <FontIcon Glyph="&#xE9A9;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
-                <TextBlock Text="Startup Apps" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
-            <Button x:Name="NavInstalledApps" Style="{StaticResource NavButton}" Click="InstalledApps_Click">
-              <StackPanel Orientation="Horizontal" Spacing="10">
-                <FontIcon Glyph="&#xE71D;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
-                <TextBlock Text="Installed Apps" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="NavActivity" Style="{StaticResource NavButton}" Click="Activity_Click">

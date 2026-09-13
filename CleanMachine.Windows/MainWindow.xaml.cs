@@ -531,12 +531,13 @@ public sealed partial class MainWindow : Window
             : pageType == typeof(InstalledAppsPage) ? NavInstalledApps
             : pageType == typeof(StartupAppsPage) ? NavStartupApps
             : pageType == typeof(SecureDeletePage) ? NavSecureDelete
+            : pageType == typeof(DriveWiperPage) ? NavDriveWiper
             : pageType == typeof(ActivityPage) ? NavActivity
             : pageType == typeof(SchedulesPage) ? NavSchedules
             : pageType == typeof(SettingsPage) ? NavSettings
             : pageType == typeof(UpdatesPage) ? NavUpdates
             : null;
-        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavAppCleanup, NavInstalledApps, NavStartupApps, NavSecureDelete, NavActivity, NavSchedules, NavSettings, NavUpdates })
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavAppCleanup, NavInstalledApps, NavStartupApps, NavSecureDelete, NavDriveWiper, NavActivity, NavSchedules, NavSettings, NavUpdates })
             button.Background = ReferenceEquals(button, active) ? NavActiveBrush : NavIdleBrush;
 
         AttachNavPointerFeedback();
@@ -550,7 +551,7 @@ public sealed partial class MainWindow : Window
     {
         if (_navPointerHandlersAttached) return;
         _navPointerHandlersAttached = true;
-        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavAppCleanup, NavInstalledApps, NavStartupApps, NavSecureDelete, NavActivity, NavSchedules, NavSettings, NavUpdates })
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavAppCleanup, NavInstalledApps, NavStartupApps, NavSecureDelete, NavDriveWiper, NavActivity, NavSchedules, NavSettings, NavUpdates })
         {
             button.PointerEntered += (s, _) => { var b = (Button)s; if (!IsNavActive(b)) b.Background = NavHoverBrush; };
             button.PointerExited += (s, _) => { var b = (Button)s; b.Background = IsNavActive(b) ? NavActiveBrush : NavIdleBrush; };
@@ -566,6 +567,7 @@ public sealed partial class MainWindow : Window
     private void StartupApps_Click(object sender, RoutedEventArgs e) => Navigate<StartupAppsPage>();
     private void InstalledApps_Click(object sender, RoutedEventArgs e) => Navigate<InstalledAppsPage>();
     private void SecureDeleteNav_Click(object sender, RoutedEventArgs e) => Navigate<SecureDeletePage>();
+    private void DriveWiper_Click(object sender, RoutedEventArgs e) => Navigate<DriveWiperPage>();
     private void Activity_Click(object sender, RoutedEventArgs e) => Navigate<ActivityPage>();
     private void Schedules_Click(object sender, RoutedEventArgs e) => Navigate<SchedulesPage>();
     private void Settings_Click(object sender, RoutedEventArgs e) => Navigate<SettingsPage>();

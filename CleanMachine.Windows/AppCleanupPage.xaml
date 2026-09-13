@@ -67,8 +67,6 @@
                   IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
-        <CheckBox x:Name="ShowCleanAppsCheck" Content="Show clean apps" VerticalAlignment="Center"
-                  Checked="ShowCleanApps_Changed" Unchecked="ShowCleanApps_Changed"/>
         <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete" VerticalAlignment="Center"/>
         <Button x:Name="CleanButton" Content="Clean Selected" Click="Clean_Click"
                 Padding="18,10" IsEnabled="False"/>
