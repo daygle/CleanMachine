@@ -189,8 +189,9 @@ public sealed partial class MainWindow : Window
         _startMinimizedToTray = settings.StartMinimizedToTray;
         _closeToTray = settings.CloseToTray;
 
-        // Create desktop shortcut on first launch (for both MSIX and .exe installs).
-        if (!settings.DesktopShortcutCreated)
+        // Create desktop shortcut on first launch for MSIX installs only
+        // (the .exe installer already creates one via its desktopicon task).
+        if (!settings.DesktopShortcutCreated && ScheduleService.IsMsix)
         {
             CreateDesktopShortcut();
             settings.DesktopShortcutCreated = true;
