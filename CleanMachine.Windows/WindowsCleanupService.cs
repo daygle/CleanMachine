@@ -53,7 +53,7 @@ public sealed class WindowsCleanupService
         new("explorer-run-history", "Windows Explorer", "Start Menu Run History", "Commands typed into the Run dialog", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU"),
         new("explorer-search-history", "Windows Explorer", "Windows Search History", "Searches typed into the Start menu / search box", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\WordWheelQuery"),
         new("explorer-open-save-history", "Windows Explorer", "Open & Save Dialog History", "Recent locations in open/save dialogs", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32"),
-        new("explorer-jump-lists", "Windows Explorer", "Quick Access & Taskbar Jump Lists", "Pinned/recent jump-list entries", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "Recent", "AutomaticDestinations"), Pattern: "*"),
+        new("explorer-jump-lists", "Windows Explorer", "Taskbar Jump Lists", "Recent-file jump lists for taskbar apps (Quick Access pins are preserved)", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "Recent", "AutomaticDestinations"), Pattern: "*"),
         new("explorer-thumbnails", "Windows Explorer", "Thumbnail Cache", "Cached image previews Windows can recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Explorer"), Pattern: "thumbcache*.db"),
         new("explorer-typed-paths", "Windows Explorer", "Other Explorer MRUs", "Typed paths and other Explorer history", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths"),
 
@@ -251,13 +251,24 @@ public sealed class WindowsCleanupService
                 IgnoreInaccessible = true,
                 AttributesToSkip = FileAttributes.ReparsePoint
             })
-            .Where(f => !IsExcluded(f, exclusions) && !NativeSafety.IsReparsePoint(f) && MatchesExtensions(f, extensions))
+            .Where(f => !IsExcluded(f, exclusions) && !NativeSafety.IsReparsePoint(f) && MatchesExtensions(f, extensions) && !IsProtectedFile(f))
             .Take(MaxFiles)
             .ToArray();
         }
         catch (IOException) { return []; }
         catch (UnauthorizedAccessException) { return []; }
     }
+
+    // The Quick Access pinned-links list is stored as one of the AutomaticDestinations
+    // jump-list files. Deleting it wipes the user's pinned Quick Access folders, so it is
+    // never cleaned or counted; per-app/taskbar jump lists in the same folder still are.
+    private static readonly string[] ProtectedFileNames =
+    [
+        "f01b4d95cf55d32a.automaticDestinations-ms" // Windows Explorer / Quick Access
+    ];
+
+    private static bool IsProtectedFile(string path)
+        => ProtectedFileNames.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
 
     private static bool MatchesExtensions(string path, string[]? extensions)
         => extensions is null || extensions.Length == 0
