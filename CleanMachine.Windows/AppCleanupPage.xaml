@@ -19,8 +19,8 @@
 
     <Grid Grid.Row="1" ColumnSpacing="14">
       <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="380"/>
         <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="320"/>
       </Grid.ColumnDefinitions>
 
       <!-- Left: app list grouped by category -->
@@ -48,8 +48,22 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
-          <TextBlock Grid.Row="0" x:Name="DetailHeadline" Text="Select an application"
-                     FontSize="16" FontWeight="SemiBold" Foreground="#273630" Margin="0,0,0,4" TextWrapping="Wrap"/>
+          <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="DetailBackButton" Grid.Column="0" Click="DetailBack_Click"
+                    Style="{ThemeResource AccentButtonStyle}" Padding="6,2" FontSize="12"
+                    Visibility="Collapsed" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <FontIcon Glyph="&#xE72B;" FontSize="12"/>
+                <TextBlock Text="Back"/>
+              </StackPanel>
+            </Button>
+            <TextBlock x:Name="DetailHeadline" Grid.Column="1" Text="Select an application"
+                       FontSize="16" FontWeight="SemiBold" Foreground="#273630" Margin="6,0,0,4" TextWrapping="Wrap"/>
+          </Grid>
           <TextBlock Grid.Row="1" x:Name="StatusText" Text="Click Scan to detect installed applications and measure their temp files."
                      FontSize="12" Foreground="#6E8178" Margin="0,0,0,8" TextWrapping="Wrap"/>
           <ProgressBar Grid.Row="2" x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed" Margin="0,0,0,8"/>

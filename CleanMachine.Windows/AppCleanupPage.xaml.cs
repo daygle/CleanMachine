@@ -10,6 +10,10 @@ public sealed partial class AppCleanupPage : Page
     private readonly List<(string AppId, int ItemIndex, CheckBox Box)> _itemBoxes = [];
     private AppSettings _settings = new();
     private IReadOnlyList<AppScan> _lastScans = [];
+    // Detail-card navigation: the app whose detail is shown, and the index of the
+    // item drilled into (null = the app-level view listing all of its items).
+    private AppScan? _detailContext;
+    private int? _detailItemIndex;
 
     public AppCleanupPage()
     {
@@ -62,6 +66,9 @@ public sealed partial class AppCleanupPage : Page
 
         AppListPanel.Children.Clear();
         _itemBoxes.Clear();
+        _detailContext = null;
+        _detailItemIndex = null;
+        DetailBackButton.Visibility = Visibility.Collapsed;
         DetailHeadline.Text = "Select an application";
         StatusText.Text = visible.Count == 0
             ? "All apps are clean. Check 'Show All' to see them."
@@ -86,7 +93,7 @@ public sealed partial class AppCleanupPage : Page
         // so the right side is never a blank "Select an application" until clicked.
         var firstWithItems = visible.FirstOrDefault(s => s.Items.Count > 0);
         if (firstWithItems is not null)
-            OnItemClicked(firstWithItems, 0);
+            ShowAppDetail(firstWithItems);
     }
 
     private void Filter_Changed(object sender, RoutedEventArgs e)
@@ -116,7 +123,10 @@ public sealed partial class AppCleanupPage : Page
         var totalBytes = scan.Items.Sum(i => i.Bytes);
         header.Children.Add(new TextBlock
         {
-            Text = totalBytes > 0 ? WindowsCleanupPage.FormatBytes(totalBytes) : "Clean",
+            // Show the real total even when it is zero bytes - an app can have
+            // items that exist yet hold only empty files, and labelling that
+            // "Clean" while the item rows still list files is contradictory.
+            Text = scan.Items.Count > 0 ? WindowsCleanupPage.FormatBytes(totalBytes) : "Clean",
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69))
@@ -175,7 +185,7 @@ public sealed partial class AppCleanupPage : Page
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            detailsButton.Click += (_, _) => OnItemClicked(scan, itemIndex);
+            detailsButton.Click += (_, _) => ShowItemDetail(scan, itemIndex);
             ToolTipService.SetToolTip(detailsButton, item.FullPath);
 
             var row = new Grid { MinHeight = 30 };
@@ -189,17 +199,111 @@ public sealed partial class AppCleanupPage : Page
         }
 
         expander.Content = content;
-        // Expanding an app shows its first item's files in the detail card, so the
-        // card fills in without the user having to click each item.
-        expander.Expanding += (_, _) => OnItemClicked(scan, 0);
+        // Expanding an app shows the app-level detail (all of its items); clicking
+        // one item drills into that item's files. Expanding is not a drill-down,
+        // so it does not force the first item's files on the user.
+        expander.Expanding += (_, _) => ShowAppDetail(scan);
         return expander;
     }
 
-    private void OnItemClicked(AppScan scan, int itemIndex)
+    /// <summary>App-level detail: every cleanable item as a clickable row, one
+    /// level of drill-down away from its files. Shown when an app card is expanded
+    /// or its header clicked.</summary>
+    private void ShowAppDetail(AppScan scan)
+    {
+        _detailContext = scan;
+        _detailItemIndex = null;
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailHeadline.Text = scan.Name;
+        StatusText.Text = $"{scan.Items.Count} cleanable item(s), {WindowsCleanupPage.FormatBytes(scan.Items.Sum(i => i.Bytes))} total. Click an item to see its files.";
+        DetailPanel.Children.Clear();
+
+        if (scan.Items.Count == 0)
+        {
+            DetailPanel.Children.Add(new TextBlock
+            {
+                Text = "Nothing to clean for this app.",
+                FontSize = 12,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
+            return;
+        }
+
+        foreach (var (item, index) in scan.Items.Select((item, index) => (item, index)))
+        {
+            var row = new Grid { MinHeight = 32 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            // Mirrors the app card's checkbox for the same item: the card's box is
+            // the single source of truth in _itemBoxes, and toggling either one
+            // toggles both. Rebuilding the detail panel therefore cannot leave
+            // stale or duplicate entries behind.
+            var cardBox = _itemBoxes.FirstOrDefault(x => x.AppId == scan.Id && x.ItemIndex == index).Box;
+            var box = new CheckBox
+            {
+                IsChecked = cardBox?.IsChecked == true,
+                MinWidth = 0,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            box.Checked += (_, _) => { if (cardBox is not null) cardBox.IsChecked = true; };
+            box.Unchecked += (_, _) => { if (cardBox is not null) cardBox.IsChecked = false; };
+            Grid.SetColumn(box, 0);
+            row.Children.Add(box);
+
+            var label = new StackPanel { Spacing = 0 };
+            label.Children.Add(new TextBlock
+            {
+                Text = item.Description,
+                FontSize = 12,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+            });
+            label.Children.Add(new TextBlock
+            {
+                Text = $"{WindowsCleanupPage.FormatBytes(item.Bytes)} - {item.FileCount:N0} file(s)",
+                FontSize = 10,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
+            var button = new Button
+            {
+                Content = label,
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(6, 2, 6, 2),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            button.Click += (_, _) => ShowItemDetail(scan, index);
+            ToolTipService.SetToolTip(button, item.FullPath);
+            Grid.SetColumn(button, 1);
+            row.Children.Add(button);
+
+            var chevron = new FontIcon
+            {
+                Glyph = "\uE76C",
+                FontSize = 12,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            };
+            Grid.SetColumn(chevron, 2);
+            row.Children.Add(chevron);
+
+            DetailPanel.Children.Add(row);
+        }
+    }
+
+    /// <summary>Item-level detail: the files of the item drilled into. The back
+    /// button returns to the app-level view.</summary>
+    private void ShowItemDetail(AppScan scan, int itemIndex)
     {
         var item = scan.Items.ElementAtOrDefault(itemIndex);
         if (item is null) return;
 
+        _detailContext = scan;
+        _detailItemIndex = itemIndex;
+        DetailBackButton.Visibility = Visibility.Visible;
         // Avoid a redundant "Activity History - Activity history" when the app has a
         // single item whose description just restates the app name.
         DetailHeadline.Text = string.Equals(scan.Name, item.Description, StringComparison.OrdinalIgnoreCase)
@@ -289,22 +393,26 @@ public sealed partial class AppCleanupPage : Page
         }
     }
 
+    /// <summary>Back navigation from a drilled-into item to its app's item list.</summary>
+    private void DetailBack_Click(object sender, RoutedEventArgs e)
+    {
+        if (_detailContext is { } scan)
+            ShowAppDetail(scan);
+    }
+
     private async void Clean_Click(object sender, RoutedEventArgs e)
     {
+        // Distinct: the same item can be ticked in both the app card and the
+        // detail panel (mirrored checkboxes), and must count once.
         var selected = _itemBoxes
             .Where(x => x.Box.IsChecked == true)
             .Select(x => (x.AppId, x.ItemIndex))
+            .Distinct()
             .ToArray();
         if (selected.Length == 0) { StatusText.Text = "Nothing is ticked. Tick at least one item to clean."; return; }
 
-        var totalBytes = _itemBoxes
-            .Where(x => x.Box.IsChecked == true)
-            .Sum(x =>
-            {
-                var scan = _lastScans.FirstOrDefault(s => s.Id == x.AppId);
-                var item = scan?.Items.ElementAtOrDefault(x.ItemIndex);
-                return item?.Bytes ?? 0;
-            });
+        var totalBytes = selected.Sum(x =>
+            _lastScans.FirstOrDefault(s => s.Id == x.AppId)?.Items.ElementAtOrDefault(x.ItemIndex)?.Bytes ?? 0);
 
         var confirm = new ContentDialog
         {
