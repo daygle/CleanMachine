@@ -265,13 +265,16 @@ public sealed partial class WindowsCleanupPage : Page
         {
             var files = await Task.Run(() => _service.ScanFiles(category, _settings.ExcludedPaths));
 
-            // Back button
+            // Back button. The arrow glyph must use the icon font, but the label must
+            // NOT - a button-wide "Segoe MDL2 Assets" font renders the words as tofu
+            // boxes, so keep the glyph in a FontIcon and the text in a normal TextBlock.
             var backRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 0, 8) };
+            var backContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+            backContent.Children.Add(new FontIcon { Glyph = "\uE72B", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+            backContent.Children.Add(new TextBlock { Text = "Back to summary", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
             var backBtn = new Button
             {
-                Content = "\uE72B  Back to summary", // BackIcon
-                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe MDL2 Assets"),
-                FontSize = 12,
+                Content = backContent,
                 Padding = new Thickness(8, 4, 8, 4),
                 Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
                 BorderThickness = new Thickness(0)

@@ -61,8 +61,17 @@ public sealed partial class RegistryCarePage : Page
             return;
         }
 
-        var showAll = ShowAllCheck.IsChecked == true;
         var eligibleTotal = _findings.Count(RegistryCareService.IsCleanable);
+        var ineligibleTotal = _findings.Count - eligibleTotal;
+
+        // Show All only reveals findings that are NOT eligible for automatic cleaning.
+        // When every finding is already eligible there is nothing extra to show, so
+        // disable the toggle (and explain why) instead of leaving it looking broken.
+        ShowAllCheck.IsEnabled = ineligibleTotal > 0;
+        ToolTipService.SetToolTip(ShowAllCheck, ineligibleTotal > 0
+            ? $"Also list {ineligibleTotal} finding(s) not eligible for automatic cleaning"
+            : "All findings are eligible for cleaning - nothing extra to show");
+        var showAll = ShowAllCheck.IsChecked == true && ineligibleTotal > 0;
 
         foreach (var group in _findings.GroupBy(f => f.Category).OrderBy(g => g.Key))
         {
@@ -74,9 +83,11 @@ public sealed partial class RegistryCarePage : Page
         ReportHeadline.Text = $"Analysis complete - {_findings.Count} issue(s) found.";
         StatusText.Text = eligibleTotal == 0
             ? "Issues were found, but none are eligible for automatic cleaning. Tick Show All to review them."
-            : showAll
-                ? $"{eligibleTotal} item(s) can be safely cleaned; ineligible findings are shown greyed out. Untick anything you want to keep."
-                : $"{eligibleTotal} item(s) can be safely cleaned. Untick anything you want to keep, or tick Show All to review ineligible findings.";
+            : ineligibleTotal == 0
+                ? $"{eligibleTotal} item(s) can be safely cleaned. Untick anything you want to keep. (All findings are eligible, so Show All has nothing extra to reveal.)"
+                : showAll
+                    ? $"{eligibleTotal} item(s) can be safely cleaned; {ineligibleTotal} ineligible finding(s) are shown greyed out. Untick anything you want to keep."
+                    : $"{eligibleTotal} item(s) can be safely cleaned. Untick anything you want to keep, or tick Show All to review {ineligibleTotal} ineligible finding(s).";
     }
 
     private void Filter_Changed(object sender, RoutedEventArgs e)

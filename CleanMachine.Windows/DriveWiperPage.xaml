@@ -27,7 +27,7 @@
           <ComboBoxItem Content="7 passes - maximum"/>
         </ComboBox>
         <TextBlock Text="SSD note: due to wear levelling, overwriting free space cannot guarantee sanitization on solid-state drives. For sensitive data use device encryption; wiping free space is most useful for traditional hard drives."
-                   Foreground="#C7775D" FontSize="11" TextWrapping="Wrap" MaxWidth="560"/>
+                   Foreground="#C7775D" FontSize="11" TextWrapping="Wrap" MaxWidth="560" HorizontalAlignment="Left"/>
         <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed" Margin="0,4,0,0"/>
         <TextBlock x:Name="StatusText" Text="Select a drive and the number of passes."
                    Foreground="#6E8178" FontSize="12" TextWrapping="Wrap"/>

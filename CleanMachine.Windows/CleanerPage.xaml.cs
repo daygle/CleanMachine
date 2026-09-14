@@ -96,6 +96,19 @@ public sealed partial class CleanerPage : Page
             : "Monitoring is off - browser caches are only cleaned when you run it manually here.";
     }
 
+    /// <summary>Persists one item's tick state so the Browser Cleaner page restores
+    /// the user's selection next time. Best-effort - a failed save just means the
+    /// default is used next time.</summary>
+    private async void RememberSelection(string key, bool value)
+    {
+        try
+        {
+            _settings.BrowserCleanupSelection[key] = value;
+            await _settings.SaveAsync();
+        }
+        catch { /* remembering the selection is best-effort */ }
+    }
+
     private async Task CheckInterruptedAsync()
     {
         var state = await _service.LoadInterruptedStateAsync();
@@ -195,13 +208,21 @@ public sealed partial class CleanerPage : Page
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
 
+            // Remember the user's tick choice across navigation/restarts; fall back
+            // to the safe default (destructive items start unticked so a single
+            // mis-click can never wipe data). Set IsChecked before wiring the
+            // handlers so restoring the saved state does not itself trigger a save.
+            var key = $"{scan.Id}:{item.Id}";
             var box = new CheckBox
             {
                 Content = text,
-                // Destructive items start unticked so a single mis-click can never wipe data.
-                IsChecked = !item.Destructive,
+                IsChecked = _settings.BrowserCleanupSelection.TryGetValue(key, out var saved)
+                    ? saved
+                    : !item.Destructive,
                 MinHeight = 30
             };
+            box.Checked += (_, _) => RememberSelection(key, true);
+            box.Unchecked += (_, _) => RememberSelection(key, false);
             ToolTipService.SetToolTip(box, item.Description);
             _itemBoxes.Add((scan.Id, item.Id, item.Destructive, box));
             content.Children.Add(box);

@@ -9,10 +9,11 @@
       </StackPanel>
 
       <TextBlock Text="SYSTEM MONITORING" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
-      <CheckBox x:Name="SystemMonitoringToggle" Content="Clean safe items when free disk space drops below"/>
+      <CheckBox x:Name="SystemMonitoringToggle" Content="Clean safe items when free disk space drops below"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
       <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
         <NumberBox x:Name="FreeSpaceBox" Value="1" Minimum="0.1" Maximum="100" SpinButtonPlacementMode="Inline"
-                   SmallChange="0.1" LargeChange="1" Width="120"/>
+                   SmallChange="0.1" LargeChange="1" Width="120" ValueChanged="FreeSpace_ValueChanged"/>
         <ComboBox x:Name="FreeSpaceUnit" Width="80" VerticalAlignment="Center" SelectionChanged="FreeSpaceUnit_Changed">
           <ComboBoxItem Content="GB"/>
           <ComboBoxItem Content="MB"/>
@@ -21,7 +22,7 @@
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
         <TextBlock Text="Action:" VerticalAlignment="Center" Foreground="#53635B"/>
-        <ComboBox x:Name="SystemMonitorAction" SelectedIndex="1" Width="220">
+        <ComboBox x:Name="SystemMonitorAction" SelectedIndex="1" Width="220" SelectionChanged="Setting_ComboChanged">
           <ComboBoxItem Content="Do nothing"/>
           <ComboBoxItem Content="Clean silently"/>
           <ComboBoxItem Content="Clean and notify"/>
@@ -35,18 +36,23 @@
                  FontSize="11" Foreground="#89958F" TextWrapping="Wrap"/>
 
       <TextBlock Text="UPDATES" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
-      <CheckBox x:Name="UpdateCheckToggle" Content="Check for updates automatically"/>
+      <CheckBox x:Name="UpdateCheckToggle" Content="Check for updates automatically"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
 
       <TextBlock Text="WINDOW" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
-      <CheckBox x:Name="ShowInTaskbarToggle" Content="Show in taskbar"/>
-      <CheckBox x:Name="StartMinimizedToTrayToggle" Content="Minimize to system tray when program starts up"/>
-      <CheckBox x:Name="CloseToTrayToggle" Content="Minimize to system tray when program is closed"/>
-      <CheckBox x:Name="MinimizeToTrayToggle" Content="Minimize to system tray when minimized"/>
+      <CheckBox x:Name="ShowInTaskbarToggle" Content="Show in taskbar"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
+      <CheckBox x:Name="StartMinimizedToTrayToggle" Content="Minimize to system tray when program starts up"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
+      <CheckBox x:Name="CloseToTrayToggle" Content="Minimize to system tray when program is closed"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
+      <CheckBox x:Name="MinimizeToTrayToggle" Content="Minimize to system tray when minimized"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
 
       <TextBlock Text="SECURE DELETE" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
       <StackPanel Spacing="4">
         <TextBlock Text="Default wipe method" FontSize="12" Foreground="#53635B"/>
-        <ComboBox x:Name="WipeMethodCombo" SelectedIndex="0" Width="300">
+        <ComboBox x:Name="WipeMethodCombo" SelectedIndex="0" Width="300" SelectionChanged="Setting_ComboChanged">
           <ComboBoxItem Content="Simple zero-fill (1 pass)"/>
           <ComboBoxItem Content="US DoD 5220.22-M (3 passes)"/>
           <ComboBoxItem Content="US DoD 5220.22-M ECE (7 passes)"/>
@@ -59,12 +65,10 @@
       <TextBlock Text="Add folder paths to exclude from cleanup (one per line):"
                  FontSize="12" Foreground="#53635B"/>
       <TextBox x:Name="ExclusionsBox" AcceptsReturn="True" Height="80"
-               TextWrapping="Wrap" FontSize="12" Padding="8"/>
+               TextWrapping="Wrap" FontSize="12" Padding="8" LostFocus="Setting_LostFocus"/>
 
       <StackPanel Orientation="Horizontal" Spacing="8">
         <Button Content="Restore Defaults" Click="RestoreDefaults_Click" Padding="16,9"/>
-        <Button Content="Save Settings" Click="Save_Click"
-                Background="#286E58" Foreground="White" Padding="18,10"/>
       </StackPanel>
       <TextBlock x:Name="StatusText" Foreground="#6E8178"/>
     </StackPanel>

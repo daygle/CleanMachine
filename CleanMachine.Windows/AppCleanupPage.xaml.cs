@@ -81,6 +81,12 @@ public sealed partial class AppCleanupPage : Page
             foreach (var scan in group)
                 AppListPanel.Children.Add(BuildAppCard(scan));
         }
+
+        // Populate the detail card straight away with the first app that has items,
+        // so the right side is never a blank "Select an application" until clicked.
+        var firstWithItems = visible.FirstOrDefault(s => s.Items.Count > 0);
+        if (firstWithItems is not null)
+            OnItemClicked(firstWithItems, 0);
     }
 
     private void Filter_Changed(object sender, RoutedEventArgs e)
@@ -147,20 +153,45 @@ public sealed partial class AppCleanupPage : Page
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
 
+            // The checkbox only decides whether the item is cleaned. Viewing its
+            // files is a separate action on the label button, so opening the detail
+            // card no longer toggles the tick (previously the two were the same click).
             var box = new CheckBox
             {
-                Content = text,
                 IsChecked = true,
-                MinHeight = 30,
+                MinWidth = 0,
+                VerticalAlignment = VerticalAlignment.Center,
                 Tag = (scan.Id, i)
             };
-            box.Click += (_, _) => OnItemClicked(scan, itemIndex);
-            ToolTipService.SetToolTip(box, item.FullPath);
             _itemBoxes.Add((scan.Id, i, box));
-            content.Children.Add(box);
+
+            var detailsButton = new Button
+            {
+                Content = text,
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(6, 2, 6, 2),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            detailsButton.Click += (_, _) => OnItemClicked(scan, itemIndex);
+            ToolTipService.SetToolTip(detailsButton, item.FullPath);
+
+            var row = new Grid { MinHeight = 30 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(box, 0);
+            Grid.SetColumn(detailsButton, 1);
+            row.Children.Add(box);
+            row.Children.Add(detailsButton);
+            content.Children.Add(row);
         }
 
         expander.Content = content;
+        // Expanding an app shows its first item's files in the detail card, so the
+        // card fills in without the user having to click each item.
+        expander.Expanding += (_, _) => OnItemClicked(scan, 0);
         return expander;
     }
 
@@ -169,7 +200,11 @@ public sealed partial class AppCleanupPage : Page
         var item = scan.Items.ElementAtOrDefault(itemIndex);
         if (item is null) return;
 
-        DetailHeadline.Text = $"{scan.Name} — {item.Description}";
+        // Avoid a redundant "Activity History — Activity history" when the app has a
+        // single item whose description just restates the app name.
+        DetailHeadline.Text = string.Equals(scan.Name, item.Description, StringComparison.OrdinalIgnoreCase)
+            ? scan.Name
+            : $"{scan.Name} — {item.Description}";
         StatusText.Text = $"{item.FileCount:N0} file(s), {WindowsCleanupPage.FormatBytes(item.Bytes)}";
         DetailPanel.Children.Clear();
 

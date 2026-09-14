@@ -59,6 +59,12 @@ public sealed class AppSettings
     public HashSet<string>? QuickCleanRegistryCategories { get; set; }
     public HashSet<string>? QuickCleanApps { get; set; }
 
+    // Remembered per-item tick state on the Browser Cleaner page, keyed by
+    // "browserId:itemId". A key that is absent falls back to the default (safe
+    // items ticked, destructive items unticked); a present key overrides it with
+    // the user's last choice, so selections survive navigation and restarts.
+    public Dictionary<string, bool> BrowserCleanupSelection { get; set; } = [];
+
     // Per-browser monitoring: entries use canonical ids (chrome, edge, firefox).
     public List<BrowserMonitorSetting> BrowserMonitors { get; set; } =
     [
