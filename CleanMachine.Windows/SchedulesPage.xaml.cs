@@ -14,6 +14,8 @@ public sealed partial class SchedulesPage : Page
     private AppSettings _settings = new();
     private CleanupSchedule? _current;
     private string? _currentId;
+    // Guards the Select-all handler while a schedule's items are loaded into the boxes.
+    private bool _loadingItems;
 
     public SchedulesPage()
     {
@@ -159,6 +161,8 @@ public sealed partial class SchedulesPage : Page
         SecureDeleteHint.Visibility = schedule.SecureDelete ? Visibility.Visible : Visibility.Collapsed;
         WakeCheck.IsChecked = schedule.WakeToRun;
 
+        _loadingItems = true;
+        SelectAllItems.IsChecked = false;
         foreach (var (key, box) in _itemBoxes)
             box.IsChecked = key switch
             {
@@ -167,10 +171,19 @@ public sealed partial class SchedulesPage : Page
                 var k when k.StartsWith("reg:") => schedule.RegistryCategories.Contains(k[4..], StringComparer.OrdinalIgnoreCase),
                 _ => false
             };
+        _loadingItems = false;
 
         UpdateTriggerVisibility();
         UpdateAfterWarning();
         StatusText.Text = string.Empty;
+    }
+
+    private void SelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loadingItems) return;
+        var value = SelectAllItems.IsChecked == true;
+        foreach (var (_, box) in _itemBoxes)
+            box.IsChecked = value;
     }
 
     private void Trigger_Changed(object sender, SelectionChangedEventArgs e) => UpdateTriggerVisibility();

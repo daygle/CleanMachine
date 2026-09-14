@@ -471,6 +471,10 @@ public sealed class ManifestAndSafetyTests
         Assert.Contains("/RL LIMITED", daily);
         Assert.Contains("--run-schedule abc", daily);
         Assert.Contains("CleanMachine.exe", daily);
+        // The launch command's own quotes must be escaped (\") inside /TR, never left
+        // as doubled quotes ("") which schtasks rejects - important for paths with spaces.
+        Assert.Contains("\\\"", daily);
+        Assert.DoesNotContain("\"\"", daily);
 
         var weekly = ScheduledTask.BuildCreateArguments(new CleanupSchedule
         { Id = "w", Trigger = ScheduleTrigger.Weekly, DayOfWeek = DayOfWeek.Thursday, Hour = 22, Minute = 30 }, $"{launchCmd} w");

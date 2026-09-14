@@ -82,7 +82,12 @@ public static class ScheduledTask
     /// (e.g. the exe path or a shell:AppsFolder identity for MSIX).</summary>
     public static string BuildCreateArguments(CleanupSchedule schedule, string launchCommand)
     {
-        var action = $"/TR \"{launchCommand}\"";
+        // The launch command already contains its own quotes (around the exe path, or
+        // the shell:AppsFolder identity for MSIX). schtasks wraps /TR in quotes, so the
+        // inner quotes must be escaped as \" - otherwise the doubled quotes make schtasks
+        // reject the task ("could not register"), especially when the path has spaces
+        // (e.g. C:\Program Files\...).
+        var action = $"/TR \"{launchCommand.Replace("\"", "\\\"")}\"";
         var trigger = schedule.Trigger switch
         {
             ScheduleTrigger.Daily => $"/SC DAILY /ST {Clock(schedule)}",
