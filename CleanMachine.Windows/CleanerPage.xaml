@@ -16,7 +16,7 @@
                TextWrapping="Wrap" Foreground="#89958F"/>
 
     <!-- Browser monitoring: what happens when each browser closes. -->
-    <Border Grid.Row="2" Background="#EAF4EE" BorderBrush="#DCE8E1" BorderThickness="1" CornerRadius="10" Padding="16">
+    <Border Grid.Row="2" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
       <StackPanel Spacing="10">
         <CheckBox x:Name="CleanToggle" Content="Monitor supported browsers and clean caches when they close"
                   FontSize="13" Checked="CleanToggle_Changed" Unchecked="CleanToggle_Changed"/>
