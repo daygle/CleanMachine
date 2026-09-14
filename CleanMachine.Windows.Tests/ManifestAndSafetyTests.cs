@@ -384,6 +384,91 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void ExitItemsDefaultToEverySafeCatalogItem()
+    {
+        var settings = new AppSettings();
+        var items = settings.EffectiveExitItems("chrome");
+
+        var expected = BrowserCatalog.ItemsFor(BrowserFamily.Chromium).Where(i => !i.Destructive).Select(i => i.Id);
+        Assert.Equal(expected.OrderBy(i => i), items.OrderBy(i => i));
+        // The guarantee that matters: destructive items are never auto-cleaned.
+        Assert.All(BrowserCatalog.ItemsFor(BrowserFamily.Chromium).Where(i => i.Destructive),
+            i => Assert.DoesNotContain(items, id => id == i.Id));
+    }
+
+    [Fact]
+    public void ExitItemsHonorExplicitSelectionAndFilterStaleOrDestructiveIds()
+    {
+        var settings = new AppSettings();
+        settings.FindBrowserMonitor("chrome")!.Items =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cache", "sessions", "cookies", "vanished-item" };
+
+        var items = settings.EffectiveExitItems("chrome");
+        // Explicit selection is honored; stale ids vanish, destructive ids never pass.
+        Assert.Equal(new[] { "cache", "sessions" }.OrderBy(i => i), items.OrderBy(i => i));
+
+        // Case-insensitive ids keep working across catalog versions.
+        settings.FindBrowserMonitor("edge")!.Items = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CACHE" };
+        Assert.Equal(new[] { "cache" }, settings.EffectiveExitItems("edge").OrderBy(i => i));
+
+        // An explicit empty set means the exit-clean does nothing.
+        settings.FindBrowserMonitor("firefox")!.Items = [];
+        Assert.Empty(settings.EffectiveExitItems("firefox"));
+    }
+
+    [Fact]
+    public void SettingsJsonRoundTripPreservesMonitorExitItems()
+    {
+        var settings = new AppSettings();
+        settings.FindBrowserMonitor("chrome")!.Items = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cache" };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+
+        Assert.NotNull(clone);
+        Assert.Equal(new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cache" }, clone!.FindBrowserMonitor("chrome")!.Items);
+        // Unconfigured monitors keep the safe-item fallback after a round-trip.
+        Assert.Null(clone.FindBrowserMonitor("edge")!.Items);
+        var fallback = clone.EffectiveExitItems("edge");
+        Assert.DoesNotContain(fallback, id => id == "cookies");
+    }
+
+    [Fact]
+    public void CloseAssistDefaultsToOffAndSurvivesRoundTrip()
+    {
+        var settings = new AppSettings();
+        // Off by default: the manual clean keeps its ask-first refusal behavior.
+        Assert.False(settings.CloseOpenBrowsersAutomatically);
+
+        settings.CloseOpenBrowsersAutomatically = true;
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+        Assert.NotNull(clone);
+        Assert.True(clone!.CloseOpenBrowsersAutomatically);
+    }
+
+    [Fact]
+    public void DisplayNameForProcessMapsKnownBrowsersAndPassesThroughUnknown()
+    {
+        Assert.Equal("Google Chrome", BrowserCleanupService.DisplayNameForProcess("chrome"));
+        Assert.Equal("Microsoft Edge", BrowserCleanupService.DisplayNameForProcess("msedge"));
+        Assert.Equal("Mozilla Firefox", BrowserCleanupService.DisplayNameForProcess("firefox"));
+        // Unknown process names pass through unchanged rather than lying.
+        Assert.Equal("notabrowser", BrowserCleanupService.DisplayNameForProcess("notabrowser"));
+    }
+
+    [Fact]
+    public async Task CloseRunningBrowsersAsyncIsANoOpWhenNothingRuns()
+    {
+        // No supported browser should be running in the test host; the call must
+        // return an empty still-running list immediately (no 5s grace wait).
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var stillRunning = await BrowserCleanupService.CloseRunningBrowsersAsync([]);
+        Assert.Empty(stillRunning);
+        Assert.True(sw.ElapsedMilliseconds < 1000, $"took {sw.ElapsedMilliseconds}ms");
+    }
+
+    [Fact]
     public void SystemMonitorCandidateSetContainsOnlySafeEnabledCategories()
     {
         var settings = new AppSettings();

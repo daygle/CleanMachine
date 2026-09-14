@@ -120,6 +120,77 @@ public sealed class BrowserCleanupService
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
+    /// <summary>User-facing name for a browser process ("msedge" -> "Microsoft Edge").
+    /// Unknown process names fall back to the name itself.</summary>
+    public static string DisplayNameForProcess(string processName)
+        => BrowserCatalog.Browsers
+            .FirstOrDefault(b => b.ProcessNames.Contains(processName, StringComparer.OrdinalIgnoreCase))?.Name
+            ?? processName;
+
+    /// <summary>Two-tier close-assist for the manual cleaning flow: asks every running
+    /// supported browser to close politely (the same close the user gets by clicking
+    /// the window's X, so sessions and recent-tabs lists stay intact), waits up to
+    /// five seconds, then force-kills only whatever is still alive. Returns the
+    /// process names that are STILL running afterwards; an empty result means all
+    /// browsers closed. Never touches other applications.</summary>
+    public static async Task<IReadOnlyList<string>> CloseRunningBrowsersAsync(
+        IEnumerable<string>? processNames = null,
+        CancellationToken token = default)
+    {
+        var names = (processNames ?? GetRunningBrowsers())
+            .Where(n => BrowserCatalog.Browsers.Any(b => b.ProcessNames.Contains(n, StringComparer.OrdinalIgnoreCase)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (names.Length == 0) return [];
+
+        // Tier 1: graceful. WM_CLOSE asks the app to close like the window's X
+        // button; browsers with background mode (Chrome's "Continue running
+        // background apps", Edge's "Startup Boost") may keep processes alive
+        // after closing their windows, which tier 2 handles.
+        foreach (var process in Process.GetProcesses())
+        {
+            try
+            {
+                if (!names.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase)) continue;
+                // WM_CLOSE closes windows politely; return value is false when the
+                // process has no window (background mode) - tier 2 covers it.
+                process.CloseMainWindow();
+            }
+            catch { }
+            finally { process.Dispose(); }
+        }
+
+        // Give the graceful close a moment to work before escalating.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            token.ThrowIfCancellationRequested();
+            var stillRunning = GetRunningBrowsers().Where(n => names.Contains(n, StringComparer.OrdinalIgnoreCase)).ToArray();
+            if (stillRunning.Length == 0) return [];
+            await Task.Delay(250, token);
+        }
+
+        // Tier 2: force. Only the browsers we were asked to close, only if still
+        // alive after the graceful window expired.
+        foreach (var name in names)
+            foreach (var process in Process.GetProcessesByName(name))
+            {
+                try { process.Kill(entireProcessTree: true); }
+                catch { } finally { process.Dispose(); }
+            }
+
+        // Wait for the kills to land, then report anything that survived.
+        var postKillDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTime.UtcNow < postKillDeadline)
+        {
+            token.ThrowIfCancellationRequested();
+            var stillRunning = GetRunningBrowsers().Where(n => names.Contains(n, StringComparer.OrdinalIgnoreCase)).ToArray();
+            if (stillRunning.Length == 0) return [];
+            await Task.Delay(250, token);
+        }
+        return GetRunningBrowsers().Where(n => names.Contains(n, StringComparer.OrdinalIgnoreCase)).ToArray();
+    }
+
     private static bool IsExcluded(string path, IReadOnlySet<string>? exclusions)
         => exclusions?.Any(root => NativeSafety.IsWithin(path, root)) == true;
 
@@ -156,14 +227,18 @@ public sealed class BrowserCleanupService
     }
 
     /// <summary>Cleans the selected (browser, item) pairs using whole-file deletion.
-    /// The browser must be closed; one item failing never aborts the rest.</summary>
+    /// The browser must be closed unless <paramref name="requireBrowsersClosed"/> is
+    /// false - the browser-exit monitor uses that because it fires right after its
+    /// browser closed, while another browser may still be open (its files belong to
+    /// it and are not touched). One item failing never aborts the rest.</summary>
     public Task<CleanupReport> CleanItemsAsync(
         IEnumerable<(string BrowserId, string ItemId)> selection,
         SecureDeleteOptions? secureDelete = null,
-        CancellationToken token = default)
+        CancellationToken token = default,
+        bool requireBrowsersClosed = true)
     {
         var running = GetRunningBrowsers();
-        if (running.Count > 0)
+        if (requireBrowsersClosed && running.Count > 0)
             throw new InvalidOperationException(
                 $"Close these browsers before cleaning: {string.Join(", ", running)}.");
 

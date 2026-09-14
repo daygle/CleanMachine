@@ -13,12 +13,19 @@ public enum ExitAction
 }
 
 /// <summary>Per-browser monitoring preferences: whether exit cleanup runs for
-/// this browser and which action it takes.</summary>
+/// this browser, which action it takes, and which items the exit-clean covers.
+/// <see cref="Items"/> holds explicit item ids; the safe-item resolver in
+/// <see cref="AppSettings.EffectiveExitItems"/> decides what actually runs.</summary>
 public sealed class BrowserMonitorSetting
 {
     public string Browser { get; set; } = "";
     public bool Enabled { get; set; } = true;
     public ExitAction AfterExit { get; set; } = ExitAction.CleanAndNotify;
+    /// <summary>Item ids (from <see cref="BrowserCatalog"/>) the after-exit clean
+    /// covers when explicitly configured. Null means "not configured yet" - the
+    /// safe-item fallback applies. An empty set means the exit-clean does nothing
+    /// for this browser.</summary>
+    public HashSet<string>? Items { get; set; }
 }
 
 public sealed class AppSettings
@@ -26,6 +33,11 @@ public sealed class AppSettings
     // Whether browser-exit cleanup runs at all. This is the "Monitor browsers"
     // switch on the Browser Cleaner page; the per-browser entries below refine it.
     public bool CleanOnBrowserExit { get; set; } = true;
+    // Browser Cleaner page: when true, "Clean selected" closes running browsers
+    // itself instead of refusing while any are open (graceful close first, then
+    // force-kill for whatever is still alive after a 5s wait). Off by default,
+    // which keeps the ask-first behavior of listing what must be closed.
+    public bool CloseOpenBrowsersAutomatically { get; set; }
     public bool CheckForUpdatesAutomatically { get; set; } = true;
     // When false the main window is hidden from the taskbar and, when minimized,
     // it collapses to a system-tray icon instead.
@@ -106,6 +118,34 @@ public sealed class AppSettings
 
     public BrowserMonitorSetting? FindBrowserMonitor(string browser) =>
         BrowserMonitors.FirstOrDefault(m => m.Browser.Equals(browser, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The item ids a browser's after-exit clean covers: the monitor's
+    /// explicit selection when configured, otherwise every non-destructive catalog
+    /// item for that browser's family (the safe "caches and similar" default).
+    /// Destructive items (cookies, history, passwords, ...) are never included
+    /// automatically - auto-cleaning user data without the user present is not
+    /// something a background pass may decide on its own. Unknown ids (items the
+    /// catalog no longer offers) are ignored; an explicit empty set means the
+    /// exit-clean does nothing for that browser.</summary>
+    public IReadOnlySet<string> EffectiveExitItems(string browser)
+    {
+        var browserDefinition = BrowserCatalog.Find(browser);
+        if (browserDefinition is null) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var catalogItems = BrowserCatalog.ItemsFor(browserDefinition.Family);
+        if (FindBrowserMonitor(browser)?.Items is { } chosen)
+            // Project back to the catalog's canonical ids: BrowserCleanupService
+            // matches item ids with ordinal comparisons, so a stored "CACHE" must
+            // come out as "cache" or it would silently clean nothing.
+            return catalogItems
+                .Where(item => !item.Destructive
+                    && chosen.Any(id => id.Equals(item.Id, StringComparison.OrdinalIgnoreCase)))
+                .Select(item => item.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return catalogItems
+            .Where(item => !item.Destructive)
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
 
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

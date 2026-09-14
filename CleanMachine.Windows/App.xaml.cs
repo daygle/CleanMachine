@@ -196,17 +196,25 @@ public partial class App : Application
             if (monitor is null || !monitor.Enabled || monitor.AfterExit == ExitAction.DoNothing) return;
 
             var cleanup = new BrowserCleanupService();
-            var targets = await cleanup.ScanAsync([browser], token: token);
-            var result = await cleanup.CleanAsync(targets, requireBrowsersClosed: false, token);
-            _ = new CleanupStatsStore().RecordAsync(result.ItemsRemoved, result.BytesRecovered, token);
+            // Clean exactly the items the user picked for this browser (see
+            // EffectiveExitItems): the catalog's safe items unless configured
+            // otherwise. The browser that just closed is gone, but other browsers
+            // may still be open - their files are never part of this browser's
+            // item paths, so skip the global all-browsers-closed check.
+            var itemIds = settings.EffectiveExitItems(browser).ToArray();
+            if (itemIds.Length == 0) return;
+            var report = await cleanup.CleanItemsAsync(
+                itemIds.Select(id => (browser, id)),
+                secureDelete: null, token, requireBrowsersClosed: false);
+            _ = new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
 
             var displayName = char.ToUpperInvariant(browser[0]) + browser[1..];
-            if (monitor.AfterExit == ExitAction.CleanAndNotify && result.ItemsRemoved > 0)
-                AppNotifications.ShowCleanupComplete(result);
+            if (monitor.AfterExit == ExitAction.CleanAndNotify && report.Result.ItemsRemoved > 0)
+                AppNotifications.ShowCleanupComplete(report.Result);
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
                 "Browser monitoring",
-                $"{displayName} closed - cache cleaned ({result.ItemsRemoved:N0} items, {AppNotifications.FormatBytes(result.BytesRecovered)} recovered)"),
+                $"{displayName} closed - cleaned {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered"),
                 token);
         }
         catch { /* monitoring is best-effort; never let it kill the agent loop */ }

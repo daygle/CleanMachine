@@ -37,6 +37,10 @@ public sealed partial class CleanerPage : Page
         EdgeAction.SelectedIndex = ToComboIndex(edge?.AfterExit ?? ExitAction.CleanAndNotify);
         FirefoxEnabled.IsChecked = firefox?.Enabled ?? true;
         FirefoxAction.SelectedIndex = ToComboIndex(firefox?.AfterExit ?? ExitAction.CleanAndNotify);
+        UpdateExitItemsButton(ChromeItemsButton, "chrome");
+        UpdateExitItemsButton(EdgeItemsButton, "edge");
+        UpdateExitItemsButton(FirefoxItemsButton, "firefox");
+        CloseBrowsersCheck.IsChecked = _settings.CloseOpenBrowsersAutomatically;
         UpdateMonitorHint();
 
         _monitorReady = true;
@@ -89,11 +93,76 @@ public sealed partial class CleanerPage : Page
         _ => ExitAction.CleanAndNotify
     };
 
+    /// <summary>Shows which items a browser's exit-clean covers: the count, or the
+    /// picker's implicit default before the user has configured anything.</summary>
+    private void UpdateExitItemsButton(Button button, string browser)
+    {
+        var monitor = _settings.FindBrowserMonitor(browser);
+        button.Content = monitor?.Items is { } chosen
+            ? $"{chosen.Count} item(s)…"
+            : "Safe items (default)…";
+    }
+
+    /// <summary>Lets the user pick exactly which items a browser's after-exit clean
+    /// covers. Safe (non-destructive) catalog items are offered and saved
+    /// immediately on confirm; destructive items are listed greyed out so it is
+    /// visible they can never be auto-cleaned. Saving an explicit set (even an
+    /// empty one) marks the browser as configured; Cancel changes nothing.</summary>
+    private async void ChooseExitItems_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string browser }) return;
+        var monitor = _settings.FindBrowserMonitor(browser);
+        var browserDefinition = BrowserCatalog.Find(browser);
+        if (monitor is null || browserDefinition is null) return;
+
+        var effective = _settings.EffectiveExitItems(browser);
+        var panel = new StackPanel { Spacing = 6 };
+        var boxes = new List<(string Id, CheckBox Box)>();
+        foreach (var item in BrowserCatalog.ItemsFor(browserDefinition.Family))
+        {
+            var box = new CheckBox
+            {
+                Content = item.Name,
+                IsChecked = effective.Contains(item.Id),
+                IsEnabled = !item.Destructive,
+                MinHeight = 26
+            };
+            if (item.Destructive)
+                ToolTipService.SetToolTip(box, "Destructive - cleaned only manually on this page, never automatically.");
+            boxes.Add((item.Id, box));
+            panel.Children.Add(box);
+        }
+
+        var displayName = browserDefinition.Name;
+        var dialog = new ContentDialog
+        {
+            Title = $"{displayName} - items cleaned when it closes",
+            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 360 },
+            PrimaryButtonText = "Save",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        monitor.Items = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        await _settings.SaveAsync();
+        UpdateExitItemsButton((Button)sender, browser);
+        UpdateMonitorHint();
+    }
+
+    private async void CloseBrowsers_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_monitorReady) return;
+        _settings.CloseOpenBrowsersAutomatically = CloseBrowsersCheck.IsChecked == true;
+        await _settings.SaveAsync();
+    }
+
     private void UpdateMonitorHint()
     {
         MonitoringHint.Text = _settings.CleanOnBrowserExit
-            ? "Caches only. Open browsers are skipped; passwords, bookmarks, cookies, and history are never touched. CleanMachine runs in the background and starts with Windows so exits are detected."
-            : "Monitoring is off - browser caches are only cleaned when you run it manually here.";
+            ? "Cleans the items chosen per browser (safe items by default). The browser that just closed is cleaned even if other browsers are still open; passwords, cookies, history, and other destructive items are never cleaned automatically. CleanMachine runs in the background and starts with Windows so exits are detected."
+            : "Monitoring is off - browsers are only cleaned when you run it manually here.";
     }
 
     /// <summary>Persists one item's tick state so the Browser Cleaner page restores
@@ -253,6 +322,43 @@ public sealed partial class CleanerPage : Page
                 XamlRoot = XamlRoot
             };
             if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        }
+
+        // Close-assist: when enabled, offer to close running browsers instead of
+        // refusing. Two-tier: graceful close first (like clicking the window's X),
+        // force-kill only for whatever is still alive after the 5s wait. Declining
+        // here falls back to the default behavior (the clean below refuses).
+        if (_settings.CloseOpenBrowsersAutomatically)
+        {
+            var running = BrowserCleanupService.GetRunningBrowsers();
+            if (running.Count > 0)
+            {
+                var names = string.Join(", ", running.Select(BrowserCleanupService.DisplayNameForProcess).Distinct());
+                var confirm = new ContentDialog
+                {
+                    Title = "Close running browsers?",
+                    Content = $"Still running: {names}. They will be closed gracefully (like clicking the window's X), " +
+                              "then anything still alive after 5 seconds is force-closed. Unsaved work may be lost. Continue?",
+                    PrimaryButtonText = "Close and clean",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = XamlRoot
+                };
+                if (await confirm.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    StatusText.Text = $"Close these browsers before cleaning: {names}.";
+                    return;
+                }
+
+                Progress.Visibility = Visibility.Visible;
+                StatusText.Text = $"Closing {names}…";
+                var stillRunning = await BrowserCleanupService.CloseRunningBrowsersAsync(running);
+                if (stillRunning.Count > 0)
+                {
+                    Progress.Visibility = Visibility.Collapsed;
+                    StatusText.Text = $"Could not close: {string.Join(", ", stillRunning.Select(BrowserCleanupService.DisplayNameForProcess))}. Close them manually and try again.";
+                    return;
+                }
+            }
         }
 
         CleanButton.IsEnabled = false;
