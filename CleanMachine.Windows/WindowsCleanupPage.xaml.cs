@@ -25,38 +25,83 @@ public sealed partial class WindowsCleanupPage : Page
     private async Task LoadAsync()
     {
         _settings = await AppSettings.LoadAsync();
-        BuildPanel();
+        BuildCategoryList();
     }
 
-    private void BuildPanel()
+    /// <summary>Builds the left-hand category list from the latest analysis: only
+    /// categories that have something to clean are shown, unless Show Clean is ticked
+    /// (empty categories are then listed, greyed out and not selectable). Before the
+    /// first Analyze the list is a prompt. Each enabled checkbox reflects and saves
+    /// whether that category is included in cleaning.</summary>
+    private void BuildCategoryList()
     {
         CategoryPanel.Children.Clear();
+
+        if (_lastScan.Count == 0)
+        {
+            CategoryPanel.Children.Add(Hint("Click Analyze to scan and list cleanable items."));
+            return;
+        }
+
+        var showClean = ShowCleanCheck.IsChecked == true;
+        var bytesById = _lastScan.ToDictionary(i => i.Category.Id, i => i.Bytes);
+        var shown = 0;
+
         foreach (var group in WindowsCleanupService.Catalog
                      .GroupBy(c => c.Group)
                      .OrderBy(g => GroupIndex(g.Key)))
         {
-            CategoryPanel.Children.Add(new TextBlock
+            var categories = group.OrderBy(c => c.Name)
+                .Where(c => showClean || (bytesById.TryGetValue(c.Id, out var b) && b > 0))
+                .ToList();
+            if (categories.Count == 0) continue;
+
+            CategoryPanel.Children.Add(GroupHeader(group.Key));
+            foreach (var category in categories)
             {
-                Text = group.Key.ToUpperInvariant(),
-                FontSize = 11,
-                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x7F, 0x91, 0x89)),
-                Margin = new Thickness(0, 12, 0, 2)
-            });
-            foreach (var category in group.OrderBy(c => c.Name))
-            {
+                var bytes = bytesById.TryGetValue(category.Id, out var b) ? b : 0;
+                var hasData = bytes > 0;
+                var size = category.Kind == CleanupKind.RegistryValues
+                    ? (hasData ? $"{bytes:N0} entries" : "Clean")
+                    : (hasData ? FormatBytes(bytes) : "Clean");
                 var box = new CheckBox
                 {
-                    Content = category.Name,
+                    Content = $"{category.Name}  ·  {size}",
                     IsChecked = WindowsCleanupService.IsEnabled(category, _settings),
                     Tag = category,
-                    MinHeight = 30
+                    MinHeight = 30,
+                    IsEnabled = hasData,                 // empty categories are shown but not selectable
+                    Opacity = hasData ? 1.0 : 0.5
                 };
                 box.Checked += (_, _) => SetEnabled(category, true);
                 box.Unchecked += (_, _) => SetEnabled(category, false);
                 CategoryPanel.Children.Add(box);
+                shown++;
             }
         }
+
+        if (shown == 0)
+            CategoryPanel.Children.Add(Hint("Everything is clean. Tick Show Clean to see all categories."));
     }
+
+    private void Filter_Changed(object sender, RoutedEventArgs e) => BuildCategoryList();
+
+    private static TextBlock Hint(string text) => new()
+    {
+        Text = text,
+        FontSize = 12,
+        TextWrapping = TextWrapping.Wrap,
+        Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+        Margin = new Thickness(0, 4, 0, 0)
+    };
+
+    private static TextBlock GroupHeader(string text) => new()
+    {
+        Text = text.ToUpperInvariant(),
+        FontSize = 11,
+        Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x7F, 0x91, 0x89)),
+        Margin = new Thickness(0, 12, 0, 2)
+    };
 
     private static int GroupIndex(string group)
     {
@@ -93,13 +138,9 @@ public sealed partial class WindowsCleanupPage : Page
     /// report (one row per category with its size and item count). Nothing is removed.</summary>
     private async void Analyze_Click(object sender, RoutedEventArgs e)
     {
+        // Analyze always scans the whole catalog (the left list is populated from the
+        // result), so there is nothing to pre-select before scanning.
         var enabled = EnabledCategories();
-        if (enabled.Length == 0)
-        {
-            ReportHeadline.Text = "Nothing selected.";
-            StatusText.Text = "Select at least one item on the left to analyze.";
-            return;
-        }
 
         AnalyzeButton.IsEnabled = false;
         CleanButton.IsEnabled = false;
@@ -125,6 +166,7 @@ public sealed partial class WindowsCleanupPage : Page
 
             _lastPreview = _service.BuildPreview(enabled, _settings.ExcludedPaths);
             _lastScan = items;
+            BuildCategoryList();
 
             foreach (var item in enabledItems)
                 ReportPanel.Children.Add(BuildReportRow(item.Category, item.Category.Group, item));

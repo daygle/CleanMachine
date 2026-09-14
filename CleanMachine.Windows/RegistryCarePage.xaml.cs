@@ -29,24 +29,7 @@ public sealed partial class RegistryCarePage : Page
         {
             var review = await _service.ScanAsync();
             _findings = review.Findings;
-            FindingsPanel.Children.Clear();
-            _findingBoxes.Clear();
-
-            if (_findings.Count == 0)
-            {
-                ReportHeadline.Text = "No issues found.";
-                StatusText.Text = "The registry scan found no low-risk cleanup opportunities.";
-                return;
-            }
-
-            foreach (var group in _findings.GroupBy(f => f.Category).OrderBy(g => g.Key))
-                FindingsPanel.Children.Add(BuildCategoryGroup(group.Key, group.ToList()));
-
-            var eligible = _findings.Count(RegistryCareService.IsCleanable);
-            ReportHeadline.Text = $"Analysis complete - {_findings.Count} issue(s) found.";
-            StatusText.Text = eligible > 0
-                ? $"{eligible} item(s) can be safely cleaned. Untick anything you want to keep."
-                : "Issues were found, but none are eligible for automatic cleaning.";
+            RenderFindings();
         }
         catch (Exception ex)
         {
@@ -59,6 +42,44 @@ public sealed partial class RegistryCarePage : Page
             CleanButton.IsEnabled = _findings.Count > 0;
             Progress.Visibility = Visibility.Collapsed;
         }
+    }
+
+    /// <summary>Renders the findings list: by default only the findings eligible for
+    /// automatic cleaning are shown (categories with none are hidden). Show All also
+    /// lists ineligible findings, greyed out and not selectable.</summary>
+    private void RenderFindings()
+    {
+        FindingsPanel.Children.Clear();
+        _findingBoxes.Clear();
+
+        if (_findings.Count == 0)
+        {
+            ReportHeadline.Text = "No issues found.";
+            StatusText.Text = "The registry scan found no low-risk cleanup opportunities.";
+            return;
+        }
+
+        var showAll = ShowAllCheck.IsChecked == true;
+        var eligibleTotal = _findings.Count(RegistryCareService.IsCleanable);
+
+        foreach (var group in _findings.GroupBy(f => f.Category).OrderBy(g => g.Key))
+        {
+            var items = (showAll ? group : group.Where(RegistryCareService.IsCleanable)).ToList();
+            if (items.Count == 0) continue;
+            FindingsPanel.Children.Add(BuildCategoryGroup(group.Key, items));
+        }
+
+        ReportHeadline.Text = $"Analysis complete - {_findings.Count} issue(s) found.";
+        StatusText.Text = eligibleTotal == 0
+            ? "Issues were found, but none are eligible for automatic cleaning. Tick Show All to review them."
+            : showAll
+                ? $"{eligibleTotal} item(s) can be safely cleaned; ineligible findings are shown greyed out. Untick anything you want to keep."
+                : $"{eligibleTotal} item(s) can be safely cleaned. Untick anything you want to keep, or tick Show All to review ineligible findings.";
+    }
+
+    private void Filter_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_findings.Count > 0) RenderFindings();
     }
 
     private StackPanel BuildCategoryGroup(string category, IReadOnlyList<RegistryFinding> findings)
