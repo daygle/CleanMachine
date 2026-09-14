@@ -84,13 +84,20 @@ public sealed partial class MainWindow : Window
     /// fail there - which showed the sidebar logo as blank. A direct file path
     /// works the same in packaged and unpackaged builds.
     /// </summary>
-    private void LoadSidebarLogo()
+    private async void LoadSidebarLogo()
     {
         try
         {
             var logoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppLogo.png");
-            if (File.Exists(logoPath))
-                SidebarLogo.Source = new BitmapImage(new Uri(logoPath));
+            if (!File.Exists(logoPath)) return;
+            // Decode from a stream rather than a file:// Uri: in unpackaged (installer)
+            // builds a BitmapImage built from a file Uri can silently fail to load,
+            // leaving the sidebar mark blank. A stream decode is reliable in both
+            // packaged and unpackaged builds.
+            var bitmap = new BitmapImage();
+            await using (var stream = File.OpenRead(logoPath))
+                await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
+            SidebarLogo.Source = bitmap;
         }
         catch { /* the logo is decorative; a blank image is an acceptable fallback */ }
     }

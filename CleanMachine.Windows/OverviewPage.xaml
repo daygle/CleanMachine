@@ -9,14 +9,6 @@
       </StackPanel>
       <TextBlock Text="Review safe cleanup actions from one calm dashboard." Foreground="#89958F" FontSize="13" Margin="0,10,0,0"/>
     </StackPanel>
-    <!-- Welcome banner -->
-    <Border Background="#DCEFE5" CornerRadius="13" Padding="30">
-      <StackPanel>
-        <TextBlock Text="READY WHEN YOU ARE" Foreground="#7F9189" FontSize="10"/>
-        <TextBlock Text="Clear the clutter. Keep the good stuff." Foreground="#254239" FontSize="28" FontWeight="SemiBold" Margin="0,10,0,8"/>
-        <TextBlock Text="Quick Clean any area below to free space in one click, or open an area to review it in detail. CleanMachine never removes protected personal data automatically." Foreground="#709086" TextWrapping="Wrap" MaxWidth="560"/>
-      </StackPanel>
-    </Border>
     <!-- Lifetime / recent cleanup stats -->
     <Grid ColumnSpacing="18">
       <Grid.ColumnDefinitions>
@@ -28,20 +20,22 @@
       <controls:MetricCard Grid.Column="1" x:Name="StatsSpace" Label="SPACE RECOVERED" Value="—"/>
       <controls:MetricCard Grid.Column="2" x:Name="StatsLast" Label="LAST CLEANUP" Value="—"/>
     </Grid>
-    <!-- Update status -->
-    <Border Background="#FFFFFF" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="20">
-      <Grid ColumnSpacing="16">
+    <!-- Update status (compact) -->
+    <Border Background="#FFFFFF" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14,10">
+      <Grid ColumnSpacing="12">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0" Spacing="4">
-          <TextBlock x:Name="UpdateStatusText" Text="" Foreground="#254239" FontSize="15" FontWeight="SemiBold"/>
-          <TextBlock x:Name="UpdateDetailText" TextWrapping="Wrap" Foreground="#89958F" FontSize="12"/>
+        <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+          <TextBlock x:Name="UpdateStatusText" Text="" Foreground="#254239" FontSize="13" FontWeight="SemiBold"/>
+          <TextBlock x:Name="UpdateDetailText" TextWrapping="Wrap" Foreground="#89958F" FontSize="11"/>
         </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-          <ProgressBar x:Name="UpdateProgress" IsIndeterminate="True" Width="120" Visibility="Collapsed"/>
-          <Button x:Name="UpdateCheckButton" Content="Check for Updates" Click="CheckUpdates_Click" Background="#286E58" Foreground="White" Padding="18,10"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <ProgressBar x:Name="UpdateProgress" Minimum="0" Maximum="1" Width="110" Visibility="Collapsed" VerticalAlignment="Center"/>
+          <Button x:Name="UpdateNowButton" Content="Update Now" Click="UpdateNow_Click"
+                  Background="#286E58" Foreground="White" Padding="14,7" Visibility="Collapsed"/>
+          <Button x:Name="UpdateCheckButton" Content="Check for Updates" Click="CheckUpdates_Click" Padding="14,7"/>
         </StackPanel>
       </Grid>
     </Border>

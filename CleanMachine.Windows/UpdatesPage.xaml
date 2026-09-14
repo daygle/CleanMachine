@@ -6,7 +6,7 @@
       <FontIcon Glyph="&#xE896;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
       <TextBlock Text="Updates" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
     </StackPanel>
-    <TextBlock Text="Packages are selected by architecture, verified by SHA-256, and checked for publisher identity before installation."
+    <TextBlock Text="Updates download, verify automatically (SHA-256 and publisher identity), and install in one step after you confirm. A standalone install may ask for administrator permission."
                Foreground="#89958F" TextWrapping="Wrap"/>
 
     <StackPanel Orientation="Horizontal" Spacing="8">
