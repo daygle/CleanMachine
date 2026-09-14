@@ -19,7 +19,8 @@ public sealed partial class WindowsCleanupPage : Page
     public WindowsCleanupPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => await LoadAsync();
+        // Load settings/UI, then analyze automatically when the page is opened.
+        Loaded += async (_, _) => { await LoadAsync(); Analyze_Click(this, new RoutedEventArgs()); };
     }
 
     private async Task LoadAsync()

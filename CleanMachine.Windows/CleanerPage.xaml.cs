@@ -15,7 +15,8 @@ public sealed partial class CleanerPage : Page
     public CleanerPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); LoadMonitoring(); await CheckInterruptedAsync(); };
+        // Load monitoring settings, then scan browsers automatically when opened.
+        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); LoadMonitoring(); await CheckInterruptedAsync(); Scan_Click(this, new RoutedEventArgs()); };
     }
 
     /// <summary>Browser monitoring (clean cache on browser close) and the background
