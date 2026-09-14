@@ -177,6 +177,85 @@ public static class AppCatalog
             ])
         ]),
 
+        new("discord", "Discord", "Desktop App", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("discord\\Cache", "App cache"),
+                new("discord\\Code Cache", "Code cache"),
+                new("discord\\GPUCache", "GPU cache"),
+                new("discord\\Service Worker\\CacheStorage", "Service worker cache")
+            ])
+        ]),
+
+        new("slack", "Slack", "Desktop App", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Slack\\Cache", "App cache"),
+                new("Slack\\Code Cache", "Code cache"),
+                new("Slack\\GPUCache", "GPU cache"),
+                new("Slack\\Service Worker\\CacheStorage", "Service worker cache"),
+                new("Slack\\logs", "Log files")
+            ])
+        ]),
+
+        new("spotify", "Spotify", "Desktop App", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Spotify\\Storage", "Streaming cache"),
+                new("Spotify\\Browser", "Browser cache")
+            ])
+        ]),
+
+        new("teams-classic", "Microsoft Teams (classic)", "Desktop App", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Microsoft\\Teams\\Cache", "App cache"),
+                new("Microsoft\\Teams\\Code Cache", "Code cache"),
+                new("Microsoft\\Teams\\GPUCache", "GPU cache"),
+                new("Microsoft\\Teams\\Service Worker\\CacheStorage", "Service worker cache")
+            ])
+        ]),
+
+        new("vscode", "Visual Studio Code", "Desktop App", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Code\\Cache", "App cache"),
+                new("Code\\CachedData", "Cached data"),
+                new("Code\\Code Cache", "Code cache"),
+                new("Code\\GPUCache", "GPU cache"),
+                new("Code\\Service Worker\\CacheStorage", "Service worker cache"),
+                new("Code\\logs", "Log files")
+            ])
+        ]),
+
+        new("chrome", "Google Chrome", "Desktop App", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Google\\Chrome\\User Data\\Default\\Cache", "Browser cache"),
+                new("Google\\Chrome\\User Data\\Default\\Code Cache", "Code cache"),
+                new("Google\\Chrome\\User Data\\Default\\GPUCache", "GPU cache"),
+                new("Google\\Chrome\\User Data\\Default\\Service Worker\\CacheStorage", "Service worker cache")
+            ])
+        ]),
+
+        new("brave", "Brave", "Desktop App", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Cache", "Browser cache"),
+                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Code Cache", "Code cache"),
+                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\GPUCache", "GPU cache"),
+                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Service Worker\\CacheStorage", "Service worker cache")
+            ])
+        ]),
+
+        new("adobe-acrobat", "Adobe Acrobat", "Desktop App", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Adobe\\Acrobat\\DC\\Cache", "Document cache"),
+                new("Adobe\\Acrobat\\DC\\Temp", "Temp files")
+            ])
+        ]),
+
         // ---- Microsoft Store Apps ----
         new("store-bing-news", "Bing News", "Microsoft Store App", true,
         [
@@ -256,6 +335,78 @@ public static class AppCatalog
                 new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\AC\\INetCache", "Internet cache"),
                 new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\AC\\Temp", "Temp files"),
                 new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-xbox", "Xbox", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-xbox-gamebar", "Xbox Game Bar", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-whatsapp", "WhatsApp", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\AC\\INetCache", "Internet cache"),
+                new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\AC\\Temp", "Temp files"),
+                new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-spotify", "Spotify (Store)", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\AC\\INetCache", "Internet cache"),
+                new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\AC\\Temp", "Temp files"),
+                new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-netflix", "Netflix", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\AC\\INetCache", "Internet cache"),
+                new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\AC\\Temp", "Temp files"),
+                new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-paint", "Paint", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-notepad", "Windows Notepad", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-terminal", "Windows Terminal", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\TempState", "Temp state")
             ])
         ])
     ];
