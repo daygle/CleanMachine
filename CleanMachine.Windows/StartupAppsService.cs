@@ -86,7 +86,7 @@ public sealed class StartupAppsService
                 }
             }
         }
-        catch { /* inaccessible hive – skip silently */ }
+        catch { /* inaccessible hive - skip silently */ }
     }
 
     private static bool IsRegistryEntryEnabled(RegistryKey root, string approvalPath, string valueName)
@@ -184,7 +184,7 @@ public sealed class StartupAppsService
         catch
         {
             // HKLM values may deny write access to the per-user approval key is
-            // not the issue — the approval key is always under HKCU, so failures
+            // not the issue - the approval key is always under HKCU, so failures
             // here are unexpected; report failure so the UI can revert the toggle.
             return false;
         }

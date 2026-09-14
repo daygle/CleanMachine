@@ -124,7 +124,7 @@ public sealed partial class SettingsPage : Page
             var total = WindowsCleanupService.Catalog.Count(c => c.Risk == CleanupRisk.Safe);
             var chosen = MonitorItems().Count(i => i.Checked);
             MonitorItemsSummary.Text = chosen == 0
-                ? "No items selected — nothing will be cleaned."
+                ? "No items selected - nothing will be cleaned."
                 : $"{chosen} of {total} safe categories selected.";
         }
         else
@@ -149,7 +149,7 @@ public sealed partial class SettingsPage : Page
 
         var dialog = new ContentDialog
         {
-            Title = "System monitor — categories to clean",
+            Title = "System monitor - categories to clean",
             Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 360 },
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel",

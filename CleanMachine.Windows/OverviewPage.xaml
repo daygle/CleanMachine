@@ -7,7 +7,7 @@
         <FontIcon Glyph="&#xE80F;" FontSize="32" Foreground="#286E58" VerticalAlignment="Center"/>
         <TextBlock Text="Your PC at a glance" Foreground="#273630" FontSize="36" FontWeight="SemiBold" VerticalAlignment="Center"/>
       </StackPanel>
-      <TextBlock Text="See what you've cleaned, run a quick clean for each area, and check for updates — all from here." Foreground="#89958F" FontSize="13" Margin="0,10,0,0"/>
+      <TextBlock Text="See what you've cleaned, run a quick clean for each area, and check for updates - all from here." Foreground="#89958F" FontSize="13" Margin="0,10,0,0"/>
     </StackPanel>
     <!-- Lifetime / recent cleanup stats -->
     <Grid ColumnSpacing="18">
@@ -16,9 +16,9 @@
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
-      <controls:MetricCard Grid.Column="0" x:Name="StatsItems" Label="ITEMS CLEANED" Value="—"/>
-      <controls:MetricCard Grid.Column="1" x:Name="StatsSpace" Label="SPACE RECOVERED" Value="—"/>
-      <controls:MetricCard Grid.Column="2" x:Name="StatsLast" Label="LAST CLEANUP" Value="—"/>
+      <controls:MetricCard Grid.Column="0" x:Name="StatsItems" Label="ITEMS CLEANED" Value="-"/>
+      <controls:MetricCard Grid.Column="1" x:Name="StatsSpace" Label="SPACE RECOVERED" Value="-"/>
+      <controls:MetricCard Grid.Column="2" x:Name="StatsLast" Label="LAST CLEANUP" Value="-"/>
     </Grid>
     <!-- Update status (compact) -->
     <Border Background="#FFFFFF" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14,10">

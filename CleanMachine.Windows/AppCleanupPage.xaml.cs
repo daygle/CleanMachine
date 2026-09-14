@@ -200,11 +200,11 @@ public sealed partial class AppCleanupPage : Page
         var item = scan.Items.ElementAtOrDefault(itemIndex);
         if (item is null) return;
 
-        // Avoid a redundant "Activity History — Activity history" when the app has a
+        // Avoid a redundant "Activity History - Activity history" when the app has a
         // single item whose description just restates the app name.
         DetailHeadline.Text = string.Equals(scan.Name, item.Description, StringComparison.OrdinalIgnoreCase)
             ? scan.Name
-            : $"{scan.Name} — {item.Description}";
+            : $"{scan.Name} - {item.Description}";
         StatusText.Text = $"{item.FileCount:N0} file(s), {WindowsCleanupPage.FormatBytes(item.Bytes)}";
         DetailPanel.Children.Clear();
 

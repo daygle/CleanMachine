@@ -285,7 +285,7 @@ public sealed partial class OverviewPage : Page
             ("edge", "Microsoft Edge", settings.QuickCleanBrowsers.Contains("edge")),
             ("firefox", "Mozilla Firefox", settings.QuickCleanBrowsers.Contains("firefox"))
         ];
-        await ShowPickerAsync("Browser Quick Clean — caches to clear", known.ToList(),
+        await ShowPickerAsync("Browser Quick Clean - caches to clear", known.ToList(),
             (s, selected) => s.QuickCleanBrowsers = selected);
     }
 
@@ -296,7 +296,7 @@ public sealed partial class OverviewPage : Page
             .Where(c => c.Risk == CleanupRisk.Safe)
             .Select(c => (c.Id, c.Name, QuickCleanService.IsWindowsSelected(c, settings)))
             .ToList();
-        await ShowPickerAsync("Windows Quick Clean — categories", items,
+        await ShowPickerAsync("Windows Quick Clean - categories", items,
             (s, selected) => s.QuickCleanWindowsCategories = selected);
     }
 
@@ -307,7 +307,7 @@ public sealed partial class OverviewPage : Page
         var items = QuickCleanService.RegistryCategories
             .Select(cat => (cat, cat, current is null || current.Contains(cat)))
             .ToList();
-        await ShowPickerAsync("Registry Quick Clean — categories", items,
+        await ShowPickerAsync("Registry Quick Clean - categories", items,
             (s, selected) => s.QuickCleanRegistryCategories = selected);
     }
 
@@ -318,7 +318,7 @@ public sealed partial class OverviewPage : Page
         var items = AppCatalog.Definitions
             .Select(d => (d.Id, d.Name, current is null || current.Contains(d.Id)))
             .ToList();
-        await ShowPickerAsync("Application Quick Clean — apps", items,
+        await ShowPickerAsync("Application Quick Clean - apps", items,
             (s, selected) => s.QuickCleanApps = selected);
     }
 

@@ -33,7 +33,7 @@
             <ComboBoxItem Content="US DoD 5220.22-M (3 passes)"/>
             <ComboBoxItem Content="US DoD 5220.22-M ECE (7 passes)"/>
             <ComboBoxItem Content="Peter Gutmann (35 passes)"/>
-            <ComboBoxItem Content="Custom (1–35 passes)"/>
+            <ComboBoxItem Content="Custom (1-35 passes)"/>
           </ComboBox>
           <CheckBox x:Name="SsdAcknowledged" Content="I understand SSD overwriting is not guaranteed"/>
         </StackPanel>

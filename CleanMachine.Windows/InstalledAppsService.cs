@@ -115,7 +115,7 @@ public sealed class InstalledAppsService
                 }
             }
         }
-        catch { /* inaccessible hive – skip silently */ }
+        catch { /* inaccessible hive - skip silently */ }
     }
 
     private static void CollectStoreApps(List<InstalledApp> results, HashSet<string> seen)
