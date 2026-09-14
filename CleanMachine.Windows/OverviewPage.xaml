@@ -102,23 +102,6 @@
       <controls:MetricCard Grid.Column="1" x:Name="StatsSpace" Label="SPACE RECOVERED" Value="—"/>
       <controls:MetricCard Grid.Column="2" x:Name="StatsLast" Label="LAST CLEANUP" Value="—"/>
     </Grid>
-    <!-- Background agent -->
-    <Border Background="#EAF4EE" BorderBrush="#DCE8E1" BorderThickness="1" CornerRadius="13" Padding="20">
-      <Grid ColumnSpacing="16">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-        </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0" Spacing="4">
-          <TextBlock Text="BACKGROUND AGENT" Foreground="#7F9189" FontSize="10"/>
-          <TextBlock x:Name="AgentStatusText" Text="●  Background Agent  ON" Foreground="#254239" FontSize="17" FontWeight="SemiBold"/>
-          <TextBlock Text="Watching for browser exits and cleaning the cache automatically when a browser closes."
-                     Foreground="#709086" FontSize="12" TextWrapping="Wrap"/>
-        </StackPanel>
-        <ToggleSwitch Grid.Column="1" x:Name="AgentToggle" OnContent="ON" OffContent="OFF"
-                      VerticalAlignment="Center" Toggled="AgentToggle_Toggled"/>
-      </Grid>
-    </Border>
     <!-- Update status -->
     <Border Background="#FFFFFF" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="20">
       <Grid ColumnSpacing="16">
