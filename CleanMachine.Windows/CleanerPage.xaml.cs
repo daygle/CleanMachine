@@ -15,7 +15,8 @@ public sealed partial class CleanerPage : Page
     public CleanerPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); LoadMonitoring(); await CheckInterruptedAsync(); };
+        // Load monitoring settings, then scan browsers automatically when opened.
+        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); LoadMonitoring(); await CheckInterruptedAsync(); Scan_Click(this, new RoutedEventArgs()); };
     }
 
     /// <summary>Browser monitoring (clean cache on browser close) and the background
@@ -46,7 +47,9 @@ public sealed partial class CleanerPage : Page
         if (!_monitorReady) return;
         _settings.CleanOnBrowserExit = CleanToggle.IsChecked == true;
         await _settings.SaveAsync();
-        // The agent re-reads settings on every browser exit, so this applies live.
+        // Turning this on/off is what makes the agent (and Windows startup) needed,
+        // so bring them in step immediately.
+        (App.Current as App)?.ApplyBackgroundServices(_settings);
         UpdateMonitorHint();
     }
 
@@ -88,12 +91,9 @@ public sealed partial class CleanerPage : Page
 
     private void UpdateMonitorHint()
     {
-        if (!_settings.CleanOnBrowserExit)
-            MonitoringHint.Text = "Monitoring is off - browser caches are only cleaned when you run it manually here.";
-        else if (!_settings.BackgroundAgentEnabled)
-            MonitoringHint.Text = "Monitoring is on, but the Background Agent is off - turn it on in Settings so exits are detected.";
-        else
-            MonitoringHint.Text = "Caches only. Open browsers are skipped; passwords, bookmarks, cookies, and history are never touched.";
+        MonitoringHint.Text = _settings.CleanOnBrowserExit
+            ? "Caches only. Open browsers are skipped; passwords, bookmarks, cookies, and history are never touched. CleanMachine runs in the background and starts with Windows so exits are detected."
+            : "Monitoring is off - browser caches are only cleaned when you run it manually here.";
     }
 
     private async Task CheckInterruptedAsync()

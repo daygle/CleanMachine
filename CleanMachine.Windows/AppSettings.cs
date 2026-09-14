@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace CleanMachine.Windows;
 
@@ -22,9 +23,8 @@ public sealed class BrowserMonitorSetting
 
 public sealed class AppSettings
 {
-    public bool BackgroundAgentEnabled { get; set; } = true;
-    // Master switch: no browser-exit cleanup runs when this is off, regardless
-    // of the per-browser entries below.
+    // Whether browser-exit cleanup runs at all. This is the "Monitor browsers"
+    // switch on the Browser Cleaner page; the per-browser entries below refine it.
     public bool CleanOnBrowserExit { get; set; } = true;
     public bool CheckForUpdatesAutomatically { get; set; } = true;
     // When false the main window is hidden from the taskbar and, when minimized,
@@ -72,7 +72,23 @@ public sealed class AppSettings
     // once per hour and only re-arms after free space recovers.
     public bool SystemMonitoringEnabled { get; set; }
     public double SystemMonitorFreeSpaceGb { get; set; } = 1.0;
+    // Display unit for the threshold above, "GB" or "MB". The value itself is always
+    // stored in GB; this is only which unit the Settings UI shows and edits in.
+    public string SystemMonitorFreeSpaceUnit { get; set; } = "GB";
     public ExitAction SystemMonitorAction { get; set; } = ExitAction.CleanSilently;
+    // Which Safe Windows categories the low-disk-space monitor cleans. A null set
+    // means "not configured" - it falls back to every Safe category enabled on the
+    // Windows Cleanup page. An empty set means the user deselected everything, so
+    // the monitor cleans nothing.
+    public HashSet<string>? SystemMonitorCategories { get; set; }
+
+    // The background agent has no standalone switch: it runs whenever a service
+    // that needs it is enabled (browser-exit cleaning or the low-disk-space
+    // monitor). Windows startup registration follows the same rule, so the app
+    // is present to run those services while the window is closed. Derived, so
+    // it is never persisted.
+    [JsonIgnore]
+    public bool RequiresBackgroundAgent => CleanOnBrowserExit || SystemMonitoringEnabled;
 
     // User-defined cleanup schedules, executed by Windows Task Scheduler so they run
     // even when the app is closed. An optional action (shutdown/restart/sleep) can

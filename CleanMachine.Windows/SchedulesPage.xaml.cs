@@ -14,6 +14,8 @@ public sealed partial class SchedulesPage : Page
     private AppSettings _settings = new();
     private CleanupSchedule? _current;
     private string? _currentId;
+    // Guards the Select-all handler while a schedule's items are loaded into the boxes.
+    private bool _loadingItems;
 
     public SchedulesPage()
     {
@@ -96,10 +98,11 @@ public sealed partial class SchedulesPage : Page
             var runButton = new Button
             {
                 Content = "Run Now",
-                FontSize = 11,
-                Padding = new Thickness(8, 2, 8, 2),
-                MinHeight = 28,
-                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 12,
+                Padding = new Thickness(14, 0, 14, 0),
+                // Stretch so it matches the select card's height and the two read as
+                // one paired row instead of a small button floating alongside it.
+                VerticalAlignment = VerticalAlignment.Stretch,
                 Tag = schedule
             };
             var captured = schedule;
@@ -114,7 +117,7 @@ public sealed partial class SchedulesPage : Page
             };
             selectButton.Click += (_, _) => Select(captured, isNew: false);
 
-            var row = new Grid { ColumnSpacing = 6 };
+            var row = new Grid { ColumnSpacing = 6, Margin = new Thickness(0, 0, 0, 6) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0, GridUnitType.Auto) });
             Grid.SetColumn(selectButton, 0);
@@ -159,6 +162,8 @@ public sealed partial class SchedulesPage : Page
         SecureDeleteHint.Visibility = schedule.SecureDelete ? Visibility.Visible : Visibility.Collapsed;
         WakeCheck.IsChecked = schedule.WakeToRun;
 
+        _loadingItems = true;
+        SelectAllItems.IsChecked = false;
         foreach (var (key, box) in _itemBoxes)
             box.IsChecked = key switch
             {
@@ -167,10 +172,19 @@ public sealed partial class SchedulesPage : Page
                 var k when k.StartsWith("reg:") => schedule.RegistryCategories.Contains(k[4..], StringComparer.OrdinalIgnoreCase),
                 _ => false
             };
+        _loadingItems = false;
 
         UpdateTriggerVisibility();
         UpdateAfterWarning();
         StatusText.Text = string.Empty;
+    }
+
+    private void SelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loadingItems) return;
+        var value = SelectAllItems.IsChecked == true;
+        foreach (var (_, box) in _itemBoxes)
+            box.IsChecked = value;
     }
 
     private void Trigger_Changed(object sender, SelectionChangedEventArgs e) => UpdateTriggerVisibility();

@@ -14,6 +14,8 @@ public sealed partial class OverviewPage : Page
     private static UpdateCheckResult? _lastAutoCheck;
     private static string _lastAutoCheckInstalled = "";
 
+    private readonly UpdateService _updateService = new();
+
     public OverviewPage()
     {
         InitializeComponent();
@@ -113,13 +115,14 @@ public sealed partial class OverviewPage : Page
         UpdateProgress.Visibility = Visibility.Visible;
         try
         {
-            var result = await new UpdateService().CheckAsync();
+            var result = await _updateService.CheckAsync();
             _lastAutoCheck = result;
             _lastAutoCheckInstalled = installed;
             RenderUpdateResult(result, installed);
         }
         catch (Exception ex)
         {
+            UpdateNowButton.Visibility = Visibility.Collapsed;
             UpdateStatusText.Text = "Update check failed";
             UpdateDetailText.Text = $"{ex.Message} CleanMachine {installed} is installed.";
         }
@@ -134,12 +137,14 @@ public sealed partial class OverviewPage : Page
     {
         if (result.Error is not null)
         {
+            UpdateNowButton.Visibility = Visibility.Collapsed;
             UpdateStatusText.Text = "Update check failed";
             UpdateDetailText.Text = $"{result.Error} CleanMachine {installed} is installed.";
             return;
         }
         if (!result.Available)
         {
+            UpdateNowButton.Visibility = Visibility.Collapsed;
             UpdateStatusText.Text = "You're up to date";
             UpdateDetailText.Text = $"CleanMachine {installed} is installed.";
             return;
@@ -147,12 +152,79 @@ public sealed partial class OverviewPage : Page
 
         var manifest = result.Manifest!;
         UpdateStatusText.Text = $"Version {manifest.Version} available";
-        UpdateDetailText.Text = string.IsNullOrWhiteSpace(manifest.ReleaseNotes)
-            ? $"CleanMachine {installed} is installed. Open Updates to install version {manifest.Version}."
-            : $"{manifest.ReleaseNotes} — open Updates to install version {manifest.Version}.";
+        UpdateDetailText.Text = $"CleanMachine {installed} is installed. Click Update Now to download and install.";
+        UpdateNowButton.Visibility = Visibility.Visible;
     }
 
     private static string FormatVersion(Version version) => $"v{version.Major}.{version.Minor}.{version.Build}";
+
+    /// <summary>Downloads, verifies and installs the available update directly from the
+    /// Overview page - the same one-click flow as the Updates page.</summary>
+    private async void UpdateNow_Click(object sender, RoutedEventArgs e)
+    {
+        var package = _lastAutoCheck?.Package;
+        if (package is null) { UpdateStatusText.Text = "Run Check for Updates first."; return; }
+        var manifest = _lastAutoCheck?.Manifest;
+
+        var confirm = new ContentDialog
+        {
+            Title = manifest is not null ? $"Update to version {manifest.Version}?" : "Update now?",
+            Content = (manifest is not null && !string.IsNullOrWhiteSpace(manifest.ReleaseNotes) ? manifest.ReleaseNotes + "\n\n" : "")
+                + "CleanMachine will download, verify and install the update, then restart. Windows may ask for administrator permission.",
+            PrimaryButtonText = "Update Now",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+
+        UpdateNowButton.IsEnabled = false;
+        UpdateCheckButton.IsEnabled = false;
+        UpdateProgress.Visibility = Visibility.Visible;
+        UpdateProgress.IsIndeterminate = false;
+        UpdateProgress.Value = 0;
+        try
+        {
+            var download = new Progress<double>(p =>
+            {
+                UpdateProgress.Value = p;
+                UpdateStatusText.Text = $"Downloading update… {p:P0}";
+            });
+            UpdateStatusText.Text = "Downloading update…";
+            var path = await _updateService.DownloadAndVerifyAsync(package, download);
+
+            UpdateProgress.IsIndeterminate = true;
+            UpdateStatusText.Text = "Verified. Installing…";
+            var executable = Environment.ProcessPath ?? throw new InvalidOperationException("Application path not found.");
+            var isExe = path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+            await _updateService.InstallVerifiedPackageAsync(path, executable);
+            UpdateNowButton.Visibility = Visibility.Collapsed;
+            if (isExe)
+            {
+                UpdateStatusText.Text = "Installer launched. CleanMachine will now close to finish updating.";
+                Microsoft.UI.Xaml.Application.Current.Exit();
+            }
+            else
+            {
+                UpdateStatusText.Text = "Update installed. Please restart CleanMachine.";
+            }
+        }
+        catch (OperationCanceledException ex)
+        {
+            UpdateStatusText.Text = ex.Message; // e.g. UAC declined - Update Now stays available
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = $"Update failed: {ex.Message}";
+        }
+        finally
+        {
+            UpdateNowButton.IsEnabled = true;
+            UpdateCheckButton.IsEnabled = true;
+            UpdateProgress.Visibility = Visibility.Collapsed;
+            UpdateProgress.IsIndeterminate = false;
+        }
+    }
 
     private void OpenCleaner_Click(object sender, RoutedEventArgs e) => ((MainWindow)App.MainWindow!).Navigate<CleanerPage>();
     private void OpenRegistry_Click(object sender, RoutedEventArgs e) => ((MainWindow)App.MainWindow!).Navigate<RegistryCarePage>();

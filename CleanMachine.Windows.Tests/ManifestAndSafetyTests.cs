@@ -131,8 +131,10 @@ public sealed class ManifestAndSafetyTests
     public void AppSettingsDefaultsAreReasonable()
     {
         var settings = new AppSettings();
-        Assert.True(settings.BackgroundAgentEnabled);
         Assert.True(settings.CleanOnBrowserExit);
+        // The background agent has no standalone flag; it is required whenever a
+        // service that needs it is enabled - browser-exit cleaning is on by default.
+        Assert.True(settings.RequiresBackgroundAgent);
         Assert.True(settings.CheckForUpdatesAutomatically);
         Assert.Equal(WipeMethod.SimpleZeroFill, settings.SecureDeleteMethod);
         Assert.Contains("chrome", settings.ProtectedBrowsers);
@@ -471,6 +473,10 @@ public sealed class ManifestAndSafetyTests
         Assert.Contains("/RL LIMITED", daily);
         Assert.Contains("--run-schedule abc", daily);
         Assert.Contains("CleanMachine.exe", daily);
+        // The launch command's own quotes must be escaped (\") inside /TR, never left
+        // as doubled quotes ("") which schtasks rejects - important for paths with spaces.
+        Assert.Contains("\\\"", daily);
+        Assert.DoesNotContain("\"\"", daily);
 
         var weekly = ScheduledTask.BuildCreateArguments(new CleanupSchedule
         { Id = "w", Trigger = ScheduleTrigger.Weekly, DayOfWeek = DayOfWeek.Thursday, Hour = 22, Minute = 30 }, $"{launchCmd} w");

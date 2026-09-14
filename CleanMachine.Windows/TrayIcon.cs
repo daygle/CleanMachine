@@ -19,6 +19,16 @@ public sealed class TrayIcon : IDisposable
     private const int WM_TRAYICON = 0x0400; // WM_USER + 100
     private const int WM_LBUTTONUP = 0x0202;
     private const int WM_RBUTTONUP = 0x0205;
+    private const uint WM_NULL = 0x0000;
+
+    // Right-click context menu.
+    private const uint MF_STRING = 0x0000;
+    private const uint MF_SEPARATOR = 0x0800;
+    private const uint TPM_RIGHTBUTTON = 0x0002;
+    private const uint TPM_NONOTIFY = 0x0080;
+    private const uint TPM_RETURNCMD = 0x0100;
+    private const uint ID_OPEN = 1;
+    private const uint ID_EXIT = 2;
 
     private static readonly uint TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
 
@@ -30,7 +40,10 @@ public sealed class TrayIcon : IDisposable
     private string _className = string.Empty;
     private bool _added;
 
+    /// <summary>Left-click, or the "Open" context-menu item: restore the window.</summary>
     public event Action? Clicked;
+    /// <summary>The "Exit" context-menu item: quit the application.</summary>
+    public event Action? ExitRequested;
 
     public TrayIcon(IntPtr icon, string tip, uint id = 1)
     {
@@ -92,10 +105,41 @@ public sealed class TrayIcon : IDisposable
         else if (msg == WM_TRAYICON)
         {
             var action = lParam.ToInt64();
-            if (action == WM_LBUTTONUP || action == WM_RBUTTONUP)
+            if (action == WM_LBUTTONUP)
                 Clicked?.Invoke();
+            else if (action == WM_RBUTTONUP)
+                ShowContextMenu();
         }
         return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+
+    /// <summary>Shows the right-click menu ("Open" / "Exit") at the cursor. Uses
+    /// TPM_RETURNCMD so the chosen command comes back here rather than as a
+    /// WM_COMMAND, and the SetForegroundWindow + WM_NULL dance MSDN requires so the
+    /// menu dismisses correctly when the user clicks away from it.</summary>
+    private void ShowContextMenu()
+    {
+        var menu = CreatePopupMenu();
+        if (menu == IntPtr.Zero) return;
+        try
+        {
+            AppendMenu(menu, MF_STRING, (UIntPtr)ID_OPEN, "Open CleanMachine");
+            AppendMenu(menu, MF_SEPARATOR, UIntPtr.Zero, null);
+            AppendMenu(menu, MF_STRING, (UIntPtr)ID_EXIT, "Exit CleanMachine");
+
+            GetCursorPos(out var point);
+            SetForegroundWindow(_hwnd);
+            var command = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                point.X, point.Y, _hwnd, IntPtr.Zero);
+            PostMessage(_hwnd, WM_NULL, IntPtr.Zero, IntPtr.Zero);
+
+            if (command == ID_OPEN) Clicked?.Invoke();
+            else if (command == ID_EXIT) ExitRequested?.Invoke();
+        }
+        finally
+        {
+            DestroyMenu(menu);
+        }
     }
 
     private IntPtr CreateMessageWindow()
@@ -184,4 +228,28 @@ public sealed class TrayIcon : IDisposable
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr GetModuleHandle(string? lpModuleName);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X; public int Y; }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr CreatePopupMenu();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool AppendMenu(IntPtr hMenu, uint uFlags, UIntPtr uIDNewItem, string? lpNewItem);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyMenu(IntPtr hMenu);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint TrackPopupMenuEx(IntPtr hMenu, uint uFlags, int x, int y, IntPtr hwnd, IntPtr lptpm);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 }

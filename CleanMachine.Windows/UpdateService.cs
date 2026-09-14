@@ -48,7 +48,11 @@ public sealed class UpdateService
     internal static async Task<UpdateManifest?> ParseManifestAsync(Stream stream, CancellationToken cancellationToken = default)
         => await JsonSerializer.DeserializeAsync<UpdateManifest>(stream, ManifestJsonOptions, cancellationToken: cancellationToken);
 
-    public async Task<string> DownloadAndVerifyAsync(UpdatePackage package, CancellationToken cancellationToken = default)
+    /// <summary>Downloads the package, reporting download fraction (0..1) via
+    /// <paramref name="progress"/>, then verifies it by SHA-256 (and MSIX publisher)
+    /// before staging it. Verification is automatic - a failed hash/publisher check
+    /// deletes the download and throws.</summary>
+    public async Task<string> DownloadAndVerifyAsync(UpdatePackage package, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
         if (!IsValidPackage(package)) throw new InvalidOperationException("No signed update package is available for this device.");
         var isMsix = package.PackageUrl.EndsWith(".msix", StringComparison.OrdinalIgnoreCase);
@@ -57,8 +61,25 @@ public sealed class UpdateService
         var path = Path.Combine(directory, $"CleanMachine-{DateTime.UtcNow:yyyyMMddHHmmss}-{package.Architecture}{ext}");
         try
         {
-            await using (var source = await _httpClient.GetStreamAsync(new Uri(package.PackageUrl), cancellationToken))
-            await using (var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true)) await source.CopyToAsync(target, cancellationToken);
+            // ResponseHeadersRead so we get Content-Length up front and can stream with
+            // progress; the body read is not bound by HttpClient.Timeout.
+            using (var response = await _httpClient.GetAsync(new Uri(package.PackageUrl), HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+            {
+                response.EnsureSuccessStatusCode();
+                var total = response.Content.Headers.ContentLength;
+                await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
+                await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true);
+                var buffer = new byte[81920];
+                long copied = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    copied += read;
+                    if (total is > 0) progress?.Report(Math.Min(1.0, (double)copied / total.Value));
+                }
+            }
+            progress?.Report(1.0);
             await using var verify = File.OpenRead(path);
             var hash = Convert.ToHexString(await SHA256.HashDataAsync(verify, cancellationToken));
             if (!hash.Equals(package.Sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The downloaded package failed hash verification.");
@@ -90,18 +111,30 @@ public sealed class UpdateService
             {
                 // .exe installer: launch silently and exit so the installer can replace files.
                 // Inno Setup /SILENT shows a progress bar; /SUPPRESSMSGBOXES prevents dialogs;
-                // /NORESTART avoids an automatic reboot.
+                // /NORESTART avoids an automatic reboot. Verb=runas requests the elevation
+                // Windows needs to write to Program Files.
                 var psi = new ProcessStartInfo(packagePath, "/SILENT /SUPPRESSMSGBOXES /NORESTART")
                 {
                     UseShellExecute = true,
                     Verb = "runas"
                 };
-                Process.Start(psi);
+                try
+                {
+                    Process.Start(psi);
+                }
+                catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+                {
+                    // ERROR_CANCELLED: the user declined the UAC prompt. Nothing was
+                    // installed, so keep the package staged for a retry and report a
+                    // clean cancellation instead of a failure needing rollback.
+                    await _stateStore.MarkAsync("staged", packagePath, null, cancellationToken);
+                    throw new OperationCanceledException("Administrator permission is required to install the update.");
+                }
             }
             await _stateStore.MarkAsync("installed", packagePath, rollback, cancellationToken);
             CleanupRollbackCopy();
         }
-        catch
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await _stateStore.MarkAsync("rollback-required", packagePath, rollback, cancellationToken);
             throw;

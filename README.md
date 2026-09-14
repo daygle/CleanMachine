@@ -33,7 +33,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Per-item selection: safe items (cache, sessions, crash reports, metrics, bookmark backups) are on by default; destructive items (cookies, history, downloads, autofill, saved passwords) are opt-in behind a confirmation
 - Whole-file deletion, with a backup taken before any preference-file edit
 - Browser monitoring lives here: choose what happens when each supported browser closes (do nothing, clean silently, clean and notify), with a master on/off switch
-- Background Agent toggle (also updates Windows startup registration) so monitoring and the system monitor run without the window open
+- Enabling browser monitoring (or the low-disk-space monitor in Settings) automatically runs the background agent and registers CleanMachine to start with Windows, so those services work without the window open; there is no separate agent switch to remember
 
 ### Application Cleanup
 - Detects installed applications with cleanable temp files and shows only those with items (clean apps hidden by default, or shown greyed out behind a toggle)
@@ -94,9 +94,9 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Runs with least privilege, so only per-user items are touched
 
 ### Background Agent
-- Optional agent (toggle on the Browser Cleaner page; starts with Windows when enabled) that powers two monitors:
-  - Browser-exit monitoring: cleans a monitored browser's cache when it closes, with a per-browser action
-  - System monitoring: when free space on the Windows drive drops below a threshold, cleans the enabled Safe-risk categories at most once per hour, re-arming after free space recovers
+- The agent has no switch of its own: it runs (and CleanMachine registers to start with Windows) automatically whenever a service that needs it is enabled, and stops when the last one is turned off. Each service is controlled by its own checkbox on its page:
+  - Browser-exit monitoring (Browser Cleaner page): cleans a monitored browser's cache when it closes, with a per-browser action
+  - System monitoring (Settings): when free space on the Windows drive drops below a threshold - set in MB or GB - cleans a chosen set of Safe-risk categories (or all enabled ones by default) at most once per hour, re-arming after free space recovers
 - Every automated run records into the same stats store and activity log as manual cleans
 
 ### Updates and Releases
@@ -112,6 +112,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - System monitoring threshold and action
 - Automatic update check toggle
 - Minimize to tray options (start minimized, on close, on minimize; taskbar visibility)
+- Tray icon: left-click restores the window; right-click opens a menu to Open or Exit CleanMachine
 - Default wipe method selection
 - Configurable exclusion paths
 - Persisted startup registration

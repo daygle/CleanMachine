@@ -77,7 +77,11 @@
 
               <NumberBox x:Name="DayOfMonthBox" Header="Day of month" Minimum="1" Maximum="31" SpinButtonPlacementMode="Compact" Width="160"/>
 
-              <TextBlock Text="ITEMS TO CLEAN" FontSize="10" Foreground="#7F9189" Margin="0,4,0,0"/>
+              <Grid Margin="0,4,0,0">
+                <TextBlock Text="ITEMS TO CLEAN" FontSize="10" Foreground="#7F9189" VerticalAlignment="Center"/>
+                <CheckBox x:Name="SelectAllItems" Content="Select all" FontSize="12" MinWidth="0"
+                          HorizontalAlignment="Right" Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
+              </Grid>
               <StackPanel x:Name="ItemsPanel" Spacing="2"/>
 
               <ComboBox x:Name="AfterCombo" Header="After cleanup" HorizontalAlignment="Stretch" SelectionChanged="After_Changed">

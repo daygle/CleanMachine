@@ -14,6 +14,8 @@ public sealed partial class RegistryCarePage : Page
     public RegistryCarePage()
     {
         InitializeComponent();
+        // Analyze automatically when the page is opened.
+        Loaded += (_, _) => Scan_Click(this, new RoutedEventArgs());
     }
 
     private async void Scan_Click(object sender, RoutedEventArgs e)

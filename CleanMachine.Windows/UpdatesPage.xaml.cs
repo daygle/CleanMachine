@@ -40,36 +40,77 @@ public sealed partial class UpdatesPage : Page
     {
         CheckButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
+        Progress.IsIndeterminate = true;
+        StatusText.Text = "Checking for updates…";
+        UpdateCheckResult result;
         try
         {
-            var result = await _service.CheckAsync();
-            if (result.Error is not null) { StatusText.Text = result.Error; return; }
-            if (!result.Available) { StatusText.Text = "You are running the latest version."; return; }
-
-            var dialog = new ContentDialog
-            {
-                Title = $"Version {result.Manifest!.Version} available",
-                Content = result.Manifest.ReleaseNotes,
-                PrimaryButtonText = "Download and Verify",
-                CloseButtonText = "Later",
-                XamlRoot = XamlRoot
-            };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-            Progress.IsIndeterminate = true;
-            StatusText.Text = "Downloading and verifying package…";
-            var path = await _service.DownloadAndVerifyAsync(result.Package!);
-            _stagedPackagePath = path;
-
-            StatusText.Text = $"Verified package staged. Ready to install.";
-            DetailText.Text = $"Package: {path}";
-            DetailText.Visibility = Visibility.Visible;
-            InstallButton.Visibility = Visibility.Visible;
+            result = await _service.CheckAsync();
         }
-        catch (Exception ex) { StatusText.Text = ex.Message; }
+        catch (Exception ex) { StatusText.Text = ex.Message; return; }
         finally
         {
             CheckButton.IsEnabled = true;
+            Progress.Visibility = Visibility.Collapsed;
+            Progress.IsIndeterminate = false;
+        }
+
+        if (result.Error is not null) { StatusText.Text = result.Error; return; }
+        if (!result.Available) { StatusText.Text = "You are running the latest version."; return; }
+
+        var dialog = new ContentDialog
+        {
+            Title = $"Version {result.Manifest!.Version} available",
+            Content = $"{result.Manifest.ReleaseNotes}\n\nCleanMachine will download, verify and install this update, then restart. Windows may ask for administrator permission.",
+            PrimaryButtonText = "Update Now",
+            CloseButtonText = "Later",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            StatusText.Text = $"Version {result.Manifest.Version} is available. Use Check for Updates when you're ready.";
+            return;
+        }
+
+        await RunUpdateAsync(result.Package!);
+    }
+
+    /// <summary>One-click flow: download (with a real progress bar) → verify → install.
+    /// Verification is automatic; a declined elevation prompt keeps the package staged
+    /// for a retry.</summary>
+    private async Task RunUpdateAsync(UpdatePackage package)
+    {
+        CheckButton.IsEnabled = false;
+        InstallButton.IsEnabled = false;
+        Progress.Visibility = Visibility.Visible;
+        Progress.IsIndeterminate = false;
+        Progress.Value = 0;
+        DetailText.Visibility = Visibility.Collapsed;
+        try
+        {
+            var download = new Progress<double>(p =>
+            {
+                Progress.Value = p;
+                StatusText.Text = $"Downloading update… {p:P0}";
+            });
+            StatusText.Text = "Downloading update…";
+            _stagedPackagePath = await _service.DownloadAndVerifyAsync(package, download);
+
+            Progress.IsIndeterminate = true;
+            StatusText.Text = "Verified. Installing…";
+            await InstallStagedAsync();
+        }
+        catch (OperationCanceledException ex)
+        {
+            StatusText.Text = ex.Message;
+            InstallButton.Visibility = Visibility.Visible; // allow a retry
+        }
+        catch (Exception ex) { StatusText.Text = $"Update failed: {ex.Message}"; }
+        finally
+        {
+            CheckButton.IsEnabled = true;
+            InstallButton.IsEnabled = true;
             Progress.Visibility = Visibility.Collapsed;
             Progress.IsIndeterminate = false;
         }
@@ -82,7 +123,7 @@ public sealed partial class UpdatesPage : Page
         var confirm = new ContentDialog
         {
             Title = "Install update?",
-            Content = "The application will restart after installation. A rollback copy will be saved.",
+            Content = "CleanMachine will install the staged update and restart. Windows may ask for administrator permission.",
             PrimaryButtonText = "Install Now",
             CloseButtonText = "Cancel",
             XamlRoot = XamlRoot
@@ -92,24 +133,14 @@ public sealed partial class UpdatesPage : Page
         InstallButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
         Progress.IsIndeterminate = true;
+        StatusText.Text = "Installing…";
         try
         {
-            var executable = Environment.ProcessPath ?? throw new InvalidOperationException("Application path not found.");
-            var isExeInstall = _stagedPackagePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
-            await _service.InstallVerifiedPackageAsync(_stagedPackagePath, executable);
-            if (isExeInstall)
-            {
-                // The .exe installer has been launched and will replace the running app.
-                // Exit so the installer can proceed without file-in-use errors.
-                StatusText.Text = "Installer launched. The application will close.";
-                InstallButton.Visibility = Visibility.Collapsed;
-                Microsoft.UI.Xaml.Application.Current.Exit();
-            }
-            else
-            {
-                StatusText.Text = "Installation complete. Please restart the application.";
-                InstallButton.Visibility = Visibility.Collapsed;
-            }
+            await InstallStagedAsync();
+        }
+        catch (OperationCanceledException ex)
+        {
+            StatusText.Text = ex.Message;
         }
         catch (Exception ex)
         {
@@ -121,6 +152,26 @@ public sealed partial class UpdatesPage : Page
             InstallButton.IsEnabled = true;
             Progress.Visibility = Visibility.Collapsed;
             Progress.IsIndeterminate = false;
+        }
+    }
+
+    /// <summary>Installs the staged package and reports the outcome. The .exe installer
+    /// replaces the running app, so the app exits; MSIX installs in place. Throws
+    /// OperationCanceledException if the elevation prompt is declined.</summary>
+    private async Task InstallStagedAsync()
+    {
+        var executable = Environment.ProcessPath ?? throw new InvalidOperationException("Application path not found.");
+        var isExe = _stagedPackagePath!.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+        await _service.InstallVerifiedPackageAsync(_stagedPackagePath, executable);
+        InstallButton.Visibility = Visibility.Collapsed;
+        if (isExe)
+        {
+            StatusText.Text = "Installer launched. CleanMachine will now close to finish updating.";
+            Microsoft.UI.Xaml.Application.Current.Exit();
+        }
+        else
+        {
+            StatusText.Text = "Update installed. Please restart CleanMachine.";
         }
     }
 

@@ -30,7 +30,7 @@ public partial class App : Application
         AppNotifications.Register();
 
         var settings = await AppSettings.LoadAsync();
-        if (settings.BackgroundAgentEnabled)
+        if (settings.RequiresBackgroundAgent)
             StartBackgroundAgent(settings);
         // Keep the OS task store in step with whatever schedules are saved.
         _ = ScheduleService.SyncAllAsync(settings);
@@ -59,6 +59,26 @@ public partial class App : Application
             await ScheduleService.RunAsync(schedule, settings);
         }
         catch { /* a headless run must never surface a dialog or crash the process */ }
+    }
+
+    /// <summary>Starts or stops the background agent to match the enabled services,
+    /// and keeps Windows startup registration in step so the app is present to run
+    /// them while the window is closed. Call this after any change to a service that
+    /// the agent powers (browser-exit cleaning or the low-disk-space monitor).</summary>
+    public void ApplyBackgroundServices(AppSettings settings)
+    {
+        try
+        {
+            StartupRegistration.SetEnabled(
+                settings.RequiresBackgroundAgent,
+                Environment.ProcessPath ?? string.Empty);
+        }
+        catch { /* startup registration is best-effort */ }
+
+        if (settings.RequiresBackgroundAgent)
+            StartBackgroundAgent(settings);
+        else
+            StopBackgroundAgent();
     }
 
     public void StartBackgroundAgent(AppSettings? settings = null)
@@ -119,7 +139,7 @@ public partial class App : Application
 
             var drive = new DriveInfo(Path.GetPathRoot(Environment.SystemDirectory)!);
             var freeGb = drive.AvailableFreeSpace / (1024.0 * 1024 * 1024);
-            var thresholdGb = Math.Max(settings.SystemMonitorFreeSpaceGb, 0.1);
+            var thresholdGb = Math.Max(settings.SystemMonitorFreeSpaceGb, 0.01);
 
             if (freeGb >= thresholdGb)
             {
@@ -130,11 +150,17 @@ public partial class App : Application
             if (_systemMonitorLastRun is { } last && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(1))
                 return;
 
-            // Only Safe-risk categories the user has enabled are ever cleaned here;
-            // Review/Advanced categories always stay behind the manual page.
+            // Only Safe-risk categories are ever cleaned here; Review/Advanced
+            // categories always stay behind the manual page. When the user has
+            // chosen a specific set, honor it; otherwise fall back to every Safe
+            // category enabled on the Windows Cleanup page.
             var selected = WindowsCleanupService.Catalog
-                .Where(c => c.Risk == CleanupRisk.Safe && WindowsCleanupService.IsEnabled(c, settings))
+                .Where(c => c.Risk == CleanupRisk.Safe
+                    && (settings.SystemMonitorCategories is { } set
+                        ? set.Contains(c.Id)
+                        : WindowsCleanupService.IsEnabled(c, settings)))
                 .ToList();
+            if (selected.Count == 0) return;
             var report = await new WindowsCleanupService().CleanSelectedAsync(
                 selected,
                 new WindowsCleanupOptions(ConfirmReviewCategories: false, AllowElevation: false, ExcludedPaths: settings.ExcludedPaths),
@@ -146,10 +172,12 @@ public partial class App : Application
 
             if (settings.SystemMonitorAction == ExitAction.CleanAndNotify && report.Result.ItemsRemoved > 0)
                 AppNotifications.ShowSystemCleanupComplete(report.Result);
+            var usingMb = string.Equals(settings.SystemMonitorFreeSpaceUnit, "MB", StringComparison.OrdinalIgnoreCase);
+            var thresholdLabel = usingMb ? $"{thresholdGb * 1024.0:0.#} MB" : $"{thresholdGb:0.#} GB";
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
                 "System monitoring",
-                $"Free space below {thresholdGb:0.#} GB - cleaned {report.Result.ItemsRemoved:N0} items, {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered"),
+                $"Free space below {thresholdLabel} - cleaned {report.Result.ItemsRemoved:N0} items, {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered"),
                 token);
         }
         catch { /* monitoring is best-effort; never let it kill the agent loop */ }

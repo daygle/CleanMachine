@@ -14,7 +14,8 @@ public sealed partial class AppCleanupPage : Page
     public AppCleanupPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); };
+        // Load settings, then scan automatically when the page is opened.
+        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); Scan_Click(this, new RoutedEventArgs()); };
     }
 
     private async void Scan_Click(object sender, RoutedEventArgs e)
@@ -63,7 +64,7 @@ public sealed partial class AppCleanupPage : Page
         _itemBoxes.Clear();
         DetailHeadline.Text = "Select an application";
         StatusText.Text = visible.Count == 0
-            ? "All apps are clean. Check 'Show Clean' to see them."
+            ? "All apps are clean. Check 'Show All' to see them."
             : $"{visible.Count} app(s) with cleanable files.";
         DetailPanel.Children.Clear();
 
