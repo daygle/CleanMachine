@@ -57,6 +57,10 @@ public sealed partial class MainWindow : Window
         {
             _trayIcon?.Dispose();
             Unsubclass();
+            // Release the single-instance mutex and IPC events now (not at process
+            // teardown) so a relaunch - e.g. right after an uninstall/reinstall -
+            // can start immediately.
+            (Microsoft.UI.Xaml.Application.Current as App)?.StopInstanceEvents();
         };
     }
 
@@ -496,7 +500,12 @@ public sealed partial class MainWindow : Window
     /// <summary>"Exit" chosen from the tray menu: really quit. The window is in the
     /// tray, so the close-to-tray interception is bypassed and the app shuts down;
     /// the Closed handler disposes the tray icon so it disappears immediately.</summary>
-    private void OnTrayExitRequested()
+    private void OnTrayExitRequested() => RequestExit();
+
+    /// <summary>Public entry point for a real quit (tray Exit, or the shutdown event
+    /// the installer signals). Forces the close-to-tray interception off for one pass
+    /// and exits; the Closed handler disposes the tray icon so it disappears immediately.</summary>
+    public void RequestExit()
     {
         DispatcherQueue.TryEnqueue(() =>
         {
@@ -504,6 +513,11 @@ public sealed partial class MainWindow : Window
             Microsoft.UI.Xaml.Application.Current.Exit();
         });
     }
+
+    /// <summary>Public entry point to show and foreground the window (tray click, tray
+    /// "Open", or the activate event a second launch signals). Reused by App's IPC
+    /// listener when a new process instance asks the running one to surface itself.</summary>
+    public void RequestShowFromTray() => OnTrayIconClicked();
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
     private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
