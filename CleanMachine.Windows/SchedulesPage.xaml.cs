@@ -157,6 +157,7 @@ public sealed partial class SchedulesPage : Page
         AfterCombo.SelectedIndex = (int)schedule.AfterClean;
         SecureDeleteCheck.IsChecked = schedule.SecureDelete;
         SecureDeleteHint.Visibility = schedule.SecureDelete ? Visibility.Visible : Visibility.Collapsed;
+        WakeCheck.IsChecked = schedule.WakeToRun;
 
         foreach (var (key, box) in _itemBoxes)
             box.IsChecked = key switch
@@ -181,7 +182,17 @@ public sealed partial class SchedulesPage : Page
         TimePanel.Visibility = trigger == ScheduleTrigger.AtLogon ? Visibility.Collapsed : Visibility.Visible;
         DayOfWeekCombo.Visibility = trigger == ScheduleTrigger.Weekly ? Visibility.Visible : Visibility.Collapsed;
         DayOfMonthBox.Visibility = trigger == ScheduleTrigger.Monthly ? Visibility.Visible : Visibility.Collapsed;
+        // Waking from sleep only applies to a timed trigger; a logon task fires when
+        // the user is already signed in.
+        var showWake = trigger != ScheduleTrigger.AtLogon;
+        WakeCheck.Visibility = showWake ? Visibility.Visible : Visibility.Collapsed;
+        WakeHint.Visibility = showWake && WakeCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    private void Wake_Changed(object sender, RoutedEventArgs e)
+        => WakeHint.Visibility = WakeCheck.Visibility == Visibility.Visible && WakeCheck.IsChecked == true
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
     private async Task RunNowAsync(CleanupSchedule schedule, Button button)
     {
@@ -237,6 +248,7 @@ public sealed partial class SchedulesPage : Page
             DayOfMonth = double.IsNaN(DayOfMonthBox.Value) ? 1 : (int)Math.Clamp(DayOfMonthBox.Value, 1, 31),
             AfterClean = (ScheduleAction)Math.Max(0, AfterCombo.SelectedIndex),
             SecureDelete = SecureDeleteCheck.IsChecked == true,
+            WakeToRun = WakeCheck.IsChecked == true && TriggerCombo.SelectedIndex != (int)ScheduleTrigger.AtLogon,
             CleanBrowserCache = _itemBoxes.Any(b => b.Key == "browser" && b.Box.IsChecked == true),
             WindowsCategoryIds = _itemBoxes.Where(b => b.Key.StartsWith("win:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList(),
             RegistryCategories = _itemBoxes.Where(b => b.Key.StartsWith("reg:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList()

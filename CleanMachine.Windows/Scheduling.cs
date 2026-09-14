@@ -53,6 +53,11 @@ public sealed class CleanupSchedule
     /// method from AppSettings.SecureDeleteMethod.</summary>
     public bool SecureDelete { get; set; }
 
+    /// <summary>When true, Windows wakes the computer from sleep to run this task
+    /// (timed triggers only). Depends on the machine's power settings allowing wake
+    /// timers; Windows ignores it otherwise.</summary>
+    public bool WakeToRun { get; set; }
+
     /// <summary>A short human-readable trigger summary for lists.</summary>
     public string TriggerSummary() => Trigger switch
     {
@@ -92,6 +97,21 @@ public static class ScheduledTask
 
     public static string BuildDeleteArguments(string scheduleId)
         => $"/Delete /TN \"{TaskName(scheduleId)}\" /F";
+
+    /// <summary>Builds powershell.exe arguments that enable "Wake the computer to run
+    /// this task" on an already-created task. schtasks.exe cannot set this flag, so it
+    /// is applied as a best-effort second step. Only the WakeToRun setting is changed;
+    /// the task's other settings, triggers, and principal are preserved.</summary>
+    public static string BuildWakeToRunArguments(string scheduleId)
+    {
+        var name = $"Cleanup-{scheduleId}";
+        var script =
+            "$ErrorActionPreference='Stop';" +
+            $"$t=Get-ScheduledTask -TaskPath '\\{Folder}\\' -TaskName '{name}';" +
+            "$t.Settings.WakeToRun=$true;" +
+            $"Set-ScheduledTask -TaskPath '\\{Folder}\\' -TaskName '{name}' -Settings $t.Settings | Out-Null";
+        return $"-NoProfile -NonInteractive -Command \"{script}\"";
+    }
 
     /// <summary>True when the schedule actually has something to clean.</summary>
     public static bool HasWork(CleanupSchedule schedule)
