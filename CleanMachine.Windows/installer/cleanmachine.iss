@@ -75,6 +75,14 @@ const
   AppExeName = 'CleanMachine.exe';
   AppMutexName = 'Local\CleanMachine.SingleInstance';
 
+// True when a CleanMachine instance is alive (via the single-instance mutex).
+// Defined above ShutdownApplication: Inno's Pascal Script resolves identifiers
+// top-down, so a function cannot call one declared later in the script.
+function AppIsRunning: Boolean;
+begin
+  Result := CheckForMutexes(AppMutexName);
+end;
+
 // Asks a running CleanMachine to exit gracefully. Attempts, in order:
 //   1. Launch the app itself with --shutdown: the running instance is told via a
 //      named event to exit exactly like the tray menu's Exit (background agent,
@@ -101,12 +109,6 @@ begin
   // nothing was running, which is fine.
   if Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM ' + AppExeName + ' /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     Log('taskkill exit code ' + IntToStr(ResultCode));
-end;
-
-// True when a CleanMachine instance is alive (via the single-instance mutex).
-function AppIsRunning: Boolean;
-begin
-  Result := CheckForMutexes(AppMutexName);
 end;
 
 // Install (including the silent self-update launched by the app): close the
