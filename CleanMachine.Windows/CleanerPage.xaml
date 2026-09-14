@@ -13,7 +13,7 @@
       <FontIcon Glyph="&#xE72C;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
       <TextBlock Text="Browser Cleaner" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
     </StackPanel>
-    <TextBlock Text="Tick what to clear for each installed browser. Destructive items - cookies, history, saved passwords - are off by default. Close the browser before cleaning."
+    <TextBlock Grid.Row="1" Text="Tick what to clear for each installed browser. Destructive items - cookies, history, saved passwords - are off by default. Close the browser before cleaning."
                TextWrapping="Wrap" Foreground="#89958F"/>
 
     <!-- Background agent: runs the monitoring below plus the system monitor. -->
