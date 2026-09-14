@@ -4,9 +4,6 @@
   <Grid RowSpacing="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
@@ -16,34 +13,31 @@
         <FontIcon Glyph="&#xEDA2;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
         <TextBlock Text="Drive Wiper" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
       </StackPanel>
-      <TextBlock Text="Overwrite the free space of a drive so that previously deleted files become unrecoverable. Existing files are never touched; the space is free again when the wipe completes."
+      <TextBlock Text="Overwrite the free space of a drive so previously deleted files become unrecoverable. Existing files are never touched; the space is free again when the wipe completes."
                  Foreground="#89958F" TextWrapping="Wrap"/>
     </StackPanel>
 
-    <StackPanel Grid.Row="1" Spacing="10">
-      <ComboBox x:Name="DriveCombo" Header="DRIVE" MinWidth="360" HorizontalAlignment="Left"/>
-      <ComboBox x:Name="PassesCombo" Header="PASSES" MinWidth="360" HorizontalAlignment="Left" SelectedIndex="0">
-        <ComboBoxItem Content="1 pass (random + zero) - fast"/>
-        <ComboBoxItem Content="3 passes - thorough"/>
-        <ComboBoxItem Content="7 passes - maximum"/>
-      </ComboBox>
-      <TextBlock Text="SSD note: due to wear leveling, overwriting free space cannot guarantee sanitization on solid-state drives. For sensitive data use device encryption; wiping free space is most useful for traditional hard drives."
-                 Foreground="#C7775D" FontSize="11" TextWrapping="Wrap" MaxWidth="560"/>
-    </StackPanel>
+    <Border Grid.Row="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16" VerticalAlignment="Top">
+      <StackPanel Spacing="12">
+        <TextBlock Text="OPTIONS" FontSize="10" Foreground="#7F9189"/>
+        <ComboBox x:Name="DriveCombo" Header="Drive" MinWidth="360" HorizontalAlignment="Left"/>
+        <ComboBox x:Name="PassesCombo" Header="Passes" MinWidth="360" HorizontalAlignment="Left" SelectedIndex="0">
+          <ComboBoxItem Content="1 pass (random + zero) - fast"/>
+          <ComboBoxItem Content="3 passes - thorough"/>
+          <ComboBoxItem Content="7 passes - maximum"/>
+        </ComboBox>
+        <TextBlock Text="SSD note: due to wear levelling, overwriting free space cannot guarantee sanitization on solid-state drives. For sensitive data use device encryption; wiping free space is most useful for traditional hard drives."
+                   Foreground="#C7775D" FontSize="11" TextWrapping="Wrap" MaxWidth="560"/>
+        <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed" Margin="0,4,0,0"/>
+        <TextBlock x:Name="StatusText" Text="Select a drive and the number of passes."
+                   Foreground="#6E8178" FontSize="12" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
 
-    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10">
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False" Padding="18,10"/>
       <Button x:Name="WipeButton" Content="Wipe Free Space" Click="Wipe_Click"
               Background="#286E58" Foreground="White" Padding="18,10"/>
-      <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False" Padding="18,10"/>
     </StackPanel>
-
-    <StackPanel Grid.Row="3" Spacing="6">
-      <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed"/>
-      <TextBlock x:Name="StatusText" Text="Select a drive and the number of passes."
-                 Foreground="#6E8178" TextWrapping="Wrap"/>
-    </StackPanel>
-
-    <!-- Row 4: filler to keep the footer-style layout when content is short. -->
-    <Border Grid.Row="4" Background="Transparent"/>
   </Grid>
 </Page>
