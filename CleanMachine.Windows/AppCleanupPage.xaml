@@ -19,7 +19,7 @@
 
     <Grid Grid.Row="1" ColumnSpacing="14">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="380"/>
+        <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
 
@@ -37,38 +37,94 @@
         </Grid>
       </Border>
 
-      <!-- Right: details / status. The detail list fills the remaining height
-           directly from the Grid cell (a StackPanel would measure it with
-           infinite height and let it overflow the card). -->
+      <!-- Right: selected item contents. The detail list fills the remaining height
+           directly from the Grid cell (a StackPanel would measure it with infinite
+           height and let it overflow the card). -->
       <Border Grid.Column="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14">
-        <Grid>
+        <Grid RowSpacing="12">
           <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
-          <Grid Grid.Row="0">
+
+          <!-- Summary header: icon tile, what is being viewed, and back navigation -->
+          <Grid Grid.Row="0" ColumnSpacing="10">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Button x:Name="DetailBackButton" Grid.Column="0" Click="DetailBack_Click"
-                    Style="{ThemeResource AccentButtonStyle}" Padding="6,2" FontSize="12"
+            <Border Grid.Column="0" Width="38" Height="38" CornerRadius="9" Background="#E2F3E9" VerticalAlignment="Center">
+              <FontIcon Glyph="&#xE7B8;" FontSize="18" Foreground="#398A6D"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+              <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="DetailHeadline" Text="Application details"
+                           FontSize="17" FontWeight="SemiBold" Foreground="#273630"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <Border x:Name="DetailGroupBadge" Grid.Column="1" Background="#EAF4EE" CornerRadius="5" Padding="7,3"
+                        VerticalAlignment="Center" Visibility="Collapsed">
+                  <TextBlock x:Name="DetailGroupBadgeText" Text="DESKTOP APP" FontSize="9"
+                             FontWeight="SemiBold" Foreground="#4B7769" CharacterSpacing="40"/>
+                </Border>
+              </Grid>
+              <TextBlock x:Name="DetailSubHeadline" Text="Pick an application on the left to review what can be freed."
+                         FontSize="11" Foreground="#89958F" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <Button x:Name="DetailBackButton" Grid.Column="2" Click="DetailBack_Click"
+                    Style="{ThemeResource AccentButtonStyle}" Padding="8,4" FontSize="12"
                     Visibility="Collapsed" VerticalAlignment="Center">
               <StackPanel Orientation="Horizontal" Spacing="4">
                 <FontIcon Glyph="&#xE72B;" FontSize="12"/>
                 <TextBlock Text="Back"/>
               </StackPanel>
             </Button>
-            <TextBlock x:Name="DetailHeadline" Grid.Column="1" Text="Select an application"
-                       FontSize="16" FontWeight="SemiBold" Foreground="#273630" Margin="6,0,0,4" TextWrapping="Wrap"/>
           </Grid>
-          <TextBlock Grid.Row="1" x:Name="StatusText" Text="Click Scan to detect installed applications and measure their temp files."
-                     FontSize="12" Foreground="#6E8178" Margin="0,0,0,8" TextWrapping="Wrap"/>
-          <ProgressBar Grid.Row="2" x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed" Margin="0,0,0,8"/>
-          <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="DetailPanel" Spacing="2"/>
+
+          <!-- Live selection summary: mirrors what the Clean button will remove -->
+          <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+            <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
+              <StackPanel Spacing="1">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="6" Height="6" Fill="#6ABD97" VerticalAlignment="Center"/>
+                  <TextBlock Text="TO CLEAN" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
+                </StackPanel>
+                <TextBlock x:Name="ChipSizeValue" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+              </StackPanel>
+            </Border>
+            <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
+              <StackPanel Spacing="1">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="6" Height="6" Fill="#5B99AD" VerticalAlignment="Center"/>
+                  <TextBlock Text="FILES" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
+                </StackPanel>
+                <TextBlock x:Name="ChipFilesValue" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+              </StackPanel>
+            </Border>
+            <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
+              <StackPanel Spacing="1">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="6" Height="6" Fill="#C7775D" VerticalAlignment="Center"/>
+                  <TextBlock Text="ITEMS" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
+                </StackPanel>
+                <TextBlock x:Name="ChipItemsValue" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <TextBlock Grid.Row="2" x:Name="StatusText" Text="Click Scan to detect installed applications and measure their temp files."
+                     FontSize="12" Foreground="#6E8178" TextWrapping="Wrap"/>
+          <ProgressBar Grid.Row="3" x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed"/>
+          <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="DetailPanel" Spacing="8"/>
           </ScrollViewer>
         </Grid>
       </Border>

@@ -69,7 +69,7 @@ public sealed partial class AppCleanupPage : Page
         _detailContext = null;
         _detailItemIndex = null;
         DetailBackButton.Visibility = Visibility.Collapsed;
-        DetailHeadline.Text = "Select an application";
+        ShowDetailPlaceholder();
         StatusText.Text = visible.Count == 0
             ? "All apps are clean. Check 'Show All' to see them."
             : $"{visible.Count} app(s) with cleanable files.";
@@ -206,20 +206,23 @@ public sealed partial class AppCleanupPage : Page
         return expander;
     }
 
-    /// <summary>App-level detail: every cleanable item as a clickable row, one
-    /// level of drill-down away from its files. Shown when an app card is expanded
-    /// or its header clicked.</summary>
+    /// <summary>App-level detail: a summary header with live selection totals,
+    /// then one framed card per cleanable item. The checkbox mirrors the app
+    /// card's box in _itemBoxes, so the card stays the single source of truth.</summary>
     private void ShowAppDetail(AppScan scan)
     {
         _detailContext = scan;
         _detailItemIndex = null;
         DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Visible;
+        DetailGroupBadgeText.Text = scan.Group.ToUpperInvariant();
         DetailHeadline.Text = scan.Name;
-        StatusText.Text = $"{scan.Items.Count} cleanable item(s), {WindowsCleanupPage.FormatBytes(scan.Items.Sum(i => i.Bytes))} total. Click an item to see its files.";
+        DetailSubHeadline.Text = "Click an item card to preview its files.";
         DetailPanel.Children.Clear();
 
         if (scan.Items.Count == 0)
         {
+            SetChips(null, null, null);
             DetailPanel.Children.Add(new TextBlock
             {
                 Text = "Nothing to clean for this app.",
@@ -229,9 +232,13 @@ public sealed partial class AppCleanupPage : Page
             return;
         }
 
+        SetChips(WindowsCleanupPage.FormatBytes(scan.Items.Sum(i => i.Bytes)),
+            scan.Items.Sum(i => i.FileCount).ToString("N0"),
+            scan.Items.Count.ToString());
+
         foreach (var (item, index) in scan.Items.Select((item, index) => (item, index)))
         {
-            var row = new Grid { MinHeight = 32 };
+            var row = new Grid { ColumnSpacing = 10 };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -252,50 +259,75 @@ public sealed partial class AppCleanupPage : Page
             Grid.SetColumn(box, 0);
             row.Children.Add(box);
 
-            var label = new StackPanel { Spacing = 0 };
+            // Same transparent-button pattern as the app card rows: the Button
+            // contributes hover/pressed feedback without extra styling here.
+            var body = new Button
+            {
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(10, 8, 10, 8),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center,
+                CornerRadius = new CornerRadius(8)
+            };
+            var label = new StackPanel { Spacing = 1 };
             label.Children.Add(new TextBlock
             {
                 Text = item.Description,
                 FontSize = 12,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
             });
             label.Children.Add(new TextBlock
             {
-                Text = $"{WindowsCleanupPage.FormatBytes(item.Bytes)} - {item.FileCount:N0} file(s)",
+                Text = item.FullPath,
                 FontSize = 10,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
-            var button = new Button
-            {
-                Content = label,
-                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(6, 2, 6, 2),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            button.Click += (_, _) => ShowItemDetail(scan, index);
-            ToolTipService.SetToolTip(button, item.FullPath);
-            Grid.SetColumn(button, 1);
-            row.Children.Add(button);
+            body.Content = label;
+            body.Click += (_, _) => ShowItemDetail(scan, index);
+            ToolTipService.SetToolTip(body, item.FullPath);
+            Grid.SetColumn(body, 1);
+            row.Children.Add(body);
 
-            var chevron = new FontIcon
+            var side = new StackPanel
             {
-                Glyph = "\uE76C",
-                FontSize = 12,
+                Spacing = 3,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            side.Children.Add(new TextBlock
+            {
+                Text = WindowsCleanupPage.FormatBytes(item.Bytes),
+                FontSize = 13,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58))
+            });
+            side.Children.Add(new TextBlock
+            {
+                Text = $"{item.FileCount:N0} file(s)",
+                FontSize = 10,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
-            };
-            Grid.SetColumn(chevron, 2);
-            row.Children.Add(chevron);
+            });
+            Grid.SetColumn(side, 2);
+            row.Children.Add(side);
 
-            DetailPanel.Children.Add(row);
+            DetailPanel.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+                BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 6, 10, 6),
+                Child = row
+            });
         }
     }
 
-    /// <summary>Item-level detail: the files of the item drilled into. The back
-    /// button returns to the app-level view.</summary>
+    /// <summary>Item-level detail: a location banner plus the files of the item
+    /// drilled into. The back button returns to the app-level view.</summary>
     private void ShowItemDetail(AppScan scan, int itemIndex)
     {
         var item = scan.Items.ElementAtOrDefault(itemIndex);
@@ -304,12 +336,14 @@ public sealed partial class AppCleanupPage : Page
         _detailContext = scan;
         _detailItemIndex = itemIndex;
         DetailBackButton.Visibility = Visibility.Visible;
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
         // Avoid a redundant "Activity History - Activity history" when the app has a
         // single item whose description just restates the app name.
         DetailHeadline.Text = string.Equals(scan.Name, item.Description, StringComparison.OrdinalIgnoreCase)
             ? scan.Name
             : $"{scan.Name} - {item.Description}";
-        StatusText.Text = $"{item.FileCount:N0} file(s), {WindowsCleanupPage.FormatBytes(item.Bytes)}";
+        DetailSubHeadline.Text = item.FullPath;
+        SetChips(WindowsCleanupPage.FormatBytes(item.Bytes), item.FileCount.ToString("N0"), "1");
         DetailPanel.Children.Clear();
 
         try
@@ -321,27 +355,44 @@ public sealed partial class AppCleanupPage : Page
                     .Take(200)
                     .ToList();
 
+                if (files.Count == 0)
+                    DetailPanel.Children.Add(BuildDetailPlaceholder("No files in this location right now."));
+
                 foreach (var file in files)
                 {
                     var info = new FileInfo(file);
                     var relPath = file[item.FullPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 2, 0, 2) };
-                    row.Children.Add(new TextBlock
+                    var fileRow = new Grid { ColumnSpacing = 12 };
+                    fileRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    fileRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    var nameText = new TextBlock
                     {
                         Text = relPath,
                         FontSize = 11,
                         Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
                         TextTrimming = TextTrimming.CharacterEllipsis,
-                        MaxWidth = 260
-                    });
-                    row.Children.Add(new TextBlock
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    Grid.SetColumn(nameText, 0);
+                    fileRow.Children.Add(nameText);
+                    var sizeText = new TextBlock
                     {
                         Text = WindowsCleanupPage.FormatBytes(info.Length),
                         FontSize = 10,
                         Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
                         VerticalAlignment = VerticalAlignment.Center
+                    };
+                    Grid.SetColumn(sizeText, 1);
+                    fileRow.Children.Add(sizeText);
+                    DetailPanel.Children.Add(new Border
+                    {
+                        Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+                        BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(6),
+                        Padding = new Thickness(10, 5, 10, 5),
+                        Child = fileRow
                     });
-                    DetailPanel.Children.Add(row);
                 }
 
                 if (item.FileCount > 200)
@@ -351,19 +402,27 @@ public sealed partial class AppCleanupPage : Page
                         Text = $"…and {item.FileCount - 200:N0} more file(s)",
                         FontSize = 11,
                         Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
-                        Margin = new Thickness(0, 6, 0, 0)
+                        Margin = new Thickness(2, 6, 0, 0)
                     });
                 }
             }
             else if (File.Exists(item.FullPath))
             {
                 var info = new FileInfo(item.FullPath);
-                DetailPanel.Children.Add(new TextBlock
+                DetailPanel.Children.Add(new Border
                 {
-                    Text = $"{item.FullPath}",
-                    FontSize = 11,
-                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
-                    TextWrapping = TextWrapping.Wrap
+                    Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+                    BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(10, 6, 10, 6),
+                    Child = new TextBlock
+                    {
+                        Text = item.FullPath,
+                        FontSize = 11,
+                        Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
+                        TextWrapping = TextWrapping.Wrap
+                    }
                 });
                 DetailPanel.Children.Add(new TextBlock
                 {
@@ -391,6 +450,42 @@ public sealed partial class AppCleanupPage : Page
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D))
             });
         }
+    }
+
+    /// <summary>Updates the summary chips (to-clean size, file count, item count).
+    /// A null value collapses that chip back to its empty dash.</summary>
+    private void SetChips(string? bytes, string? files, string? items)
+    {
+        ChipSizeValue.Text = bytes ?? "\u2014";
+        ChipFilesValue.Text = files ?? "\u2014";
+        ChipItemsValue.Text = items ?? "\u2014";
+    }
+
+    /// <summary>Framed muted message used when a list has nothing to show, so the
+    /// empty case still reads as intentional design rather than a broken panel.</summary>
+    private static Border BuildDetailPlaceholder(string message) => new()
+    {
+        BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(16),
+        Child = new TextBlock
+        {
+            Text = message,
+            FontSize = 11,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
+        }
+    };
+
+    /// <summary>Reset state for the right card before any app is selected.</summary>
+    private void ShowDetailPlaceholder()
+    {
+        DetailHeadline.Text = "Application details";
+        DetailSubHeadline.Text = "Pick an application on the left to review what can be freed.";
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
+        SetChips(null, null, null);
     }
 
     /// <summary>Back navigation from a drilled-into item to its app's item list.</summary>
