@@ -9,6 +9,12 @@ public sealed partial class SettingsPage : Page
     // Guards the unit ComboBox while settings are loaded into the controls.
     private bool _loadingUnit;
     private bool _unitIsMb;
+    // Suppresses instant-save while settings are being loaded into the controls
+    // (or reset by Restore Defaults), so populating them does not save. Starts
+    // true so SelectionChanged events fired during InitializeComponent (from XAML
+    // SelectedIndex) cannot save default values over the real settings file before
+    // LoadAsync has run.
+    private bool _loading = true;
 
     private const double MbPerGb = 1024.0;
 
@@ -20,6 +26,7 @@ public sealed partial class SettingsPage : Page
 
     private async Task LoadAsync()
     {
+        _loading = true;
         _settings = await AppSettings.LoadAsync();
 
         SystemMonitoringToggle.IsChecked = _settings.SystemMonitoringEnabled;
@@ -46,6 +53,7 @@ public sealed partial class SettingsPage : Page
             _ => 0
         };
         ExclusionsBox.Text = string.Join("\n", _settings.ExcludedPaths);
+        _loading = false;
     }
 
     private static int ToComboIndex(ExitAction action) => action switch
@@ -73,7 +81,16 @@ public sealed partial class SettingsPage : Page
         ApplyFreeSpaceBounds(newIsMb);
         FreeSpaceBox.Value = newIsMb ? current * MbPerGb : current / MbPerGb;
         _unitIsMb = newIsMb;
+        if (!_loading) _ = PersistAsync();
     }
+
+    // Instant-save handlers: every control persists on change, so there is no
+    // Save button. Populating the controls (load / restore defaults) sets _loading
+    // to suppress these.
+    private void Setting_Changed(object sender, RoutedEventArgs e) { if (!_loading) _ = PersistAsync(); }
+    private void Setting_ComboChanged(object sender, SelectionChangedEventArgs e) { if (!_loading) _ = PersistAsync(); }
+    private void Setting_LostFocus(object sender, RoutedEventArgs e) { if (!_loading) _ = PersistAsync(); }
+    private void FreeSpace_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs e) { if (!_loading) _ = PersistAsync(); }
 
     private void ApplyFreeSpaceBounds(bool isMb)
     {
@@ -150,7 +167,9 @@ public sealed partial class SettingsPage : Page
         StatusText.Text = "Monitor items saved.";
     }
 
-    private async void Save_Click(object sender, RoutedEventArgs e)
+    /// <summary>Reads every control into settings, persists, and applies side
+    /// effects. Called on any change (instant save) and by Restore Defaults.</summary>
+    private async Task PersistAsync()
     {
         _settings.SystemMonitoringEnabled = SystemMonitoringToggle.IsChecked == true;
         var mb = FreeSpaceUnit.SelectedIndex == 1;
@@ -188,14 +207,17 @@ public sealed partial class SettingsPage : Page
         // services now enabled - here, the low-disk-space monitor.
         (App.Current as App)?.ApplyBackgroundServices(_settings);
 
-        StatusText.Text = "Settings saved.";
+        StatusText.Text = "Saved.";
     }
 
-    private void RestoreDefaults_Click(object sender, RoutedEventArgs e)
+    private async void RestoreDefaults_Click(object sender, RoutedEventArgs e)
     {
         var defaults = new AppSettings();
-        SystemMonitoringToggle.IsChecked = defaults.SystemMonitoringEnabled;
+        // Populate the controls with defaults without firing a save per control,
+        // then persist once at the end.
+        _loading = true;
         _loadingUnit = true;
+        SystemMonitoringToggle.IsChecked = defaults.SystemMonitoringEnabled;
         _unitIsMb = false;
         FreeSpaceUnit.SelectedIndex = 0;
         ApplyFreeSpaceBounds(false);
@@ -211,6 +233,9 @@ public sealed partial class SettingsPage : Page
         MinimizeToTrayToggle.IsChecked = defaults.MinimizeToTray;
         WipeMethodCombo.SelectedIndex = 0;
         ExclusionsBox.Text = "";
-        StatusText.Text = "Defaults restored. Click Save Settings to apply.";
+        _loading = false;
+
+        await PersistAsync();
+        StatusText.Text = "Defaults restored.";
     }
 }
