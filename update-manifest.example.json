@@ -1,22 +1,22 @@
 {
-  "version": "1.0.12",
-  "releaseNotes": "Fixed Installed Applications crash on open; restored Overview stats and Clean All, Store app support, RunOnce startup scanning, and Task Manager-compatible startup toggling.",
+  "version": "1.0.13",
+  "releaseNotes": "Reliability fixes: secure delete no longer counts files it skips (protected, locked, or empty) as removed, cleanup statistics are now saved reliably after every run, plus internal cleanup of dead and redundant code.",
   "packages": {
     "x64": {
-      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.12/CleanMachine-x64-v1.0.12.msix",
+      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.13/CleanMachine-x64-v1.0.13.msix",
       "sha256": "64_CHARACTER_SHA256_OF_SIGNED_MSIX_PACKAGE",
       "architecture": "x64",
       "publisher": "CN=YOUR_PRODUCTION_PUBLISHER"
     },
     "ARM64": {
-      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.12/CleanMachine-ARM64-v1.0.12.msix",
+      "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.13/CleanMachine-ARM64-v1.0.13.msix",
       "sha256": "64_CHARACTER_SHA256_OF_SIGNED_MSIX_PACKAGE",
       "architecture": "ARM64",
       "publisher": "CN=YOUR_PRODUCTION_PUBLISHER"
     }
   },
   "installer": {
-    "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.12/CleanMachine-Setup-1.0.12.exe",
+    "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.13/CleanMachine-Setup-1.0.13.exe",
     "sha256": "64_CHARACTER_SHA256_OF_SETUP_EXE",
     "architecture": "x64"
   }
