@@ -49,6 +49,16 @@ public sealed class AppSettings
     public HashSet<string> DisabledCleanupCategories { get; set; } = [];
     public HashSet<string> EnabledCleanupCategories { get; set; } = [];
 
+    // Overview "Quick Clean" per-area item selections. Each area's gear button edits
+    // its list; the Quick Clean button then cleans exactly those items immediately.
+    // A null list means "not configured yet" - Quick Clean falls back to a safe
+    // default (all currently-enabled Safe Windows categories, all registry
+    // categories, all installed apps). Browsers default to the three supported ones.
+    public HashSet<string> QuickCleanBrowsers { get; set; } = ["chrome", "edge", "firefox"];
+    public HashSet<string>? QuickCleanWindowsCategories { get; set; }
+    public HashSet<string>? QuickCleanRegistryCategories { get; set; }
+    public HashSet<string>? QuickCleanApps { get; set; }
+
     // Per-browser monitoring: entries use canonical ids (chrome, edge, firefox).
     public List<BrowserMonitorSetting> BrowserMonitors { get; set; } =
     [

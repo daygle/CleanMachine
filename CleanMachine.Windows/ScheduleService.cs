@@ -32,11 +32,22 @@ public sealed class ScheduleService
         return $"\"{ExecutablePath}\" --run-schedule {scheduleId}";
     }
 
-    public static Task<bool> RegisterAsync(CleanupSchedule schedule, CancellationToken token = default)
-        => RunSchtasksAsync(ScheduledTask.BuildCreateArguments(schedule, GetLaunchCommand(schedule.Id)), token);
+    public static async Task<bool> RegisterAsync(CleanupSchedule schedule, CancellationToken token = default)
+    {
+        var created = await RunProcessAsync("schtasks.exe",
+            ScheduledTask.BuildCreateArguments(schedule, GetLaunchCommand(schedule.Id)), token);
+        // "Wake the computer to run this task" isn't settable via schtasks.exe, so apply
+        // it as a best-effort second step. Recreating the task with /F clears the flag,
+        // so this only needs to run when wake is wanted. A failure (e.g. wake timers
+        // disabled by policy) must not fail registration - the task still runs whenever
+        // the PC is already awake.
+        if (created && schedule.WakeToRun)
+            await RunProcessAsync("powershell.exe", ScheduledTask.BuildWakeToRunArguments(schedule.Id), token);
+        return created;
+    }
 
     public static Task<bool> UnregisterAsync(string scheduleId, CancellationToken token = default)
-        => RunSchtasksAsync(ScheduledTask.BuildDeleteArguments(scheduleId), token);
+        => RunProcessAsync("schtasks.exe", ScheduledTask.BuildDeleteArguments(scheduleId), token);
 
     /// <summary>Brings the machine's task store in line with the saved schedules:
     /// enabled schedules are (re)registered; disabled or empty ones are removed.</summary>
@@ -197,9 +208,9 @@ public sealed class ScheduleService
     [DllImport("powrprof.dll", SetLastError = true)]
     private static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
 
-    private static async Task<bool> RunSchtasksAsync(string arguments, CancellationToken token)
+    private static async Task<bool> RunProcessAsync(string fileName, string arguments, CancellationToken token)
     {
-        var psi = new ProcessStartInfo("schtasks.exe", arguments)
+        var psi = new ProcessStartInfo(fileName, arguments)
         {
             UseShellExecute = false,
             CreateNoWindow = true,

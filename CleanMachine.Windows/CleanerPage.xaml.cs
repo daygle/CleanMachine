@@ -26,9 +26,6 @@ public sealed partial class CleanerPage : Page
     {
         _monitorReady = false;
 
-        AgentToggle.IsOn = _settings.BackgroundAgentEnabled;
-        ShowAgentState(_settings.BackgroundAgentEnabled);
-
         CleanToggle.IsChecked = _settings.CleanOnBrowserExit;
         var chrome = _settings.FindBrowserMonitor("chrome");
         var edge = _settings.FindBrowserMonitor("edge");
@@ -42,32 +39,6 @@ public sealed partial class CleanerPage : Page
         UpdateMonitorHint();
 
         _monitorReady = true;
-    }
-
-    private async void AgentToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (!_monitorReady) return;
-        var enabled = AgentToggle.IsOn;
-        _settings.BackgroundAgentEnabled = enabled;
-        await _settings.SaveAsync();
-
-        try { StartupRegistration.SetEnabled(enabled, Environment.ProcessPath ?? string.Empty); }
-        catch { /* startup registration is best-effort */ }
-
-        if (App.Current is App app)
-        {
-            if (enabled) app.StartBackgroundAgent(_settings);
-            else app.StopBackgroundAgent();
-        }
-        ShowAgentState(enabled);
-    }
-
-    private void ShowAgentState(bool enabled)
-    {
-        AgentStatusText.Text = enabled ? "●  Background Agent  ON" : "○  Background Agent  OFF";
-        AgentStatusText.Foreground = new SolidColorBrush(enabled
-            ? global::Windows.UI.Color.FromArgb(255, 0x25, 0x42, 0x39)
-            : global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F));
     }
 
     private async void CleanToggle_Changed(object sender, RoutedEventArgs e)
@@ -120,7 +91,7 @@ public sealed partial class CleanerPage : Page
         if (!_settings.CleanOnBrowserExit)
             MonitoringHint.Text = "Monitoring is off - browser caches are only cleaned when you run it manually here.";
         else if (!_settings.BackgroundAgentEnabled)
-            MonitoringHint.Text = "Monitoring is on, but the Background Agent is off - turn it on above so exits are detected.";
+            MonitoringHint.Text = "Monitoring is on, but the Background Agent is off - turn it on in Settings so exits are detected.";
         else
             MonitoringHint.Text = "Caches only. Open browsers are skipped; passwords, bookmarks, cookies, and history are never touched.";
     }

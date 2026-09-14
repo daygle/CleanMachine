@@ -17,6 +17,7 @@ public sealed partial class SettingsPage : Page
     {
         _settings = await AppSettings.LoadAsync();
 
+        BackgroundAgentToggle.IsChecked = _settings.BackgroundAgentEnabled;
         SystemMonitoringToggle.IsChecked = _settings.SystemMonitoringEnabled;
         FreeSpaceBox.Value = _settings.SystemMonitorFreeSpaceGb;
         SystemMonitorAction.SelectedIndex = ToComboIndex(_settings.SystemMonitorAction);
@@ -53,6 +54,7 @@ public sealed partial class SettingsPage : Page
 
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
+        _settings.BackgroundAgentEnabled = BackgroundAgentToggle.IsChecked == true;
         _settings.SystemMonitoringEnabled = SystemMonitoringToggle.IsChecked == true;
         _settings.SystemMonitorFreeSpaceGb = Math.Clamp(FreeSpaceBox.Value, 0.1, 100);
         _settings.SystemMonitorAction = FromComboIndex(SystemMonitorAction.SelectedIndex);
@@ -81,7 +83,7 @@ public sealed partial class SettingsPage : Page
                 _settings.BackgroundAgentEnabled,
                 Environment.ProcessPath ?? string.Empty);
         }
-        catch { /* startup registration is best-effort; the toggle lives on Browser Cleaner */ }
+        catch { /* startup registration is best-effort */ }
 
         if (App.MainWindow is MainWindow mainWindow)
         {
@@ -90,8 +92,7 @@ public sealed partial class SettingsPage : Page
             mainWindow.ApplyCloseToTray(_settings.CloseToTray);
         }
 
-        // Re-apply the agent state from settings so an externally changed agent
-        // flag (Browser Cleaner page) takes effect after any settings save.
+        // Apply the agent state: start or stop the background agent to match the toggle.
         if (App.Current is App app)
         {
             if (_settings.BackgroundAgentEnabled)
@@ -106,6 +107,7 @@ public sealed partial class SettingsPage : Page
     private void RestoreDefaults_Click(object sender, RoutedEventArgs e)
     {
         var defaults = new AppSettings();
+        BackgroundAgentToggle.IsChecked = defaults.BackgroundAgentEnabled;
         SystemMonitoringToggle.IsChecked = defaults.SystemMonitoringEnabled;
         FreeSpaceBox.Value = defaults.SystemMonitorFreeSpaceGb;
         SystemMonitorAction.SelectedIndex = 1;

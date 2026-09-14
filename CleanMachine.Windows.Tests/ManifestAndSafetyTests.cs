@@ -511,6 +511,21 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void WakeToRunArgumentsTargetTheTaskAndEnableWake()
+    {
+        var args = ScheduledTask.BuildWakeToRunArguments("xyz");
+        Assert.Contains("Cleanup-xyz", args);
+        Assert.Contains(@"-TaskPath '\CleanMachine\'", args);
+        Assert.Contains("WakeToRun=$true", args);
+    }
+
+    [Fact]
+    public void CleanupScheduleWakeToRunDefaultsOffAndRoundTrips()
+    {
+        Assert.False(new CleanupSchedule().WakeToRun);
+    }
+
+    [Fact]
     public void ScheduleHasWorkRequiresAtLeastOneTarget()
     {
         Assert.False(ScheduledTask.HasWork(new CleanupSchedule()));

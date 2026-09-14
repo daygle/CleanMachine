@@ -1,68 +1,4 @@
 <Page x:Class="CleanMachine.Windows.OverviewPage" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:controls="using:CleanMachine.Windows">
-  <Page.Resources>
-    <SolidColorBrush x:Key="CardBorderBrush" Color="#E5EBE7"/>
-    <SolidColorBrush x:Key="CardHoverBorderBrush" Color="#BFE5D5"/>
-    <SolidColorBrush x:Key="CardBrush" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="CardHoverBrush" Color="#F3F8F5"/>
-    <SolidColorBrush x:Key="CardPressedBrush" Color="#EAF4EE"/>
-    <SolidColorBrush x:Key="CardDisabledBrush" Color="#F5F7F6"/>
-    <Style x:Key="QuickActionCard" TargetType="Button">
-      <Setter Property="Background" Value="{StaticResource CardBrush}"/>
-      <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="10"/>
-      <Setter Property="Padding" Value="18,16"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="RootBorder"
-                    Background="{TemplateBinding Background}"
-                    BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="{TemplateBinding CornerRadius}"
-                    Padding="{TemplateBinding Padding}">
-              <ContentPresenter x:Name="Content"
-                                Content="{TemplateBinding Content}"
-                                HorizontalAlignment="Stretch"
-                                VerticalAlignment="Center"/>
-              <VisualStateManager.VisualStateGroups>
-                <VisualStateGroup x:Name="CommonStates">
-                  <VisualState x:Name="Normal"/>
-                  <VisualState x:Name="PointerOver">
-                    <Storyboard>
-                      <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
-                        <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource CardHoverBrush}"/>
-                      </ObjectAnimationUsingKeyFrames>
-                      <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="BorderBrush">
-                        <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource CardHoverBorderBrush}"/>
-                      </ObjectAnimationUsingKeyFrames>
-                    </Storyboard>
-                  </VisualState>
-                  <VisualState x:Name="Pressed">
-                    <Storyboard>
-                      <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
-                        <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource CardPressedBrush}"/>
-                      </ObjectAnimationUsingKeyFrames>
-                    </Storyboard>
-                  </VisualState>
-                  <VisualState x:Name="Disabled">
-                    <Storyboard>
-                      <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
-                        <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource CardDisabledBrush}"/>
-                      </ObjectAnimationUsingKeyFrames>
-                      <DoubleAnimation Storyboard.TargetName="Content" Storyboard.TargetProperty="Opacity" To="0.45" Duration="0"/>
-                    </Storyboard>
-                  </VisualState>
-                </VisualStateGroup>
-              </VisualStateManager.VisualStateGroups>
-            </Border>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-  </Page.Resources>
   <StackPanel Spacing="18">
     <!-- Hero -->
     <StackPanel>
@@ -73,22 +9,12 @@
       </StackPanel>
       <TextBlock Text="Review safe cleanup actions from one calm dashboard." Foreground="#89958F" FontSize="13" Margin="0,10,0,0"/>
     </StackPanel>
-    <!-- Clean All CTA -->
+    <!-- Welcome banner -->
     <Border Background="#DCEFE5" CornerRadius="13" Padding="30">
       <StackPanel>
         <TextBlock Text="READY WHEN YOU ARE" Foreground="#7F9189" FontSize="10"/>
         <TextBlock Text="Clear the clutter. Keep the good stuff." Foreground="#254239" FontSize="28" FontWeight="SemiBold" Margin="0,10,0,8"/>
-        <TextBlock Text="Start with a review-first scan. CleanMachine never removes protected personal data automatically." Foreground="#709086" TextWrapping="Wrap" MaxWidth="540"/>
-        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,18,0,0">
-          <Button x:Name="CleanAllButton" Content="Clean All Safe Items" Click="CleanAll_Click" Background="#286E58" Foreground="White" Padding="18,10" FontWeight="SemiBold"/>
-          <Button Content="Open Browser Cleaner" Click="OpenCleaner_Click" Background="#FFFFFF" Foreground="#273630" BorderBrush="#BFE5D5" BorderThickness="1" Padding="18,10"/>
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,14,0,0">
-          <ProgressBar x:Name="CleanAllProgress" IsIndeterminate="True" Width="160" Visibility="Collapsed" VerticalAlignment="Center"/>
-          <Button x:Name="CleanAllCancelButton" Content="Cancel" Click="CleanAllCancel_Click" Visibility="Collapsed" Padding="12,6"/>
-        </StackPanel>
-        <TextBlock x:Name="CleanAllStatus" Visibility="Collapsed" Foreground="#254239" FontSize="13" TextWrapping="Wrap" Margin="0,6,0,0"/>
-        <TextBlock x:Name="CleanAllResult" Visibility="Collapsed" Foreground="#89958F" FontSize="12" TextWrapping="Wrap" MaxWidth="540" Margin="0,4,0,0"/>
+        <TextBlock Text="Quick Clean any area below to free space in one click, or open an area to review it in detail. CleanMachine never removes protected personal data automatically." Foreground="#709086" TextWrapping="Wrap" MaxWidth="560"/>
       </StackPanel>
     </Border>
     <!-- Lifetime / recent cleanup stats -->
@@ -102,23 +28,6 @@
       <controls:MetricCard Grid.Column="1" x:Name="StatsSpace" Label="SPACE RECOVERED" Value="—"/>
       <controls:MetricCard Grid.Column="2" x:Name="StatsLast" Label="LAST CLEANUP" Value="—"/>
     </Grid>
-    <!-- Background agent -->
-    <Border Background="#EAF4EE" BorderBrush="#DCE8E1" BorderThickness="1" CornerRadius="13" Padding="20">
-      <Grid ColumnSpacing="16">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-        </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0" Spacing="4">
-          <TextBlock Text="BACKGROUND AGENT" Foreground="#7F9189" FontSize="10"/>
-          <TextBlock x:Name="AgentStatusText" Text="●  Background Agent  ON" Foreground="#254239" FontSize="17" FontWeight="SemiBold"/>
-          <TextBlock Text="Watching for browser exits and cleaning the cache automatically when a browser closes."
-                     Foreground="#709086" FontSize="12" TextWrapping="Wrap"/>
-        </StackPanel>
-        <ToggleSwitch Grid.Column="1" x:Name="AgentToggle" OnContent="ON" OffContent="OFF"
-                      VerticalAlignment="Center" Toggled="AgentToggle_Toggled"/>
-      </Grid>
-    </Border>
     <!-- Update status -->
     <Border Background="#FFFFFF" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="20">
       <Grid ColumnSpacing="16">
@@ -136,51 +45,131 @@
         </StackPanel>
       </Grid>
     </Border>
-    <!-- Live availability: what each area could clean right now. Refreshed on
-         every page load; clicking a card opens that area. -->
-    <Grid ColumnSpacing="14">
+    <!-- Quick Clean: one-click clean per area, plus a gear to choose what each
+         includes. Summaries show what could be cleaned right now (refreshed on load
+         and after every clean). -->
+    <TextBlock Text="QUICK CLEAN" FontSize="10" Foreground="#7F9189"/>
+    <Grid ColumnSpacing="14" RowSpacing="14">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
-      <Button Grid.Column="0" Style="{StaticResource QuickActionCard}" Click="OpenCleaner_Click">
-        <StackPanel Spacing="10">
-          <Border Width="36" Height="36" CornerRadius="10" Background="#EAF4EE" HorizontalAlignment="Left">
-            <FontIcon Glyph="&#xE72C;" FontSize="15" Foreground="#4B7769" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <TextBlock Text="Browser Cleaner" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
-          <TextBlock x:Name="BrowsersSummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+
+      <Border Grid.Row="0" Grid.Column="0" Background="#FFFFFF" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
+        <StackPanel Spacing="12">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+              <Border Width="34" Height="34" CornerRadius="9" Background="#EAF4EE">
+                <FontIcon Glyph="&#xE72C;" FontSize="15" Foreground="#4B7769" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Browser Cleaner" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock x:Name="BrowsersSummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+              </StackPanel>
+            </StackPanel>
+            <Button Grid.Column="1" Click="BrowsersSettings_Click" VerticalAlignment="Top" Padding="8,6"
+                    ToolTipService.ToolTip="Choose what Quick Clean includes">
+              <FontIcon Glyph="&#xE713;" FontSize="14"/>
+            </Button>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="BrowsersCleanButton" Content="Quick Clean" Click="BrowsersQuickClean_Click"
+                    Background="#286E58" Foreground="White" Padding="16,8"/>
+            <Button Content="Open" Click="OpenCleaner_Click" Padding="16,8"/>
+            <ProgressBar x:Name="BrowsersProgress" IsIndeterminate="True" Width="90" Visibility="Collapsed" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock x:Name="BrowsersResult" Visibility="Collapsed" Foreground="#6E8178" FontSize="11" TextWrapping="Wrap"/>
         </StackPanel>
-      </Button>
-      <Button Grid.Column="1" Style="{StaticResource QuickActionCard}" Click="OpenWindows_Click">
-        <StackPanel Spacing="10">
-          <Border Width="36" Height="36" CornerRadius="10" Background="#EAF4EE" HorizontalAlignment="Left">
-            <FontIcon Glyph="&#xE74D;" FontSize="15" Foreground="#4B7769" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <TextBlock Text="Windows Cleanup" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
-          <TextBlock x:Name="WindowsSummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+      </Border>
+
+      <Border Grid.Row="0" Grid.Column="1" Background="#FFFFFF" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
+        <StackPanel Spacing="12">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+              <Border Width="34" Height="34" CornerRadius="9" Background="#EAF4EE">
+                <FontIcon Glyph="&#xE74D;" FontSize="15" Foreground="#4B7769" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Windows Cleanup" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock x:Name="WindowsSummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+              </StackPanel>
+            </StackPanel>
+            <Button Grid.Column="1" Click="WindowsSettings_Click" VerticalAlignment="Top" Padding="8,6"
+                    ToolTipService.ToolTip="Choose what Quick Clean includes">
+              <FontIcon Glyph="&#xE713;" FontSize="14"/>
+            </Button>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="WindowsCleanButton" Content="Quick Clean" Click="WindowsQuickClean_Click"
+                    Background="#286E58" Foreground="White" Padding="16,8"/>
+            <Button Content="Open" Click="OpenWindows_Click" Padding="16,8"/>
+            <ProgressBar x:Name="WindowsProgress" IsIndeterminate="True" Width="90" Visibility="Collapsed" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock x:Name="WindowsResult" Visibility="Collapsed" Foreground="#6E8178" FontSize="11" TextWrapping="Wrap"/>
         </StackPanel>
-      </Button>
-      <Button Grid.Column="2" Style="{StaticResource QuickActionCard}" Click="OpenRegistry_Click">
-        <StackPanel Spacing="10">
-          <Border Width="36" Height="36" CornerRadius="10" Background="#EAF4EE" HorizontalAlignment="Left">
-            <FontIcon Glyph="&#xE72E;" FontSize="15" Foreground="#4B7769" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <TextBlock Text="Registry Care" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
-          <TextBlock x:Name="RegistrySummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+      </Border>
+
+      <Border Grid.Row="1" Grid.Column="0" Background="#FFFFFF" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
+        <StackPanel Spacing="12">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+              <Border Width="34" Height="34" CornerRadius="9" Background="#EAF4EE">
+                <FontIcon Glyph="&#xE72E;" FontSize="15" Foreground="#4B7769" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Registry Care" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock x:Name="RegistrySummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+              </StackPanel>
+            </StackPanel>
+            <Button Grid.Column="1" Click="RegistrySettings_Click" VerticalAlignment="Top" Padding="8,6"
+                    ToolTipService.ToolTip="Choose what Quick Clean includes">
+              <FontIcon Glyph="&#xE713;" FontSize="14"/>
+            </Button>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="RegistryCleanButton" Content="Quick Clean" Click="RegistryQuickClean_Click"
+                    Background="#286E58" Foreground="White" Padding="16,8"/>
+            <Button Content="Open" Click="OpenRegistry_Click" Padding="16,8"/>
+            <ProgressBar x:Name="RegistryProgress" IsIndeterminate="True" Width="90" Visibility="Collapsed" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock x:Name="RegistryResult" Visibility="Collapsed" Foreground="#6E8178" FontSize="11" TextWrapping="Wrap"/>
         </StackPanel>
-      </Button>
-      <Button Grid.Column="3" Style="{StaticResource QuickActionCard}" Click="OpenApps_Click">
-        <StackPanel Spacing="10">
-          <Border Width="36" Height="36" CornerRadius="10" Background="#EAF4EE" HorizontalAlignment="Left">
-            <FontIcon Glyph="&#xE7B8;" FontSize="15" Foreground="#4B7769" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <TextBlock Text="Application Cleanup" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
-          <TextBlock x:Name="AppsSummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+      </Border>
+
+      <Border Grid.Row="1" Grid.Column="1" Background="#FFFFFF" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
+        <StackPanel Spacing="12">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+              <Border Width="34" Height="34" CornerRadius="9" Background="#EAF4EE">
+                <FontIcon Glyph="&#xE7B8;" FontSize="15" Foreground="#4B7769" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Application Cleanup" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock x:Name="AppsSummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+              </StackPanel>
+            </StackPanel>
+            <Button Grid.Column="1" Click="AppsSettings_Click" VerticalAlignment="Top" Padding="8,6"
+                    ToolTipService.ToolTip="Choose what Quick Clean includes">
+              <FontIcon Glyph="&#xE713;" FontSize="14"/>
+            </Button>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="AppsCleanButton" Content="Quick Clean" Click="AppsQuickClean_Click"
+                    Background="#286E58" Foreground="White" Padding="16,8"/>
+            <Button Content="Open" Click="OpenApps_Click" Padding="16,8"/>
+            <ProgressBar x:Name="AppsProgress" IsIndeterminate="True" Width="90" Visibility="Collapsed" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock x:Name="AppsResult" Visibility="Collapsed" Foreground="#6E8178" FontSize="11" TextWrapping="Wrap"/>
         </StackPanel>
-      </Button>
+      </Border>
     </Grid>
   </StackPanel>
 </Page>

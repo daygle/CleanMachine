@@ -6,36 +6,17 @@
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
     </Grid.RowDefinitions>
     <StackPanel Orientation="Horizontal" Spacing="12">
       <FontIcon Glyph="&#xE72C;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
       <TextBlock Text="Browser Cleaner" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
     </StackPanel>
-    <TextBlock Text="Tick what to clear for each installed browser. Destructive items - cookies, history, saved passwords - are off by default. Close the browser before cleaning."
+    <TextBlock Grid.Row="1" Text="Tick what to clear for each installed browser. Destructive items - cookies, history, saved passwords - are off by default. Close the browser before cleaning."
                TextWrapping="Wrap" Foreground="#89958F"/>
 
-    <!-- Background agent: runs the monitoring below plus the system monitor. -->
-    <Border Grid.Row="2" Background="#EAF4EE" BorderBrush="#DCE8E1" BorderThickness="1" CornerRadius="10" Padding="16">
-      <Grid ColumnSpacing="16">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-        </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0" Spacing="4">
-          <TextBlock Text="BACKGROUND AGENT" Foreground="#7F9189" FontSize="10"/>
-          <TextBlock x:Name="AgentStatusText" Text="●  Background Agent  ON" Foreground="#254239" FontSize="15" FontWeight="SemiBold"/>
-          <TextBlock Text="Runs in the background so browser caches are cleaned automatically when a monitored browser closes, and so the system monitor can free space."
-                     Foreground="#709086" FontSize="12" TextWrapping="Wrap"/>
-        </StackPanel>
-        <ToggleSwitch Grid.Column="1" x:Name="AgentToggle" OnContent="ON" OffContent="OFF"
-                      VerticalAlignment="Center" Toggled="AgentToggle_Toggled"/>
-      </Grid>
-    </Border>
-
     <!-- Browser monitoring: what happens when each browser closes. -->
-    <Border Grid.Row="3" Background="#EAF4EE" BorderBrush="#DCE8E1" BorderThickness="1" CornerRadius="10" Padding="16">
+    <Border Grid.Row="2" Background="#EAF4EE" BorderBrush="#DCE8E1" BorderThickness="1" CornerRadius="10" Padding="16">
       <StackPanel Spacing="10">
         <CheckBox x:Name="CleanToggle" Content="Monitor supported browsers and clean caches when they close"
                   FontSize="13" Checked="CleanToggle_Changed" Unchecked="CleanToggle_Changed"/>
@@ -85,7 +66,7 @@
       </StackPanel>
     </Border>
 
-    <Border Grid.Row="4" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
+    <Border Grid.Row="3" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
       <Grid RowSpacing="12">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto"/>

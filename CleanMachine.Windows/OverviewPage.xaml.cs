@@ -1,6 +1,5 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 
 namespace CleanMachine.Windows;
 
@@ -15,25 +14,10 @@ public sealed partial class OverviewPage : Page
     private static UpdateCheckResult? _lastAutoCheck;
     private static string _lastAutoCheckInstalled = "";
 
-    // Guards the Toggled event while we set the initial state from settings.
-    private bool _ready;
-
-    // Cancel for an in-flight 'Clean All Safe Items' run.
-    private CancellationTokenSource? _cleanAllCts;
-
     public OverviewPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => { await LoadAgentAsync(); await LoadStatsAsync(); await LoadAvailabilityAsync(); AutoCheckForUpdates(); };
-    }
-
-    private async Task LoadAgentAsync()
-    {
-        var settings = await AppSettings.LoadAsync();
-        _ready = false;
-        AgentToggle.IsOn = settings.BackgroundAgentEnabled;
-        _ready = true;
-        ShowAgentState(settings.BackgroundAgentEnabled);
+        Loaded += async (_, _) => { await LoadStatsAsync(); await LoadAvailabilityAsync(); AutoCheckForUpdates(); };
     }
 
     /// <summary>Scans every area read-only and fills the availability cards with
@@ -176,121 +160,127 @@ public sealed partial class OverviewPage : Page
     private void OpenApps_Click(object sender, RoutedEventArgs e) => ((MainWindow)App.MainWindow!).Navigate<AppCleanupPage>();
     private void OpenUpdates_Click(object sender, RoutedEventArgs e) => ((MainWindow)App.MainWindow!).Navigate<UpdatesPage>();
 
-    private async void CleanAll_Click(object sender, RoutedEventArgs e)
+    // ---- Quick Clean: one immediate clean per area, using the saved selection ----
+
+    private async void BrowsersQuickClean_Click(object sender, RoutedEventArgs e)
+        => await RunQuickCleanAsync(QuickCleanArea.Browsers, (Button)sender, BrowsersProgress, BrowsersResult);
+
+    private async void WindowsQuickClean_Click(object sender, RoutedEventArgs e)
+        => await RunQuickCleanAsync(QuickCleanArea.Windows, (Button)sender, WindowsProgress, WindowsResult);
+
+    private async void RegistryQuickClean_Click(object sender, RoutedEventArgs e)
+        => await RunQuickCleanAsync(QuickCleanArea.Registry, (Button)sender, RegistryProgress, RegistryResult);
+
+    private async void AppsQuickClean_Click(object sender, RoutedEventArgs e)
+        => await RunQuickCleanAsync(QuickCleanArea.Apps, (Button)sender, AppsProgress, AppsResult);
+
+    private async Task RunQuickCleanAsync(QuickCleanArea area, Button button, ProgressBar progress, TextBlock result)
     {
-        if (_cleanAllCts is not null) return; // a run is already in flight
-
-        CleanAllButton.IsEnabled = false;
-        CleanAllStatus.Visibility = Visibility.Visible;
-        CleanAllStatus.Text = "Scanning every area…";
-        CleanAllResult.Visibility = Visibility.Collapsed;
-        CleanAllProgress.Visibility = Visibility.Visible;
-        CleanAllCancelButton.Visibility = Visibility.Visible;
-        _cleanAllCts = new CancellationTokenSource();
-
+        button.IsEnabled = false;
+        progress.Visibility = Visibility.Visible;
+        result.Visibility = Visibility.Collapsed;
         try
         {
-            var plan = await CleanAllService.BuildPlanAsync(_cleanAllCts.Token);
-            if (!plan.HasWork)
-            {
-                CleanAllResult.Visibility = Visibility.Visible;
-                CleanAllResult.Text = "Everything is already clean - nothing to do.";
-                return;
-            }
-
-            var confirm = new ContentDialog
-            {
-                Title = "Clean all safe items?",
-                Content = BuildPlanSummary(plan),
-                PrimaryButtonText = "Clean",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = XamlRoot
-            };
-            if (await confirm.ShowAsync() != ContentDialogResult.Primary)
-            {
-                CleanAllStatus.Visibility = Visibility.Collapsed;
-                return;
-            }
-
-            var progress = new Progress<string>(text => CleanAllStatus.Text = text);
-            var outcome = await CleanAllService.RunAsync(plan, progress, _cleanAllCts.Token);
-
-            CleanAllStatus.Text = "Clean complete.";
-            CleanAllResult.Visibility = Visibility.Visible;
-            CleanAllResult.Text = BuildOutcomeSummary(outcome);
+            var outcome = await QuickCleanService.RunAsync(area);
+            result.Visibility = Visibility.Visible;
+            result.Text = outcome.Items == 0 && outcome.Bytes == 0 && outcome.Note is not null
+                ? outcome.Note
+                : $"{outcome.Items:N0} item(s) removed, {AppNotifications.FormatBytes(outcome.Bytes)} recovered"
+                  + (outcome.Issues.Count > 0 ? $" · {outcome.Issues.Count} skipped." : ".");
             await LoadStatsAsync();
-            _ = LoadAvailabilityAsync(forceRefresh: true); // refresh the per-area cards in the background
+            _ = LoadAvailabilityAsync(forceRefresh: true); // refresh the summaries in the background
         }
-        catch (OperationCanceledException)
+        catch (Exception ex)
         {
-            CleanAllStatus.Text = "Clean all cancelled.";
-            CleanAllResult.Visibility = Visibility.Visible;
-            CleanAllResult.Text = "Completed areas keep their results; the remaining areas were not cleaned.";
+            result.Visibility = Visibility.Visible;
+            result.Text = $"Quick Clean failed: {ex.Message}";
         }
         finally
         {
-            _cleanAllCts.Dispose();
-            _cleanAllCts = null;
-            CleanAllButton.IsEnabled = true;
-            CleanAllProgress.Visibility = Visibility.Collapsed;
-            CleanAllCancelButton.Visibility = Visibility.Collapsed;
+            button.IsEnabled = true;
+            progress.Visibility = Visibility.Collapsed;
         }
     }
 
-    private void CleanAllCancel_Click(object sender, RoutedEventArgs e)
-    {
-        _cleanAllCts?.Cancel();
-        CleanAllCancelButton.IsEnabled = false;
-        CleanAllStatus.Text = "Cancelling after the current file…";
-    }
+    // ---- Gear buttons: choose which items each area's Quick Clean includes ----
 
-    private static string BuildPlanSummary(CleanAllPlan plan)
+    private async void BrowsersSettings_Click(object sender, RoutedEventArgs e)
     {
-        var lines = new List<string>
-        {
-            $"CleanMachine will clean approximately {AppNotifications.FormatBytes(plan.TotalBytes)} ({plan.TotalItems:N0} item(s)) across:",
-            string.Empty
-        };
-        foreach (var area in plan.Areas)
-            lines.Add($"•  {area.Name} — {area.Detail}");
-        lines.Add(string.Empty);
-        lines.Add("Only safe items are included. Downloads, documents, Review/Advanced categories, and destructive browser items are never touched.");
-        return string.Join(Environment.NewLine, lines);
-    }
-
-    private static string BuildOutcomeSummary(CleanAllOutcome outcome)
-    {
-        var text = $"{outcome.ItemsRemoved:N0} item(s) removed, {AppNotifications.FormatBytes(outcome.BytesRecovered)} recovered.";
-        if (outcome.Issues.Count > 0)
-            text += $" {outcome.Issues.Count} skipped (locked or protected files).";
-        return text;
-    }
-
-    private async void AgentToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (!_ready) return;
-        var enabled = AgentToggle.IsOn;
         var settings = await AppSettings.LoadAsync();
-        settings.BackgroundAgentEnabled = enabled;
-        await settings.SaveAsync();
-
-        try { StartupRegistration.SetEnabled(enabled, Environment.ProcessPath ?? string.Empty); }
-        catch { /* startup registration is best-effort */ }
-
-        if (App.Current is App app)
-        {
-            if (enabled) app.StartBackgroundAgent(settings);
-            else app.StopBackgroundAgent();
-        }
-        ShowAgentState(enabled);
+        (string Key, string Label, bool Checked)[] known =
+        [
+            ("chrome", "Google Chrome", settings.QuickCleanBrowsers.Contains("chrome")),
+            ("edge", "Microsoft Edge", settings.QuickCleanBrowsers.Contains("edge")),
+            ("firefox", "Mozilla Firefox", settings.QuickCleanBrowsers.Contains("firefox"))
+        ];
+        await ShowPickerAsync("Browser Quick Clean — caches to clear", known.ToList(),
+            (s, selected) => s.QuickCleanBrowsers = selected);
     }
 
-    private void ShowAgentState(bool enabled)
+    private async void WindowsSettings_Click(object sender, RoutedEventArgs e)
     {
-        AgentStatusText.Text = enabled ? "●  Background Agent  ON" : "○  Background Agent  OFF";
-        AgentStatusText.Foreground = new SolidColorBrush(enabled
-            ? global::Windows.UI.Color.FromArgb(255, 0x25, 0x42, 0x39)
-            : global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F));
+        var settings = await AppSettings.LoadAsync();
+        var items = WindowsCleanupService.Catalog
+            .Where(c => c.Risk == CleanupRisk.Safe)
+            .Select(c => (c.Id, c.Name, QuickCleanService.IsWindowsSelected(c, settings)))
+            .ToList();
+        await ShowPickerAsync("Windows Quick Clean — categories", items,
+            (s, selected) => s.QuickCleanWindowsCategories = selected);
+    }
+
+    private async void RegistrySettings_Click(object sender, RoutedEventArgs e)
+    {
+        var settings = await AppSettings.LoadAsync();
+        var current = settings.QuickCleanRegistryCategories;
+        var items = QuickCleanService.RegistryCategories
+            .Select(cat => (cat, cat, current is null || current.Contains(cat)))
+            .ToList();
+        await ShowPickerAsync("Registry Quick Clean — categories", items,
+            (s, selected) => s.QuickCleanRegistryCategories = selected);
+    }
+
+    private async void AppsSettings_Click(object sender, RoutedEventArgs e)
+    {
+        var settings = await AppSettings.LoadAsync();
+        var current = settings.QuickCleanApps;
+        var items = AppCatalog.Definitions
+            .Select(d => (d.Id, d.Name, current is null || current.Contains(d.Id)))
+            .ToList();
+        await ShowPickerAsync("Application Quick Clean — apps", items,
+            (s, selected) => s.QuickCleanApps = selected);
+    }
+
+    /// <summary>Shows a checkbox picker and, on Save, applies the chosen keys to
+    /// settings and persists them. The ticked keys are written verbatim (an empty
+    /// selection means "clean nothing for this area").</summary>
+    private async Task ShowPickerAsync(
+        string title,
+        List<(string Key, string Label, bool Checked)> items,
+        Action<AppSettings, HashSet<string>> apply)
+    {
+        var panel = new StackPanel { Spacing = 6 };
+        var boxes = new List<(string Key, CheckBox Box)>();
+        foreach (var (key, label, chk) in items)
+        {
+            var box = new CheckBox { Content = label, IsChecked = chk };
+            boxes.Add((key, box));
+            panel.Children.Add(box);
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 360 },
+            PrimaryButtonText = "Save",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        var selected = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var settings = await AppSettings.LoadAsync();
+        apply(settings, selected);
+        await settings.SaveAsync();
     }
 }
