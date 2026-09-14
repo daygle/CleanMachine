@@ -56,12 +56,16 @@ public sealed class WindowsCleanupService
         new("explorer-jump-lists", "Windows Explorer", "Taskbar Jump Lists", "Recent-file jump lists for taskbar apps (Quick Access pins are preserved)", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "Recent", "AutomaticDestinations"), Pattern: "*"),
         new("explorer-thumbnails", "Windows Explorer", "Thumbnail Cache", "Cached image previews Windows can recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Explorer"), Pattern: "thumbcache*.db"),
         new("explorer-typed-paths", "Windows Explorer", "Other Explorer MRUs", "Typed paths and other Explorer history", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths"),
+        new("explorer-icon-cache", "Windows Explorer", "Icon Cache", "Cached icons Windows can recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Explorer"), Pattern: "iconcache*.db"),
 
         // ---- Windows System ----
         new("system-temp", "Windows System", "Temporary Files", "Old temporary files no longer in use", CleanupRisk.Safe, true, CleanupKind.Files, Path: Temp, Pattern: "*"),
         new("system-crash-dumps", "Windows System", "Memory Dumps", "Crash dump files from failed processes", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "CrashDumps"), Pattern: "*.dmp"),
         new("system-error-reports", "Windows System", "Windows Error Reporting", "Old application crash reports and diagnostics", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "WER"), Pattern: "*"),
         new("system-web-cache", "Windows System", "Windows Web Cache", "Cached web content used by Windows apps", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "WebCache"), Pattern: "*"),
+        new("system-inet-cache", "Windows System", "Internet Cache", "Temporary internet files cached by Windows (WinINet)", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "INetCache"), Pattern: "*"),
+        new("system-rdp-cache", "Windows System", "Remote Desktop Cache", "Cached bitmaps from Remote Desktop sessions", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Terminal Server Client", "Cache"), Pattern: "*"),
+        new("system-powershell-history", "Windows System", "PowerShell Command History", "Saved history of commands typed in PowerShell", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "PowerShell", "PSReadLine"), Pattern: "ConsoleHost_history.txt"),
         new("system-dns-cache", "Windows System", "DNS Cache", "Cached DNS resolver entries", CleanupRisk.Safe, true, CleanupKind.DnsCache),
         new("system-recycle-bin", "Windows System", "Recycle Bin", "Deleted items awaiting permanent removal", CleanupRisk.Review, false, CleanupKind.RecycleBin),
 
