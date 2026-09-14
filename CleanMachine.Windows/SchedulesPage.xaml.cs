@@ -98,10 +98,11 @@ public sealed partial class SchedulesPage : Page
             var runButton = new Button
             {
                 Content = "Run Now",
-                FontSize = 11,
-                Padding = new Thickness(8, 2, 8, 2),
-                MinHeight = 28,
-                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 12,
+                Padding = new Thickness(14, 0, 14, 0),
+                // Stretch so it matches the select card's height and the two read as
+                // one paired row instead of a small button floating alongside it.
+                VerticalAlignment = VerticalAlignment.Stretch,
                 Tag = schedule
             };
             var captured = schedule;
@@ -116,7 +117,7 @@ public sealed partial class SchedulesPage : Page
             };
             selectButton.Click += (_, _) => Select(captured, isNew: false);
 
-            var row = new Grid { ColumnSpacing = 6 };
+            var row = new Grid { ColumnSpacing = 6, Margin = new Thickness(0, 0, 0, 6) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0, GridUnitType.Auto) });
             Grid.SetColumn(selectButton, 0);

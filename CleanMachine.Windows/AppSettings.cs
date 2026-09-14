@@ -72,7 +72,15 @@ public sealed class AppSettings
     // once per hour and only re-arms after free space recovers.
     public bool SystemMonitoringEnabled { get; set; }
     public double SystemMonitorFreeSpaceGb { get; set; } = 1.0;
+    // Display unit for the threshold above, "GB" or "MB". The value itself is always
+    // stored in GB; this is only which unit the Settings UI shows and edits in.
+    public string SystemMonitorFreeSpaceUnit { get; set; } = "GB";
     public ExitAction SystemMonitorAction { get; set; } = ExitAction.CleanSilently;
+    // Which Safe Windows categories the low-disk-space monitor cleans. A null set
+    // means "not configured" - it falls back to every Safe category enabled on the
+    // Windows Cleanup page. An empty set means the user deselected everything, so
+    // the monitor cleans nothing.
+    public HashSet<string>? SystemMonitorCategories { get; set; }
 
     // User-defined cleanup schedules, executed by Windows Task Scheduler so they run
     // even when the app is closed. An optional action (shutdown/restart/sleep) can
