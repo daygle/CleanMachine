@@ -8,11 +8,6 @@
         <TextBlock Text="Settings" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
       </StackPanel>
 
-      <TextBlock Text="BACKGROUND AGENT" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
-      <CheckBox x:Name="BackgroundAgentToggle" Content="Run the background agent"/>
-      <TextBlock Text="Runs in the background so browser caches are cleaned when a monitored browser closes, and powers the low-disk-space monitor. Also starts CleanMachine with Windows."
-                 FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,0,0,0"/>
-
       <TextBlock Text="SYSTEM MONITORING" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
       <CheckBox x:Name="SystemMonitoringToggle" Content="Clean safe items when free disk space drops below"/>
       <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
@@ -36,7 +31,7 @@
         <Button Content="Choose items…" Click="ChooseMonitorItems_Click" Padding="14,8"/>
         <TextBlock x:Name="MonitorItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
       </StackPanel>
-      <TextBlock Text="Only safe categories are cleaned. Choose the items above, or leave it on the default to clean every safe category enabled on the Windows Cleanup page. Runs at most once per hour and waits until space recovers before triggering again."
+      <TextBlock Text="Only safe categories are cleaned. Choose the items above, or leave it on the default to clean every safe category enabled on the Windows Cleanup page. Runs at most once per hour and waits until space recovers before triggering again. While enabled, CleanMachine runs in the background and starts with Windows so it can watch free space."
                  FontSize="11" Foreground="#89958F" TextWrapping="Wrap"/>
 
       <TextBlock Text="UPDATES" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>

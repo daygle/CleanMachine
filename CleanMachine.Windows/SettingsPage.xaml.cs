@@ -22,7 +22,6 @@ public sealed partial class SettingsPage : Page
     {
         _settings = await AppSettings.LoadAsync();
 
-        BackgroundAgentToggle.IsChecked = _settings.BackgroundAgentEnabled;
         SystemMonitoringToggle.IsChecked = _settings.SystemMonitoringEnabled;
         _loadingUnit = true;
         _unitIsMb = string.Equals(_settings.SystemMonitorFreeSpaceUnit, "MB", StringComparison.OrdinalIgnoreCase);
@@ -153,7 +152,6 @@ public sealed partial class SettingsPage : Page
 
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
-        _settings.BackgroundAgentEnabled = BackgroundAgentToggle.IsChecked == true;
         _settings.SystemMonitoringEnabled = SystemMonitoringToggle.IsChecked == true;
         var mb = FreeSpaceUnit.SelectedIndex == 1;
         var entered = double.IsNaN(FreeSpaceBox.Value) ? (mb ? MbPerGb : 1.0) : FreeSpaceBox.Value;
@@ -179,14 +177,6 @@ public sealed partial class SettingsPage : Page
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         await _settings.SaveAsync();
 
-        try
-        {
-            StartupRegistration.SetEnabled(
-                _settings.BackgroundAgentEnabled,
-                Environment.ProcessPath ?? string.Empty);
-        }
-        catch { /* startup registration is best-effort */ }
-
         if (App.MainWindow is MainWindow mainWindow)
         {
             mainWindow.ApplyShowInTaskbar(_settings.ShowInTaskbar);
@@ -194,14 +184,9 @@ public sealed partial class SettingsPage : Page
             mainWindow.ApplyCloseToTray(_settings.CloseToTray);
         }
 
-        // Apply the agent state: start or stop the background agent to match the toggle.
-        if (App.Current is App app)
-        {
-            if (_settings.BackgroundAgentEnabled)
-                app.StartBackgroundAgent(_settings);
-            else
-                app.StopBackgroundAgent();
-        }
+        // Start or stop the background agent (and Windows startup) to match the
+        // services now enabled - here, the low-disk-space monitor.
+        (App.Current as App)?.ApplyBackgroundServices(_settings);
 
         StatusText.Text = "Settings saved.";
     }
@@ -209,7 +194,6 @@ public sealed partial class SettingsPage : Page
     private void RestoreDefaults_Click(object sender, RoutedEventArgs e)
     {
         var defaults = new AppSettings();
-        BackgroundAgentToggle.IsChecked = defaults.BackgroundAgentEnabled;
         SystemMonitoringToggle.IsChecked = defaults.SystemMonitoringEnabled;
         _loadingUnit = true;
         _unitIsMb = false;

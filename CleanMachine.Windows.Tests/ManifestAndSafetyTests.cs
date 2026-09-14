@@ -131,8 +131,10 @@ public sealed class ManifestAndSafetyTests
     public void AppSettingsDefaultsAreReasonable()
     {
         var settings = new AppSettings();
-        Assert.True(settings.BackgroundAgentEnabled);
         Assert.True(settings.CleanOnBrowserExit);
+        // The background agent has no standalone flag; it is required whenever a
+        // service that needs it is enabled - browser-exit cleaning is on by default.
+        Assert.True(settings.RequiresBackgroundAgent);
         Assert.True(settings.CheckForUpdatesAutomatically);
         Assert.Equal(WipeMethod.SimpleZeroFill, settings.SecureDeleteMethod);
         Assert.Contains("chrome", settings.ProtectedBrowsers);

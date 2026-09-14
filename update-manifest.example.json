@@ -1,6 +1,6 @@
 {
   "version": "1.0.14",
-  "releaseNotes": "New Overview dashboard with one-click Quick Clean for each area (choose what each includes via its gear button). Background Agent toggle moved to Settings. Optional 'wake the computer' for scheduled cleanups. Fixes: Quick Access pinned links are no longer removed by cleanup, plus reliability fixes to secure delete accounting and saved cleanup statistics.",
+  "releaseNotes": "New Overview dashboard with one-click Quick Clean for each area (choose what each includes via its gear button). The background agent no longer has a separate switch - it runs automatically when browser monitoring or the low-disk-space monitor is enabled. The low-disk-space monitor now cleans a set of categories you choose and its threshold can be set in MB or GB. Optional 'wake the computer' for scheduled cleanups. Fixes: Quick Access pinned links are no longer removed by cleanup, plus reliability fixes to secure delete accounting and saved cleanup statistics.",
   "packages": {
     "x64": {
       "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.0.14/CleanMachine-x64-v1.0.14.msix",

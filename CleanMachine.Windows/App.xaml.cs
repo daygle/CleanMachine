@@ -30,7 +30,7 @@ public partial class App : Application
         AppNotifications.Register();
 
         var settings = await AppSettings.LoadAsync();
-        if (settings.BackgroundAgentEnabled)
+        if (settings.RequiresBackgroundAgent)
             StartBackgroundAgent(settings);
         // Keep the OS task store in step with whatever schedules are saved.
         _ = ScheduleService.SyncAllAsync(settings);
@@ -59,6 +59,26 @@ public partial class App : Application
             await ScheduleService.RunAsync(schedule, settings);
         }
         catch { /* a headless run must never surface a dialog or crash the process */ }
+    }
+
+    /// <summary>Starts or stops the background agent to match the enabled services,
+    /// and keeps Windows startup registration in step so the app is present to run
+    /// them while the window is closed. Call this after any change to a service that
+    /// the agent powers (browser-exit cleaning or the low-disk-space monitor).</summary>
+    public void ApplyBackgroundServices(AppSettings settings)
+    {
+        try
+        {
+            StartupRegistration.SetEnabled(
+                settings.RequiresBackgroundAgent,
+                Environment.ProcessPath ?? string.Empty);
+        }
+        catch { /* startup registration is best-effort */ }
+
+        if (settings.RequiresBackgroundAgent)
+            StartBackgroundAgent(settings);
+        else
+            StopBackgroundAgent();
     }
 
     public void StartBackgroundAgent(AppSettings? settings = null)
