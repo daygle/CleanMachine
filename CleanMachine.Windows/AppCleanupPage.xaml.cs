@@ -63,7 +63,7 @@ public sealed partial class AppCleanupPage : Page
         _itemBoxes.Clear();
         DetailHeadline.Text = "Select an application";
         StatusText.Text = visible.Count == 0
-            ? "All apps are clean. Check 'Show Clean' to see them."
+            ? "All apps are clean. Check 'Show All' to see them."
             : $"{visible.Count} app(s) with cleanable files.";
         DetailPanel.Children.Clear();
 

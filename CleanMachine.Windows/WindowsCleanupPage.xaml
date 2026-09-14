@@ -13,7 +13,7 @@
         <FontIcon Glyph="&#xE9D5;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
         <TextBlock Text="Windows Cleanup" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
       </StackPanel>
-      <TextBlock Text="Click Analyze to scan; categories that have something to clean are listed on the left. Tick what to remove, then Clean. Turn on Show Clean to see empty categories too. Selections are saved automatically."
+      <TextBlock Text="Click Analyze to scan; categories that have something to clean are listed on the left. Tick what to remove, then Clean. Turn on Show All to see empty categories too. Selections are saved automatically."
                  Foreground="#89958F" TextWrapping="Wrap"/>
     </StackPanel>
 
@@ -62,7 +62,7 @@
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Left">
         <Button x:Name="AnalyzeButton" Content="Analyze" Click="Analyze_Click"
                 Background="#286E58" Foreground="White" Padding="26,10"/>
-        <CheckBox x:Name="ShowCleanCheck" Content="Show Clean" VerticalAlignment="Center"
+        <CheckBox x:Name="ShowCleanCheck" Content="Show All" VerticalAlignment="Center"
                   IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">

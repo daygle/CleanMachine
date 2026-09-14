@@ -63,7 +63,7 @@
     <Grid Grid.Row="2">        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Left">
         <Button x:Name="ScanButton" Content="Scan" Click="Scan_Click"
               Background="#286E58" Foreground="White" Padding="26,10"/>
-        <CheckBox x:Name="ShowCleanCheck" Content="Show Clean" VerticalAlignment="Center"
+        <CheckBox x:Name="ShowCleanCheck" Content="Show All" VerticalAlignment="Center"
                   IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">

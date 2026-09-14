@@ -29,7 +29,7 @@ public sealed partial class WindowsCleanupPage : Page
     }
 
     /// <summary>Builds the left-hand category list from the latest analysis: only
-    /// categories that have something to clean are shown, unless Show Clean is ticked
+    /// categories that have something to clean are shown, unless Show All is ticked
     /// (empty categories are then listed, greyed out and not selectable). Before the
     /// first Analyze the list is a prompt. Each enabled checkbox reflects and saves
     /// whether that category is included in cleaning.</summary>
@@ -81,7 +81,7 @@ public sealed partial class WindowsCleanupPage : Page
         }
 
         if (shown == 0)
-            CategoryPanel.Children.Add(Hint("Everything is clean. Tick Show Clean to see all categories."));
+            CategoryPanel.Children.Add(Hint("Everything is clean. Tick Show All to see all categories."));
     }
 
     private void Filter_Changed(object sender, RoutedEventArgs e) => BuildCategoryList();
