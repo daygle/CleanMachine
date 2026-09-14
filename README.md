@@ -112,6 +112,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - System monitoring threshold and action
 - Automatic update check toggle
 - Minimize to tray options (start minimized, on close, on minimize; taskbar visibility)
+- Tray icon: left-click restores the window; right-click opens a menu to Open or Exit CleanMachine
 - Default wipe method selection
 - Configurable exclusion paths
 - Persisted startup registration
