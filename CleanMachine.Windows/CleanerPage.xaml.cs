@@ -11,12 +11,15 @@ public sealed partial class CleanerPage : Page
     private AppSettings _settings = new();
     // Guards the change handlers while the page loads settings into the controls.
     private bool _monitorReady;
+    // Detected browsers and the one whose detail is currently shown on the right.
+    private IReadOnlyList<BrowserScan> _scans = [];
+    private BrowserScan? _detailScan;
 
     public CleanerPage()
     {
         InitializeComponent();
         // Load monitoring settings, then scan browsers automatically when opened.
-        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); LoadMonitoring(); await CheckInterruptedAsync(); Scan_Click(this, new RoutedEventArgs()); };
+        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); LoadMonitoring(); await CheckInterruptedAsync(); await ScanAsync(); };
     }
 
     /// <summary>Browser monitoring (clean cache on browser close) and the background
@@ -186,7 +189,12 @@ public sealed partial class CleanerPage : Page
                               $"{state.RemainingFiles.Count} files may remain.";
     }
 
-    private async void Scan_Click(object sender, RoutedEventArgs e)
+    private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanAsync();
+
+    /// <summary>Detects browsers, builds the left list, and shows the first browser's
+    /// detail. <paramref name="statusOverride"/> preserves a caller's message (e.g. a
+    /// post-clean summary) instead of the detection summary.</summary>
+    private async Task ScanAsync(string? statusOverride = null)
     {
         ScanButton.IsEnabled = false;
         CleanButton.IsEnabled = false;
@@ -194,17 +202,23 @@ public sealed partial class CleanerPage : Page
         StatusText.Text = "Detecting browsers and measuring items…";
         BrowserPanel.Children.Clear();
         _itemBoxes.Clear();
+        _detailScan = null;
+        DetailBackButton.Visibility = Visibility.Collapsed;
         try
         {
-            var scans = await _service.DetectAndScanAsync();
-            foreach (var scan in scans.Where(s => s.Installed))
+            _scans = await _service.DetectAndScanAsync();
+            var installed = _scans.Where(s => s.Installed).ToList();
+            foreach (var scan in installed)
                 BrowserPanel.Children.Add(BuildCard(scan));
 
-            var installed = scans.Count(s => s.Installed);
-            StatusText.Text = installed == 0
+            StatusText.Text = statusOverride ?? (installed.Count == 0
                 ? "No supported browsers were detected on this PC."
-                : $"{installed} browser(s) detected. Tick items to clean, then choose Clean selected.";
-            CleanButton.IsEnabled = installed > 0;
+                : $"{installed.Count} browser(s) detected. Tick items to clean, then choose Clean Selected.");
+            CleanButton.IsEnabled = installed.Count > 0;
+
+            var first = installed.FirstOrDefault();
+            if (first is not null) ShowBrowserDetail(first);
+            else ShowDetailPlaceholder();
         }
         catch (Exception ex)
         {
@@ -222,7 +236,7 @@ public sealed partial class CleanerPage : Page
         var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         header.Children.Add(new FontIcon
         {
-            Glyph = "\uE774",
+            Glyph = "",
             FontSize = 16,
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58))
@@ -234,29 +248,43 @@ public sealed partial class CleanerPage : Page
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
         });
+        var totalBytes = scan.Items.Sum(i => i.Bytes);
         header.Children.Add(new TextBlock
         {
-            Text = scan.Installed ? "Installed" : "N/A",
+            Text = scan.Items.Count > 0 ? AppNotifications.FormatBytes(totalBytes) : "Clean",
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(scan.Installed
-                ? global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69)
-                : global::Windows.UI.Color.FromArgb(255, 0x9A, 0xA6, 0xA1))
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69))
         });
 
         var expander = new Expander
         {
             Header = header,
-            IsExpanded = scan.Installed,
-            IsEnabled = scan.Installed,
+            IsExpanded = scan.Items.Count > 0,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch
         };
-        if (!scan.Installed) return expander;
 
         var content = new StackPanel { Spacing = 2 };
         foreach (var item in scan.Items)
         {
+            var current = item;
+            // Remember the user's tick choice across navigation/restarts; fall back
+            // to the safe default (destructive items start unticked). Set IsChecked
+            // before wiring the handlers so restoring state does not itself save.
+            var key = $"{scan.Id}:{item.Id}";
+            var box = new CheckBox
+            {
+                IsChecked = _settings.BrowserCleanupSelection.TryGetValue(key, out var saved)
+                    ? saved
+                    : !item.Destructive,
+                MinWidth = 0,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            box.Checked += (_, _) => RememberSelection(key, true);
+            box.Unchecked += (_, _) => RememberSelection(key, false);
+            _itemBoxes.Add((scan.Id, item.Id, item.Destructive, box));
+
             var text = new StackPanel { Spacing = 0 };
             text.Children.Add(new TextBlock
             {
@@ -271,34 +299,222 @@ public sealed partial class CleanerPage : Page
                 : "nothing to clean";
             text.Children.Add(new TextBlock
             {
-                Text = item.Destructive ? $"{detail} · {item.Description}" : detail,
+                Text = detail,
                 FontSize = 10,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
 
-            // Remember the user's tick choice across navigation/restarts; fall back
-            // to the safe default (destructive items start unticked so a single
-            // mis-click can never wipe data). Set IsChecked before wiring the
-            // handlers so restoring the saved state does not itself trigger a save.
-            var key = $"{scan.Id}:{item.Id}";
-            var box = new CheckBox
+            var detailsButton = new Button
             {
                 Content = text,
-                IsChecked = _settings.BrowserCleanupSelection.TryGetValue(key, out var saved)
-                    ? saved
-                    : !item.Destructive,
-                MinHeight = 30
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(6, 2, 6, 2),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
             };
-            box.Checked += (_, _) => RememberSelection(key, true);
-            box.Unchecked += (_, _) => RememberSelection(key, false);
-            ToolTipService.SetToolTip(box, item.Description);
-            _itemBoxes.Add((scan.Id, item.Id, item.Destructive, box));
-            content.Children.Add(box);
+            detailsButton.Click += (_, _) => ShowItemDetail(scan, current);
+            ToolTipService.SetToolTip(detailsButton, item.Description);
+
+            var row = new Grid { MinHeight = 30 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(box, 0);
+            Grid.SetColumn(detailsButton, 1);
+            row.Children.Add(box);
+            row.Children.Add(detailsButton);
+            content.Children.Add(row);
         }
 
         expander.Content = content;
+        expander.Expanding += (_, _) => ShowBrowserDetail(scan);
         return expander;
+    }
+
+    /// <summary>Browser-level detail: summary chips plus one framed row per item,
+    /// each mirroring the left checkbox so the left list stays authoritative.</summary>
+    private void ShowBrowserDetail(BrowserScan scan)
+    {
+        _detailScan = scan;
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Visible;
+        DetailGroupBadgeText.Text = "BROWSER";
+        DetailHeadline.Text = scan.Name;
+        DetailSubHeadline.Text = "Click an item to see details.";
+        DetailPanel.Children.Clear();
+
+        if (scan.Items.Count == 0)
+        {
+            SetChips(null, null, null);
+            DetailPanel.Children.Add(BuildDetailPlaceholder("Nothing to clean for this browser."));
+            return;
+        }
+
+        SetChips(AppNotifications.FormatBytes(scan.Items.Sum(i => i.Bytes)),
+            scan.Items.Sum(i => i.FileCount).ToString("N0"),
+            scan.Items.Count.ToString());
+
+        foreach (var item in scan.Items)
+        {
+            var current = item;
+            var sourceBox = _itemBoxes.FirstOrDefault(x => x.BrowserId == scan.Id && x.ItemId == item.Id).Box;
+
+            var row = new Grid { ColumnSpacing = 10 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var mirror = new CheckBox
+            {
+                IsChecked = sourceBox?.IsChecked == true,
+                MinWidth = 0,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            mirror.Checked += (_, _) => { if (sourceBox is not null) sourceBox.IsChecked = true; };
+            mirror.Unchecked += (_, _) => { if (sourceBox is not null) sourceBox.IsChecked = false; };
+            Grid.SetColumn(mirror, 0);
+            row.Children.Add(mirror);
+
+            var body = new Button
+            {
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(10, 8, 10, 8),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center,
+                CornerRadius = new CornerRadius(8)
+            };
+            var label = new StackPanel { Spacing = 1 };
+            label.Children.Add(new TextBlock
+            {
+                Text = item.Name,
+                FontSize = 12,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(item.Destructive
+                    ? global::Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D)
+                    : global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+            });
+            label.Children.Add(new TextBlock
+            {
+                Text = item.Description,
+                FontSize = 10,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
+            body.Content = label;
+            body.Click += (_, _) => ShowItemDetail(scan, current);
+            ToolTipService.SetToolTip(body, item.Description);
+            Grid.SetColumn(body, 1);
+            row.Children.Add(body);
+
+            var side = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+            side.Children.Add(new TextBlock
+            {
+                Text = item.Bytes > 0 ? AppNotifications.FormatBytes(item.Bytes) : "-",
+                FontSize = 13,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58))
+            });
+            side.Children.Add(new TextBlock
+            {
+                Text = $"{item.FileCount:N0} file(s)",
+                FontSize = 10,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
+            Grid.SetColumn(side, 2);
+            row.Children.Add(side);
+
+            DetailPanel.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+                BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 6, 10, 6),
+                Child = row
+            });
+        }
+    }
+
+    /// <summary>Item-level detail: what the item is, its size, and a caution for
+    /// destructive items. The Back button returns to the browser's item list.</summary>
+    private void ShowItemDetail(BrowserScan scan, BrowserItemInfo item)
+    {
+        _detailScan = scan;
+        DetailBackButton.Visibility = Visibility.Visible;
+        DetailGroupBadge.Visibility = Visibility.Visible;
+        DetailGroupBadgeText.Text = "BROWSER";
+        DetailHeadline.Text = $"{scan.Name} - {item.Name}";
+        DetailSubHeadline.Text = item.Destructive ? "Destructive item - off by default." : "Safe cache item.";
+        SetChips(item.Bytes > 0 ? AppNotifications.FormatBytes(item.Bytes) : "-", item.FileCount.ToString("N0"), "1");
+        DetailPanel.Children.Clear();
+        DetailPanel.Children.Add(DetailRow("Item", item.Name));
+        DetailPanel.Children.Add(DetailRow("What it is", item.Description));
+        DetailPanel.Children.Add(DetailRow("Size", $"{AppNotifications.FormatBytes(item.Bytes)} · {item.FileCount:N0} file(s)"));
+        if (item.Destructive)
+            DetailPanel.Children.Add(DetailRow("Caution",
+                "Deletes personal data such as cookies, history or saved passwords. Never cleaned automatically; ticking it here removes it permanently."));
+    }
+
+    private static Border DetailRow(string label, string value) => new()
+    {
+        Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+        BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(10, 6, 10, 6),
+        Child = new StackPanel
+        {
+            Spacing = 1,
+            Children =
+            {
+                new TextBlock { Text = label.ToUpperInvariant(), FontSize = 9, CharacterSpacing = 40,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x7F, 0x91, 0x89)) },
+                new TextBlock { Text = value, FontSize = 12, TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)) }
+            }
+        }
+    };
+
+    private static Border BuildDetailPlaceholder(string message) => new()
+    {
+        BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(16),
+        Child = new TextBlock
+        {
+            Text = message,
+            FontSize = 11,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
+        }
+    };
+
+    private void ShowDetailPlaceholder()
+    {
+        DetailHeadline.Text = "Browser details";
+        DetailSubHeadline.Text = "No supported browsers were detected.";
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        SetChips(null, null, null);
+        DetailPanel.Children.Clear();
+    }
+
+    private void SetChips(string? size, string? files, string? items)
+    {
+        ChipSizeValue.Text = size ?? "—";
+        ChipFilesValue.Text = files ?? "—";
+        ChipItemsValue.Text = items ?? "—";
+    }
+
+    private void DetailBack_Click(object sender, RoutedEventArgs e)
+    {
+        if (_detailScan is { } scan) ShowBrowserDetail(scan);
     }
 
     private async void Clean_Click(object sender, RoutedEventArgs e)
@@ -372,9 +588,12 @@ public sealed partial class CleanerPage : Page
                 : null;
             var report = await _service.CleanItemsAsync(selected, secureDelete);
             _ = new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered);
-            StatusText.Text = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
-                              $"{AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered, " +
-                              $"{report.Skipped.Count:N0} skipped.";
+            var completion = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
+                             $"{AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered, " +
+                             $"{report.Skipped.Count:N0} skipped.";
+            // Re-scan so the list and sizes reflect what was just cleaned, keeping the
+            // completion message as the status.
+            await ScanAsync(completion);
         }
         catch (InvalidOperationException ex)
         {
