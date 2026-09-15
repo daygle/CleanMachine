@@ -22,7 +22,13 @@ public sealed partial class AppCleanupPage : Page
         Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); Scan_Click(this, new RoutedEventArgs()); };
     }
 
-    private async void Scan_Click(object sender, RoutedEventArgs e)
+    private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanAsync();
+
+    /// <summary>Detects apps and measures their temp files, then rebuilds the list and
+    /// detail card. <paramref name="statusOverride"/> keeps a caller's message (e.g. a
+    /// post-clean summary) instead of the detection summary, so re-scanning after a
+    /// clean refreshes the sizes without hiding what was just cleaned.</summary>
+    private async Task ScanAsync(string? statusOverride = null)
     {
         ScanButton.IsEnabled = false;
         CleanButton.IsEnabled = false;
@@ -37,7 +43,7 @@ public sealed partial class AppCleanupPage : Page
 
             if (installed.Count == 0)
             {
-                StatusText.Text = "No supported applications were detected.";
+                StatusText.Text = statusOverride ?? "No supported applications were detected.";
                 return;
             }
 
@@ -45,7 +51,8 @@ public sealed partial class AppCleanupPage : Page
 
             var totalItems = installed.Sum(s => s.Items.Count);
             var totalBytes = installed.Sum(s => s.Items.Sum(i => i.Bytes));
-            StatusText.Text = $"{installed.Count} app(s) detected with {totalItems} cleanable item(s) ({WindowsCleanupPage.FormatBytes(totalBytes)}).";
+            StatusText.Text = statusOverride
+                ?? $"{installed.Count} app(s) detected with {totalItems} cleanable item(s) ({WindowsCleanupPage.FormatBytes(totalBytes)}).";
             CleanButton.IsEnabled = totalItems > 0;
         }
         catch (Exception ex)
@@ -529,9 +536,12 @@ public sealed partial class AppCleanupPage : Page
                 ? new SecureDeleteOptions(_settings.SecureDeleteMethod, _settings.CustomWipePasses)
                 : null;
             var report = await _service.CleanAsync(selected, secureDelete);
-            StatusText.Text = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
-                              $"{WindowsCleanupPage.FormatBytes(report.Result.BytesRecovered)} recovered, " +
-                              $"{report.Skipped.Count:N0} skipped.";
+            var completion = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
+                             $"{WindowsCleanupPage.FormatBytes(report.Result.BytesRecovered)} recovered, " +
+                             $"{report.Skipped.Count:N0} skipped.";
+            // Re-scan so the list and sizes reflect what was just cleaned, keeping the
+            // completion message as the status.
+            await ScanAsync(completion);
         }
         catch (Exception ex)
         {

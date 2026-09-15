@@ -427,6 +427,15 @@ public sealed partial class WindowsCleanupPage : Page
 
             foreach (var category in enabled)
                 ReportPanel.Children.Add(BuildResultRow(category, result));
+
+            // Re-measure so the left list and cached sizes reflect what was cleaned
+            // (cleaned categories drop to zero and leave the list unless Show All is on).
+            try
+            {
+                _lastScan = await Task.Run(() => _service.Scan(_settings.ExcludedPaths), CancellationToken.None);
+                BuildCategoryList();
+            }
+            catch { /* refresh is best-effort; the completion report still stands */ }
         }
         catch (OperationCanceledException) { DetailHeadline.Text = "Cleaning cancelled."; }
         catch (Exception ex) { DetailHeadline.Text = "Cleaning failed."; StatusText.Text = ex.Message; }
