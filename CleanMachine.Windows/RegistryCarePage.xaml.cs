@@ -7,9 +7,13 @@ namespace CleanMachine.Windows;
 public sealed partial class RegistryCarePage : Page
 {
     private readonly RegistryCareService _service = new();
-    private readonly List<CheckBox> _findingBoxes = new();
+    // Source of truth for selection: each finding's left-hand checkbox. The right
+    // detail card mirrors these, so the left list stays authoritative.
+    private readonly List<(RegistryFinding Finding, CheckBox Box)> _findingBoxes = [];
+    private readonly Dictionary<string, List<RegistryFinding>> _shownByCategory = [];
     private IReadOnlyList<RegistryBackup> _lastBackups = [];
     private IReadOnlyList<RegistryFinding> _findings = [];
+    private string? _detailCategory;
 
     public RegistryCarePage()
     {
@@ -23,8 +27,11 @@ public sealed partial class RegistryCarePage : Page
         ScanButton.IsEnabled = false;
         CleanButton.IsEnabled = false;
         RestoreButton.Visibility = Visibility.Collapsed;
-        ReportPanel.Children.Clear();
-        ReportHeadline.Text = "Analyzing…";
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
+        DetailPanel.Children.Clear();
+        DetailHeadline.Text = "Analyzing…";
+        DetailSubHeadline.Text = "Scanning the registry read-only.";
         StatusText.Text = "Scanning the registry read-only.";
         Progress.Visibility = Visibility.Visible;
         try
@@ -35,7 +42,8 @@ public sealed partial class RegistryCarePage : Page
         }
         catch (Exception ex)
         {
-            ReportHeadline.Text = "Analysis failed.";
+            DetailHeadline.Text = "Analysis failed.";
+            DetailSubHeadline.Text = "";
             StatusText.Text = ex.Message;
         }
         finally
@@ -46,17 +54,23 @@ public sealed partial class RegistryCarePage : Page
         }
     }
 
-    /// <summary>Renders the findings list: by default only the findings eligible for
-    /// automatic cleaning are shown (categories with none are hidden). Show All also
-    /// lists ineligible findings, greyed out and not selectable.</summary>
+    /// <summary>Builds the left category list: one expander per finding category with
+    /// its findings as tickable rows. By default only findings eligible for automatic
+    /// cleaning are shown; Show All also lists ineligible ones, greyed out.</summary>
     private void RenderFindings()
     {
         FindingsPanel.Children.Clear();
         _findingBoxes.Clear();
+        _shownByCategory.Clear();
+        _detailCategory = null;
+        DetailBackButton.Visibility = Visibility.Collapsed;
 
         if (_findings.Count == 0)
         {
-            ReportHeadline.Text = "No issues found.";
+            DetailHeadline.Text = "No issues found";
+            DetailSubHeadline.Text = "The registry scan found no low-risk cleanup opportunities.";
+            DetailGroupBadge.Visibility = Visibility.Collapsed;
+            SetChips("ELIGIBLE", "0", "SELECTED", "0", "TOTAL", "0");
             StatusText.Text = "The registry scan found no low-risk cleanup opportunities.";
             return;
         }
@@ -77,10 +91,10 @@ public sealed partial class RegistryCarePage : Page
         {
             var items = (showAll ? group : group.Where(RegistryCareService.IsCleanable)).ToList();
             if (items.Count == 0) continue;
-            FindingsPanel.Children.Add(BuildCategoryGroup(group.Key, items));
+            _shownByCategory[group.Key] = items;
+            FindingsPanel.Children.Add(BuildCategoryExpander(group.Key, items));
         }
 
-        ReportHeadline.Text = $"Analysis complete - {_findings.Count} issue(s) found.";
         StatusText.Text = eligibleTotal == 0
             ? "Issues were found, but none are eligible for automatic cleaning. Tick Show All to review them."
             : ineligibleTotal == 0
@@ -88,6 +102,17 @@ public sealed partial class RegistryCarePage : Page
                 : showAll
                     ? $"{eligibleTotal} item(s) can be safely cleaned; {ineligibleTotal} ineligible finding(s) are shown greyed out. Untick anything you want to keep."
                     : $"{eligibleTotal} item(s) can be safely cleaned. Untick anything you want to keep, or tick Show All to review {ineligibleTotal} ineligible finding(s).";
+
+        // Show the first category's detail straight away so the right side is never blank.
+        var firstCategory = _shownByCategory.Keys.FirstOrDefault();
+        if (firstCategory is not null)
+            ShowCategoryDetail(firstCategory);
+        else
+        {
+            DetailHeadline.Text = "Analysis complete";
+            DetailSubHeadline.Text = "Tick Show All to review ineligible findings.";
+            SetChips("ELIGIBLE", "0", "SELECTED", "0", "TOTAL", "0");
+        }
     }
 
     private void Filter_Changed(object sender, RoutedEventArgs e)
@@ -95,69 +120,241 @@ public sealed partial class RegistryCarePage : Page
         if (_findings.Count > 0) RenderFindings();
     }
 
-    private StackPanel BuildCategoryGroup(string category, IReadOnlyList<RegistryFinding> findings)
+    private Expander BuildCategoryExpander(string category, IReadOnlyList<RegistryFinding> findings)
     {
-        var panel = new StackPanel { Spacing = 2, Margin = new Thickness(0, 8, 0, 2) };
-
-        var master = new CheckBox
+        var eligible = findings.Count(RegistryCareService.IsCleanable);
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        header.Children.Add(new FontIcon
         {
-            Content = $"{category} ({findings.Count})",
-            IsChecked = findings.Any(RegistryCareService.IsCleanable),
-            MinHeight = 26,
-            FontWeight = global::Microsoft.UI.Text.FontWeights.SemiBold
+            Glyph = "",
+            FontSize = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58))
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = category,
+            FontSize = 14,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = $"{eligible}/{findings.Count}",
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69))
+        });
+
+        var expander = new Expander
+        {
+            Header = header,
+            IsExpanded = eligible > 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch
         };
-        master.Checked += (_, _) => SetGroupChecked(findings, true);
-        master.Unchecked += (_, _) => SetGroupChecked(findings, false);
-        panel.Children.Add(master);
 
-        foreach (var item in findings)
+        var content = new StackPanel { Spacing = 2 };
+        foreach (var finding in findings)
         {
-            var cleanable = RegistryCareService.IsCleanable(item);
+            var cleanable = RegistryCareService.IsCleanable(finding);
             var box = new CheckBox
             {
                 IsChecked = cleanable,
                 IsEnabled = cleanable,
-                MinHeight = 28,
-                Content = new StackPanel { Spacing = 0 },
-                Tag = item
+                MinWidth = 0,
+                VerticalAlignment = VerticalAlignment.Center
             };
-            var stack = (StackPanel)box.Content;
-            stack.Children.Add(new TextBlock
+            _findingBoxes.Add((finding, box));
+
+            var text = new StackPanel { Spacing = 0 };
+            text.Children.Add(new TextBlock
             {
-                Text = RegistryCareService.DisplayName(item),
+                Text = RegistryCareService.DisplayName(finding),
                 FontSize = 12,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
             });
-            stack.Children.Add(new TextBlock
+            text.Children.Add(new TextBlock
             {
                 Text = cleanable
-                    ? $"{item.Confidence}% confidence · {item.Reason}"
-                    : $"{item.Confidence}% confidence · {item.Reason} (not eligible)",
+                    ? $"{finding.Confidence}% confidence"
+                    : $"{finding.Confidence}% confidence (not eligible)",
                 FontSize = 10,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
-            _findingBoxes.Add(box);
-            panel.Children.Add(box);
+
+            var detailsButton = new Button
+            {
+                Content = text,
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(6, 2, 6, 2),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            detailsButton.Click += (_, _) => ShowFindingDetail(category, finding);
+            ToolTipService.SetToolTip(detailsButton, $"{finding.Hive}\\{finding.Path}");
+
+            var row = new Grid { MinHeight = 30 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(box, 0);
+            Grid.SetColumn(detailsButton, 1);
+            row.Children.Add(box);
+            row.Children.Add(detailsButton);
+            content.Children.Add(row);
         }
-        return panel;
+
+        expander.Content = content;
+        expander.Expanding += (_, _) => ShowCategoryDetail(category);
+        return expander;
     }
 
-    private void SetGroupChecked(IReadOnlyList<RegistryFinding> findings, bool value)
+    /// <summary>Category-level detail: summary chips plus one framed row per finding,
+    /// each mirroring the left checkbox so the left list stays authoritative.</summary>
+    private void ShowCategoryDetail(string category)
     {
-        foreach (var box in _findingBoxes)
+        if (!_shownByCategory.TryGetValue(category, out var findings)) return;
+        _detailCategory = category;
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Visible;
+        DetailGroupBadgeText.Text = "REGISTRY";
+        DetailHeadline.Text = category;
+        DetailSubHeadline.Text = "Click a finding to see its registry location.";
+
+        var eligible = findings.Count(RegistryCareService.IsCleanable);
+        var selected = _findingBoxes.Count(x => findings.Contains(x.Finding) && x.Box.IsChecked == true);
+        SetChips("ELIGIBLE", eligible.ToString(), "SELECTED", selected.ToString(), "TOTAL", findings.Count.ToString());
+
+        DetailPanel.Children.Clear();
+        foreach (var finding in findings)
         {
-            if (box.Tag is RegistryFinding f && findings.Contains(f) && box.IsEnabled)
-                box.IsChecked = value;
+            var cleanable = RegistryCareService.IsCleanable(finding);
+            var sourceBox = _findingBoxes.FirstOrDefault(x => ReferenceEquals(x.Finding, finding)).Box;
+
+            var row = new Grid { ColumnSpacing = 10 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var mirror = new CheckBox
+            {
+                IsChecked = sourceBox?.IsChecked == true,
+                IsEnabled = cleanable,
+                MinWidth = 0,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            mirror.Checked += (_, _) => { if (sourceBox is not null) sourceBox.IsChecked = true; };
+            mirror.Unchecked += (_, _) => { if (sourceBox is not null) sourceBox.IsChecked = false; };
+            Grid.SetColumn(mirror, 0);
+            row.Children.Add(mirror);
+
+            var body = new Button
+            {
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(10, 8, 10, 8),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center,
+                CornerRadius = new CornerRadius(8)
+            };
+            var label = new StackPanel { Spacing = 1 };
+            label.Children.Add(new TextBlock
+            {
+                Text = RegistryCareService.DisplayName(finding),
+                FontSize = 12,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+            });
+            label.Children.Add(new TextBlock
+            {
+                Text = cleanable ? finding.Reason : $"{finding.Reason} (not eligible)",
+                FontSize = 10,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
+            body.Content = label;
+            body.Click += (_, _) => ShowFindingDetail(category, finding);
+            ToolTipService.SetToolTip(body, $"{finding.Hive}\\{finding.Path}");
+            Grid.SetColumn(body, 1);
+            row.Children.Add(body);
+
+            DetailPanel.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+                BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 6, 10, 6),
+                Child = row
+            });
         }
+    }
+
+    /// <summary>Finding-level detail: the registry location and why it was flagged.</summary>
+    private void ShowFindingDetail(string category, RegistryFinding finding)
+    {
+        _detailCategory = category;
+        DetailBackButton.Visibility = Visibility.Visible;
+        DetailGroupBadge.Visibility = Visibility.Visible;
+        DetailGroupBadgeText.Text = "REGISTRY";
+        DetailHeadline.Text = RegistryCareService.DisplayName(finding);
+        DetailSubHeadline.Text = category;
+
+        var cleanable = RegistryCareService.IsCleanable(finding);
+        SetChips("CONFIDENCE", $"{finding.Confidence}%", "STATUS", cleanable ? "Eligible" : "Not eligible", "HIVE", finding.Hive);
+
+        DetailPanel.Children.Clear();
+        DetailPanel.Children.Add(DetailRow("Key", $"{finding.Hive}\\{finding.Path}"));
+        if (!string.IsNullOrEmpty(finding.ValueName))
+            DetailPanel.Children.Add(DetailRow("Value", finding.ValueName));
+        DetailPanel.Children.Add(DetailRow("Reason", finding.Reason));
+        DetailPanel.Children.Add(DetailRow("Eligibility", cleanable
+            ? "Eligible for automatic cleaning (low risk, high confidence, backed up first)."
+            : "Not eligible for automatic cleaning - shown for review only."));
+    }
+
+    private static Border DetailRow(string label, string value) => new()
+    {
+        Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+        BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(10, 6, 10, 6),
+        Child = new StackPanel
+        {
+            Spacing = 1,
+            Children =
+            {
+                new TextBlock { Text = label.ToUpperInvariant(), FontSize = 9, CharacterSpacing = 40,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x7F, 0x91, 0x89)) },
+                new TextBlock { Text = value, FontSize = 12, TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)) }
+            }
+        }
+    };
+
+    private void SetChips(string l1, string v1, string l2, string v2, string l3, string v3)
+    {
+        ChipLabel1.Text = l1; ChipValue1.Text = v1;
+        ChipLabel2.Text = l2; ChipValue2.Text = v2;
+        ChipLabel3.Text = l3; ChipValue3.Text = v3;
+    }
+
+    private void DetailBack_Click(object sender, RoutedEventArgs e)
+    {
+        if (_detailCategory is { } category) ShowCategoryDetail(category);
     }
 
     private async void Clean_Click(object sender, RoutedEventArgs e)
     {
         var selected = _findingBoxes
-            .Where(x => x.IsChecked == true)
-            .Select(x => (RegistryFinding)x.Tag!)
+            .Where(x => x.Box.IsChecked == true)
+            .Select(x => x.Finding)
             .ToArray();
         if (selected.Length == 0)
         {
@@ -168,8 +365,11 @@ public sealed partial class RegistryCarePage : Page
         CleanButton.IsEnabled = false;
         ScanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
-        ReportPanel.Children.Clear();
-        ReportHeadline.Text = "Cleaning…";
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
+        DetailPanel.Children.Clear();
+        DetailHeadline.Text = "Cleaning…";
+        DetailSubHeadline.Text = "Backing up, then removing the ticked findings.";
         try
         {
             var result = await _service.PrepareReviewAsync(selected);
@@ -177,7 +377,8 @@ public sealed partial class RegistryCarePage : Page
 
             if (result.Backups.Count == 0)
             {
-                ReportHeadline.Text = "Cleaning stopped.";
+                DetailHeadline.Text = "Cleaning stopped";
+                DetailSubHeadline.Text = "";
                 StatusText.Text = "No backup could be created, so nothing was cleaned. The backup is required as a restore point.";
                 return;
             }
@@ -186,9 +387,11 @@ public sealed partial class RegistryCarePage : Page
             var backupNote = $"{result.Backups.Count} backup file(s) saved under " +
                              Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Backups");
 
-            ReportHeadline.Text = clean.Removed == 0 && clean.Skipped.Count == 0
-                ? "Nothing needed cleaning."
-                : "Cleaning complete.";
+            DetailHeadline.Text = clean.Removed == 0 && clean.Skipped.Count == 0
+                ? "Nothing needed cleaning"
+                : "Cleaning complete";
+            DetailSubHeadline.Text = backupNote + ".";
+            SetChips("REMOVED", clean.Removed.ToString(), "SKIPPED", clean.Skipped.Count.ToString(), "BACKUPS", result.Backups.Count.ToString());
             StatusText.Text = clean.Removed == 0 && clean.Skipped.Count == 0
                 ? $"No registry values were changed. {backupNote}."
                 : $"Cleaned {clean.Removed} registry item(s); {clean.Skipped.Count} skipped. {backupNote}.";
@@ -198,30 +401,43 @@ public sealed partial class RegistryCarePage : Page
                 var issue = clean.Skipped.FirstOrDefault(s =>
                     finding.Path.Contains(s.Path, StringComparison.OrdinalIgnoreCase) ||
                     s.Path.Contains(finding.Path, StringComparison.OrdinalIgnoreCase));
-                ReportPanel.Children.Add(BuildResultRow(finding, issue is not null, issue?.Reason));
+                DetailPanel.Children.Add(BuildResultRow(finding, issue is not null, issue?.Reason));
             }
             RestoreButton.Visibility = Visibility.Visible;
+
+            // Re-scan so the left list reflects what was cleaned.
+            try
+            {
+                var review = await _service.ScanAsync();
+                _findings = review.Findings;
+                RenderFindings();
+                DetailHeadline.Text = "Cleaning complete";
+                DetailSubHeadline.Text = backupNote + ".";
+            }
+            catch { /* refresh is best-effort; the completion report still stands */ }
         }
         catch (Exception ex)
         {
-            ReportHeadline.Text = "Cleaning failed.";
+            DetailHeadline.Text = "Cleaning failed";
+            DetailSubHeadline.Text = "";
             StatusText.Text = ex.Message;
         }
         finally
         {
             ScanButton.IsEnabled = true;
-            CleanButton.IsEnabled = true;
+            CleanButton.IsEnabled = _findings.Count > 0;
             Progress.Visibility = Visibility.Collapsed;
         }
     }
 
-    private static StackPanel BuildResultRow(RegistryFinding finding, bool skipped, string? reason)
+    private static Border BuildResultRow(RegistryFinding finding, bool skipped, string? reason)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, MinHeight = 26 };
         row.Children.Add(new FontIcon
         {
             Glyph = skipped ? "\xE711" : "\xE73E", // Cancel : CheckMark
             FontSize = 13,
+            VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(skipped
                 ? global::Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D)
                 : global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58))
@@ -244,7 +460,15 @@ public sealed partial class RegistryCarePage : Page
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D))
             });
         }
-        return row;
+        return new Border
+        {
+            Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+            BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 5, 10, 5),
+            Child = row
+        };
     }
 
     private async void Restore_Click(object sender, RoutedEventArgs e)
