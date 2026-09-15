@@ -23,38 +23,106 @@
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
 
-      <!-- Left box: findings to clean -->
+      <!-- Left: findings grouped by category -->
       <Border Grid.Column="0" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14">
         <Grid>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
-          <TextBlock Grid.Row="0" Text="ISSUES TO FIX" FontSize="10" Foreground="#7F9189" Margin="0,0,0,8"/>
+          <TextBlock Grid.Row="0" Text="CATEGORIES" FontSize="10" Foreground="#7F9189" Margin="0,0,0,8"/>
           <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="FindingsPanel" Spacing="2"/>
           </ScrollViewer>
         </Grid>
       </Border>
 
-      <!-- Right box: analysis / cleaning report. The report list fills the
-           remaining height directly from the Grid cell (a StackPanel would
-           measure it with infinite height and let it overflow the card). -->
+      <!-- Right: selected category / finding detail -->
       <Border Grid.Column="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="14">
-        <Grid>
+        <Grid RowSpacing="12">
           <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
-          <TextBlock Grid.Row="0" x:Name="ReportHeadline" Text="No analysis performed yet."
-                     FontSize="16" FontWeight="SemiBold" Foreground="#273630" Margin="0,0,0,4" TextWrapping="Wrap"/>
-          <TextBlock Grid.Row="1" x:Name="StatusText" Text="Click Analyze to scan the registry."
-                     FontSize="12" Foreground="#6E8178" Margin="0,0,0,8" TextWrapping="Wrap"/>
-          <ProgressBar Grid.Row="2" x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed" Margin="0,0,0,8"/>
-          <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="ReportPanel" Spacing="2"/>
+
+          <!-- Summary header: icon tile, what is being viewed, and back navigation -->
+          <Grid Grid.Row="0" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Width="38" Height="38" CornerRadius="9" Background="#E2F3E9" VerticalAlignment="Center">
+              <FontIcon Glyph="&#xEA18;" FontSize="18" Foreground="#398A6D"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+              <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="DetailHeadline" Text="Registry Care"
+                           FontSize="17" FontWeight="SemiBold" Foreground="#273630"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <Border x:Name="DetailGroupBadge" Grid.Column="1" Background="#EAF4EE" CornerRadius="5" Padding="7,3"
+                        VerticalAlignment="Center" Visibility="Collapsed">
+                  <TextBlock x:Name="DetailGroupBadgeText" Text="REGISTRY" FontSize="9"
+                             FontWeight="SemiBold" Foreground="#4B7769" CharacterSpacing="40"/>
+                </Border>
+              </Grid>
+              <TextBlock x:Name="DetailSubHeadline" Text="Click Analyze, then pick a category to review its findings."
+                         FontSize="11" Foreground="#89958F" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <Button x:Name="DetailBackButton" Grid.Column="2" Click="DetailBack_Click"
+                    Style="{ThemeResource AccentButtonStyle}" Padding="8,4" FontSize="12"
+                    Visibility="Collapsed" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <FontIcon Glyph="&#xE72B;" FontSize="12"/>
+                <TextBlock Text="Back"/>
+              </StackPanel>
+            </Button>
+          </Grid>
+
+          <!-- Live summary chips -->
+          <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+            <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
+              <StackPanel Spacing="1">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="6" Height="6" Fill="#6ABD97" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="ChipLabel1" Text="ELIGIBLE" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
+                </StackPanel>
+                <TextBlock x:Name="ChipValue1" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+              </StackPanel>
+            </Border>
+            <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
+              <StackPanel Spacing="1">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="6" Height="6" Fill="#5B99AD" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="ChipLabel2" Text="SELECTED" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
+                </StackPanel>
+                <TextBlock x:Name="ChipValue2" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+              </StackPanel>
+            </Border>
+            <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
+              <StackPanel Spacing="1">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="6" Height="6" Fill="#C7775D" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="ChipLabel3" Text="TOTAL" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
+                </StackPanel>
+                <TextBlock x:Name="ChipValue3" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <TextBlock Grid.Row="2" x:Name="StatusText" Text="Click Analyze to scan the registry."
+                     FontSize="12" Foreground="#6E8178" TextWrapping="Wrap"/>
+          <ProgressBar Grid.Row="3" x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed"/>
+          <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="DetailPanel" Spacing="8"/>
           </ScrollViewer>
         </Grid>
       </Border>
