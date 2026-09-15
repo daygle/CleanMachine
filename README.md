@@ -29,29 +29,34 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Configurable exclusion paths to skip specific directories
 - Interrupted-cleanup state persistence with recovery messaging
 - Process-lock detection requires browsers to be closed before cleaning
-- Detects Chrome, Edge, Brave, Opera, Vivaldi, Firefox, and Internet Explorer and shows them as per-browser cards
-- Per-item selection: safe items (cache, sessions, crash reports, metrics, bookmark backups) are on by default; destructive items (cookies, history, downloads, autofill, saved passwords) are opt-in behind a confirmation
+- Detects Chrome, Edge, Brave, Opera, Vivaldi, Firefox, and Internet Explorer in a two-pane list/detail view: browsers (with their items) on the left, a summary header, size/file/item chips, and a per-item drill-down on the right
+- Per-item selection: safe items (cache, sessions, crash reports, metrics, bookmark backups) are on by default; destructive items (cookies, history, downloads, autofill, saved passwords) are opt-in behind a confirmation. Your tick choices are remembered across navigation and restarts
+- The list re-scans after a clean so sizes reflect what was removed
 - Whole-file deletion, with a backup taken before any preference-file edit
 - Browser monitoring lives here: choose what happens when each supported browser closes (do nothing, clean silently, clean and notify), with a master on/off switch
 - Enabling browser monitoring (or the low-disk-space monitor in Settings) automatically runs the background agent and registers CleanMachine to start with Windows, so those services work without the window open; there is no separate agent switch to remember
 
 ### Application Cleanup
-- Detects installed applications with cleanable temp files and shows only those with items (clean apps hidden by default, or shown greyed out behind a toggle)
-- Covers a built-in catalog of desktop apps and Microsoft Store apps, including Windows components (Defender logs, search index, media player caches, activity history)
+- Two-pane list/detail view: detected apps (grouped by Desktop / Microsoft Store) on the left, a summary header with size/file/item chips and a per-item file drill-down on the right
+- Shows only apps with items by default (clean apps hidden, or shown greyed out behind Show All)
+- Broad built-in catalog of desktop apps (browsers, Discord, Slack, Spotify, Teams, VS Code, Steam, Zoom, Office, Adobe Acrobat and more) and Microsoft Store apps (Xbox, WhatsApp, Netflix, Photos, and more), plus Windows components (Defender logs, search index, media player caches, activity history)
+- The list re-scans after a clean so sizes reflect what was removed
 - Secure Delete option uses the wipe method from Settings
 - Same availability figure feeds the Overview dashboard
 
 ### Registry Care
 - Read-only scanning of current-user uninstall metadata, file associations, MUI cache, startup entries, and orphaned sound events
+- Two-pane list/detail view: finding categories as expanders on the left, a summary header with eligible/selected/total chips on the right, and a per-finding drill-down showing its registry key, value, confidence and reason
 - Safe per-user cleanup with value-level deletion, so shared keys are never removed wholesale
-- Confidence-based filtering (minimum 70%) for review eligibility
+- Confidence-based filtering (minimum 70%) for review eligibility; Show All reveals ineligible findings when there are any (and is disabled with an explanation when there are none)
 - `.reg` backup export with validation of backup header integrity; cleaning refuses to run without a backup
-- Explicit restore flow using Windows `reg.exe`
+- Explicit restore flow using Windows `reg.exe`; the list re-scans after a clean
 
 ### Windows Cleanup
-- Safe category scanning: user temporary files, thumbnail cache, error reports
+- Two-pane list/detail view: categories on the left, a summary header with chips and a per-category file drill-down on the right
+- Safe category scanning: temporary files, thumbnail and icon caches, error reports, internet cache, Remote Desktop cache, PowerShell history, and more
 - Categories with nothing to clean are hidden from the selection list (shared, cached scan with the Overview card); if a scan fails the full catalog is shown so nothing becomes unreachable
-- Per-category enable/disable persisted in settings, honoring per-user overrides
+- Per-category enable/disable persisted in settings, honoring per-user overrides; the list re-measures after a clean
 - Recycle Bin cleanup through native `SHEmptyRecycleBin` (requires explicit confirmation)
 - Windows Update cleanup disabled until safe API/service implementation is validated
 - Reparse-point and junction protection
@@ -109,7 +114,8 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Pending-update recovery across sessions
 
 ### Settings
-- System monitoring threshold and action
+- Settings save instantly on change - there is no Save button (Restore Defaults applies immediately too)
+- System monitoring threshold (entered in MB or GB), action, and a picker for exactly which safe categories the monitor cleans
 - Automatic update check toggle
 - Minimize to tray options (start minimized, on close, on minimize; taskbar visibility)
 - Tray icon: left-click restores the window; right-click opens a menu to Open or Exit CleanMachine
