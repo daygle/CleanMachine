@@ -147,7 +147,10 @@ public sealed partial class WindowsCleanupPage : Page
         CleanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
         ReportPanel.Children.Clear();
-        ReportHeadline.Text = "Analyzing…";
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
+        DetailHeadline.Text = "Analyzing…";
+        DetailSubHeadline.Text = "Measuring every enabled category.";
         _cancel = new CancellationTokenSource();
         try
         {
@@ -169,20 +172,10 @@ public sealed partial class WindowsCleanupPage : Page
             _lastScan = items;
             BuildCategoryList();
 
-            foreach (var item in enabledItems)
-                ReportPanel.Children.Add(BuildReportRow(item.Category, item.Category.Group, item));
-
-            ReportHeadline.Text = "Analysis complete.";
-            StatusText.Text = registryEntries > 0
-                ? $"{FormatBytes(totalBytes)} can be removed (incl. {registryEntries:N0} history entries) across {enabledItems.Length} item(s)."
-                : $"{FormatBytes(totalBytes)} can be removed across {enabledItems.Length} item(s).";
-            if (enabledItems.Length == 0)
-            {
-                StatusText.Text = "Nothing to clean - the selected items are already clear.";
-            }
+            RenderSummary(enabledItems, totalBytes, registryEntries);
         }
-        catch (OperationCanceledException) { ReportHeadline.Text = "Analysis cancelled."; StatusText.Text = ""; }
-        catch (Exception ex) { ReportHeadline.Text = "Analysis failed."; StatusText.Text = ex.Message; }
+        catch (OperationCanceledException) { DetailHeadline.Text = "Analysis cancelled."; DetailSubHeadline.Text = ""; StatusText.Text = ""; }
+        catch (Exception ex) { DetailHeadline.Text = "Analysis failed."; DetailSubHeadline.Text = ""; StatusText.Text = ex.Message; }
         finally
         {
             AnalyzeButton.IsEnabled = true;
@@ -257,7 +250,12 @@ public sealed partial class WindowsCleanupPage : Page
     private async void OnReportRowClicked(CleanupCategory category)
     {
         ReportPanel.Children.Clear();
-        ReportHeadline.Text = $"{category.Group} · {category.Name}";
+        DetailBackButton.Visibility = Visibility.Visible;
+        DetailGroupBadge.Visibility = Visibility.Visible;
+        DetailGroupBadgeText.Text = category.Group.ToUpperInvariant();
+        DetailHeadline.Text = category.Name;
+        DetailSubHeadline.Text = category.Path ?? category.Description;
+        SetChipLabels("FILES", "ITEMS");
         StatusText.Text = "Loading files...";
         Progress.Visibility = Visibility.Visible;
 
@@ -265,24 +263,7 @@ public sealed partial class WindowsCleanupPage : Page
         {
             var files = await Task.Run(() => _service.ScanFiles(category, _settings.ExcludedPaths));
 
-            // Back button. The arrow glyph must use the icon font, but the label must
-            // NOT - a button-wide "Segoe MDL2 Assets" font renders the words as tofu
-            // boxes, so keep the glyph in a FontIcon and the text in a normal TextBlock.
-            var backRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 0, 8) };
-            var backContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-            backContent.Children.Add(new FontIcon { Glyph = "\uE72B", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
-            backContent.Children.Add(new TextBlock { Text = "Back to summary", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
-            var backBtn = new Button
-            {
-                Content = backContent,
-                Padding = new Thickness(8, 4, 8, 4),
-                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
-                BorderThickness = new Thickness(0)
-            };
-            backBtn.Click += (_, _) => RestoreSummary();
-            backRow.Children.Add(backBtn);
-            ReportPanel.Children.Add(backRow);
-
+            SetChips(FormatBytes(files.Sum(f => f.Bytes)), files.Count.ToString("N0"), "1");
             StatusText.Text = $"{files.Count:N0} file(s), {FormatBytes(files.Sum(f => f.Bytes))}";
 
             if (files.Count == 0)
@@ -352,14 +333,53 @@ public sealed partial class WindowsCleanupPage : Page
             .OrderByDescending(i => i.Bytes)
             .ToArray();
         var totalBytes = enabledItems.Sum(i => i.Bytes);
+        var registryEntries = enabledItems.Where(i => i.Category.Kind == CleanupKind.RegistryValues).Sum(i => i.Bytes);
+        RenderSummary(enabledItems, totalBytes, registryEntries);
+    }
+
+    /// <summary>Fills the right card with the analysis summary - header, chips, and
+    /// one clickable row per enabled category that has data.</summary>
+    private void RenderSummary(IReadOnlyList<CleanupItem> enabledItems, long totalBytes, long registryEntries)
+    {
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
+        DetailHeadline.Text = "Analysis complete";
+        DetailSubHeadline.Text = enabledItems.Count == 0
+            ? "The selected categories are already clear."
+            : "Click a category to preview its files.";
+        // File counts are only known once a category is opened, so at the summary the
+        // middle chip shows item count and the right chip shows history entries.
+        SetChipLabels("ITEMS", "HISTORY");
+        SetChips(FormatBytes(totalBytes), enabledItems.Count.ToString(),
+            registryEntries > 0 ? $"{registryEntries:N0}" : "0");
+
+        StatusText.Text = enabledItems.Count == 0
+            ? "Nothing to clean - the selected items are already clear."
+            : registryEntries > 0
+                ? $"{FormatBytes(totalBytes)} can be removed (incl. {registryEntries:N0} history entries) across {enabledItems.Count} item(s)."
+                : $"{FormatBytes(totalBytes)} can be removed across {enabledItems.Count} item(s).";
 
         ReportPanel.Children.Clear();
-        ReportHeadline.Text = "Analysis complete.";
-        StatusText.Text = $"{FormatBytes(totalBytes)} can be removed across {enabledItems.Length} item(s).";
-
         foreach (var item in enabledItems)
             ReportPanel.Children.Add(BuildReportRow(item.Category, item.Category.Group, item));
     }
+
+    /// <summary>Updates the summary chip values; a null value shows an em dash.</summary>
+    private void SetChips(string? size, string? mid, string? right)
+    {
+        ChipSizeValue.Text = size ?? "—";
+        ChipFilesValue.Text = mid ?? "—";
+        ChipItemsValue.Text = right ?? "—";
+    }
+
+    /// <summary>Relabels the middle and right chips; the size chip is always "TO CLEAN".</summary>
+    private void SetChipLabels(string mid, string right)
+    {
+        ChipMidLabel.Text = mid;
+        ChipRightLabel.Text = right;
+    }
+
+    private void DetailBack_Click(object sender, RoutedEventArgs e) => RestoreSummary();
 
     private async void Clean_Click(object sender, RoutedEventArgs e)
     {
@@ -377,7 +397,10 @@ public sealed partial class WindowsCleanupPage : Page
         CancelButton.IsEnabled = true;
         Progress.Visibility = Visibility.Visible;
         ReportPanel.Children.Clear();
-        ReportHeadline.Text = "Cleaning…";
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
+        DetailHeadline.Text = "Cleaning…";
+        DetailSubHeadline.Text = "Removing the selected items.";
         _cancel = new CancellationTokenSource();
         try
         {
@@ -394,16 +417,28 @@ public sealed partial class WindowsCleanupPage : Page
                 progress,
                 _cancel.Token);
 
-            ReportHeadline.Text = "Cleaning complete.";
+            DetailHeadline.Text = "Cleaning complete";
+            DetailSubHeadline.Text = "The selected items were removed.";
             _lastPreview = null;
             StatusText.Text =
                 $"{result.Result.ItemsRemoved:N0} items removed, {FormatBytes(result.Result.BytesRecovered)} recovered, {result.Skipped.Count:N0} skipped.";
+            SetChipLabels("REMOVED", "SKIPPED");
+            SetChips(FormatBytes(result.Result.BytesRecovered), result.Result.ItemsRemoved.ToString("N0"), result.Skipped.Count.ToString("N0"));
 
             foreach (var category in enabled)
                 ReportPanel.Children.Add(BuildResultRow(category, result));
+
+            // Re-measure so the left list and cached sizes reflect what was cleaned
+            // (cleaned categories drop to zero and leave the list unless Show All is on).
+            try
+            {
+                _lastScan = await Task.Run(() => _service.Scan(_settings.ExcludedPaths), CancellationToken.None);
+                BuildCategoryList();
+            }
+            catch { /* refresh is best-effort; the completion report still stands */ }
         }
-        catch (OperationCanceledException) { ReportHeadline.Text = "Cleaning cancelled."; }
-        catch (Exception ex) { ReportHeadline.Text = "Cleaning failed."; StatusText.Text = ex.Message; }
+        catch (OperationCanceledException) { DetailHeadline.Text = "Cleaning cancelled."; }
+        catch (Exception ex) { DetailHeadline.Text = "Cleaning failed."; StatusText.Text = ex.Message; }
         finally
         {
             AnalyzeButton.IsEnabled = true;
