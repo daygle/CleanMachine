@@ -93,6 +93,8 @@ public sealed class CleanupService
         ScanSoundAppEvents(findings);
         ScanShellMuiCache(findings);
         ScanUserAppPaths(findings);
+        ScanOpenWithProgids(findings);
+        ScanCompatibilityAssistant(findings);
         return Task.FromResult<IReadOnlyList<RegistryFinding>>(findings);
     }
 
@@ -106,27 +108,98 @@ public sealed class CleanupService
             using var entry = uninstall.OpenSubKey(name);
             var displayName = entry?.GetValue("DisplayName") as string;
             var uninstallString = entry?.GetValue("UninstallString") as string;
-            if (!string.IsNullOrWhiteSpace(displayName) && string.IsNullOrWhiteSpace(uninstallString))
+            if (string.IsNullOrWhiteSpace(displayName)) continue;
+            if (string.IsNullOrWhiteSpace(uninstallString))
+            {
                 findings.Add(new RegistryFinding("HKCU",
                     $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{name}",
                     "Uninstall metadata has no removal command", true, 75, "Installer/Uninstaller"));
+                continue;
+            }
+            // The uninstall command names an uninstaller that is gone: the program
+            // is no longer installed, so the leftover entry can't uninstall anything.
+            // Only act when we can resolve an absolute local exe (MsiExec and env-var
+            // commands resolve to null and are left alone).
+            var uninstaller = ResolveStartupExecutable(uninstallString);
+            if (uninstaller is not null && !File.Exists(uninstaller))
+                findings.Add(new RegistryFinding("HKCU",
+                    $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{name}",
+                    $"Uninstaller is missing ({Path.GetFileName(uninstaller)})", true, 70, "Installer/Uninstaller"));
         }
     }
 
+    // Per-user file-type associations (HKCU\Software\Classes\.ext) whose default
+    // ProgID has no handler class anywhere in the merged HKCR view (HKLM + HKCU) -
+    // a dangling association. Removing the per-user key falls back to the system
+    // default, so it only ever undoes a broken override.
     private static void ScanFileAssociations(RegistryHive hive, ICollection<RegistryFinding> findings)
     {
         using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Default);
-        using var extensions = root.OpenSubKey(@"Software\Classes\.obsolete");
-        if (extensions is null) return;
-        foreach (var ext in extensions.GetSubKeyNames())
+        using var classes = root.OpenSubKey(@"Software\Classes");
+        if (classes is null) return;
+        foreach (var ext in classes.GetSubKeyNames())
         {
-            using var extKey = extensions.OpenSubKey(ext);
-            var progId = extKey?.GetValue("") as string;
-            if (string.IsNullOrWhiteSpace(progId)) continue;
-            using var progIdKey = root.OpenSubKey($@"Software\Classes\{progId}\shell");
-            if (progIdKey is null)
-                findings.Add(new RegistryFinding("HKCU", $@"Software\Classes\{ext}",
-                    $"File extension maps to missing handler '{progId}'", true, 65, "File Extensions"));
+            if (!ext.StartsWith('.')) continue; // only file-extension keys
+            using var extKey = classes.OpenSubKey(ext);
+            if (extKey?.GetValue(null) is not string progId || string.IsNullOrWhiteSpace(progId)) continue;
+            // Resolve the ProgID against the merged HKCR view; if the class exists
+            // (under HKLM or HKCU), the association is live - leave it alone.
+            using var handler = Registry.ClassesRoot.OpenSubKey(progId);
+            if (handler is not null) continue;
+            findings.Add(new RegistryFinding("HKCU", $@"Software\Classes\{ext}",
+                $"File type {ext} maps to a missing handler '{progId}'", true, 70, "File Extensions"));
+        }
+    }
+
+    // Per-extension "Open with" ProgID suggestions
+    // (HKCU\...\Explorer\FileExts\.ext\OpenWithProgids) that reference a class no
+    // longer registered anywhere. Each is a single value; deleting it only removes
+    // a dead entry from the "Open with" list.
+    private const string FileExtsKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts";
+
+    private static void ScanOpenWithProgids(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var fileExts = root.OpenSubKey(FileExtsKey);
+        if (fileExts is null) return;
+        foreach (var ext in fileExts.GetSubKeyNames())
+        {
+            using var progids = fileExts.OpenSubKey($@"{ext}\OpenWithProgids");
+            if (progids is null) continue;
+            foreach (var progId in progids.GetValueNames())
+            {
+                if (string.IsNullOrEmpty(progId)) continue;
+                using var handler = Registry.ClassesRoot.OpenSubKey(progId);
+                if (handler is not null) continue;
+                findings.Add(new RegistryFinding("HKCU", $@"{FileExtsKey}\{ext}\OpenWithProgids",
+                    $"'Open with' entry for {ext} references a missing handler '{progId}'", true, 70, "Open With", progId));
+            }
+        }
+    }
+
+    // Program Compatibility Assistant remembers executables it has prompted about,
+    // keyed by full exe path. Entries for executables that no longer exist are dead.
+    private const string CompatAssistantStoreKey =
+        @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Store";
+    private const string CompatAssistantPersistedKey =
+        @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Persisted";
+
+    private static void ScanCompatibilityAssistant(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        foreach (var keyPath in new[] { CompatAssistantStoreKey, CompatAssistantPersistedKey })
+        {
+            using var key = root.OpenSubKey(keyPath);
+            if (key is null) continue;
+            foreach (var valueName in key.GetValueNames())
+            {
+                // Value names are full executable paths; only act on absolute local
+                // paths we can positively verify are gone.
+                if (string.IsNullOrEmpty(valueName) || valueName.Contains('%') || !Path.IsPathFullyQualified(valueName)) continue;
+                if (File.Exists(valueName)) continue;
+                findings.Add(new RegistryFinding("HKCU", keyPath,
+                    $"Compatibility record for a missing program ({Path.GetFileName(valueName)})", true, 75, "Compatibility Assistant", valueName));
+            }
         }
     }
 
