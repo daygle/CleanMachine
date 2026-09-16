@@ -291,7 +291,8 @@ public partial class App : Application
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
                 "System monitoring",
-                $"Free space below {thresholdLabel} - cleaned {report.Result.ItemsRemoved:N0} items, {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered"),
+                $"Free space below {thresholdLabel} - cleaned {report.Result.ItemsRemoved:N0} items, {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered",
+                ActivityStore.BreakdownLines(report.Breakdown)),
                 token);
         }
         catch { /* monitoring is best-effort; never let it kill the agent loop */ }
