@@ -45,6 +45,11 @@
          can never slip into the package even if the glob Exclude above is outfoxed
          by wildcard evaluation order. -->
     <Content Remove="Assets\generate_icons.py;Assets\icon-master.svg" />
+    <!-- Also embed the sidebar mark in the assembly. Loose Content files can fail to
+         be laid down (or resolved) in unpackaged/installer builds, which showed the
+         sidebar logo blank; the embedded copy is always present, with the loose file
+         kept as a fallback. -->
+    <EmbeddedResource Include="Assets\AppLogo.png" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CleanMachine.Windows.Tests" />
