@@ -52,7 +52,6 @@ public sealed partial class AutomaticCleanupPage : Page
         var loaded = RoundForUnit(_unitIsMb ? _settings.SystemMonitorFreeSpaceGb * MbPerGb : _settings.SystemMonitorFreeSpaceGb, _unitIsMb);
         FreeSpaceBox.Value = Math.Clamp(loaded, FreeSpaceBox.Minimum, FreeSpaceBox.Maximum);
         SystemMonitorAction.SelectedIndex = ToComboIndex(_settings.SystemMonitorAction);
-        UpdateMonitorItemsSummary();
 
         // Startup / idle / recycle bin
         StartupCleanToggle.IsChecked = _settings.CleanAtStartup;
@@ -60,6 +59,10 @@ public sealed partial class AutomaticCleanupPage : Page
         IdleMinutesBox.Value = Math.Clamp(_settings.IdleCleanMinutes, 1, 240);
         RecycleBinToggle.IsChecked = _settings.RecycleBinAutoEmptyEnabled;
         RecycleBinDaysBox.Value = Math.Clamp(_settings.RecycleBinAutoEmptyDays, 1, 365);
+
+        UpdateItemsSummary(MonitorItemsSummary, _settings.SystemMonitorCategories);
+        UpdateItemsSummary(StartupItemsSummary, _settings.StartupCleanCategories);
+        UpdateItemsSummary(IdleItemsSummary, _settings.IdleCleanCategories);
 
         _ready = true;
     }
@@ -104,7 +107,7 @@ public sealed partial class AutomaticCleanupPage : Page
 
     private void UpdateMonitorHint()
         => MonitoringHint.Text = _settings.CleanOnBrowserExit
-            ? "Cleans the items chosen per browser (safe items by default). The browser that just closed is cleaned even if other browsers are still open; passwords, cookies, history, and other destructive items are never cleaned automatically unless you opt them in. CleanMachine runs in the background and starts with Windows so exits are detected."
+            ? "Cleans the items chosen per browser (caches by default). The browser that just closed is cleaned even if other browsers are still open; passwords, cookies, history and other destructive items are never cleaned automatically unless you opt them in. CleanMachine runs in the background and starts with Windows so exits are detected."
             : "Monitoring is off - browsers are only cleaned when you run it manually on the Browser Cleaner page.";
 
     private async void ChooseExitItems_Click(object sender, RoutedEventArgs e)
@@ -214,35 +217,41 @@ public sealed partial class AutomaticCleanupPage : Page
 
     private static double RoundForUnit(double value, bool isMb) => isMb ? Math.Round(value) : Math.Round(value, 2);
 
-    private List<(string Key, string Label, bool Checked)> MonitorItems() =>
+    // The cleanup categories a trigger may run, each with its tick state for the
+    // given selection (null selection = every category enabled on the Windows Cleanup
+    // page). Only the Safe-risk categories are offered - automatic runs never touch
+    // Review/Advanced categories.
+    private List<(string Key, string Label, bool Checked)> CategoryItems(HashSet<string>? selection) =>
         WindowsCleanupService.Catalog
             .Where(c => c.Risk == CleanupRisk.Safe)
-            .Select(c => (c.Id, c.Name, _settings.SystemMonitorCategories is { } set
+            .Select(c => (c.Id, c.Name, selection is { } set
                 ? set.Contains(c.Id)
                 : WindowsCleanupService.IsEnabled(c, _settings)))
             .ToList();
 
-    private void UpdateMonitorItemsSummary()
+    private void UpdateItemsSummary(TextBlock target, HashSet<string>? selection)
     {
-        if (_settings.SystemMonitorCategories is { } set)
+        if (selection is { } set)
         {
             var total = WindowsCleanupService.Catalog.Count(c => c.Risk == CleanupRisk.Safe);
-            var chosen = MonitorItems().Count(i => i.Checked);
-            MonitorItemsSummary.Text = chosen == 0
-                ? "No items selected - nothing will be cleaned."
-                : $"{chosen} of {total} safe categories selected.";
+            var chosen = CategoryItems(set).Count(i => i.Checked);
+            target.Text = chosen == 0
+                ? "Nothing selected - this will clean nothing."
+                : $"{chosen} of {total} categories selected.";
         }
         else
         {
-            MonitorItemsSummary.Text = "All enabled safe categories (default).";
+            target.Text = "Everything enabled on the Windows Cleanup page (default).";
         }
     }
 
-    private async void ChooseMonitorItems_Click(object sender, RoutedEventArgs e)
+    /// <summary>Shows the category picker for one trigger and returns the chosen set,
+    /// or null if the dialog was cancelled.</summary>
+    private async Task<HashSet<string>?> PickCategoriesAsync(string title, HashSet<string>? current)
     {
         var panel = new StackPanel { Spacing = 6 };
         var boxes = new List<(string Key, CheckBox Box)>();
-        foreach (var (key, label, chk) in MonitorItems())
+        foreach (var (key, label, chk) in CategoryItems(current))
         {
             var box = new CheckBox { Content = label, IsChecked = chk };
             boxes.Add((key, box));
@@ -251,22 +260,46 @@ public sealed partial class AutomaticCleanupPage : Page
 
         var dialog = new ContentDialog
         {
-            Title = "Safe categories to clean (low-disk, startup, and idle cleans)",
+            Title = title,
             Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 360 },
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return null;
 
-        _settings.SystemMonitorCategories = boxes
-            .Where(b => b.Box.IsChecked == true)
-            .Select(b => b.Key)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async void ChooseMonitorItems_Click(object sender, RoutedEventArgs e)
+    {
+        var chosen = await PickCategoriesAsync("Items to clean when disk space is low", _settings.SystemMonitorCategories);
+        if (chosen is null) return;
+        _settings.SystemMonitorCategories = chosen;
         await _settings.SaveAsync();
-        UpdateMonitorItemsSummary();
-        StatusText.Text = "Categories saved.";
+        UpdateItemsSummary(MonitorItemsSummary, chosen);
+        StatusText.Text = "Saved.";
+    }
+
+    private async void ChooseStartupItems_Click(object sender, RoutedEventArgs e)
+    {
+        var chosen = await PickCategoriesAsync("Items to clean at startup", _settings.StartupCleanCategories);
+        if (chosen is null) return;
+        _settings.StartupCleanCategories = chosen;
+        await _settings.SaveAsync();
+        UpdateItemsSummary(StartupItemsSummary, chosen);
+        StatusText.Text = "Saved.";
+    }
+
+    private async void ChooseIdleItems_Click(object sender, RoutedEventArgs e)
+    {
+        var chosen = await PickCategoriesAsync("Items to clean when idle", _settings.IdleCleanCategories);
+        if (chosen is null) return;
+        _settings.IdleCleanCategories = chosen;
+        await _settings.SaveAsync();
+        UpdateItemsSummary(IdleItemsSummary, chosen);
+        StatusText.Text = "Saved.";
     }
 
     // ---- Instant-save handlers ---------------------------------------------

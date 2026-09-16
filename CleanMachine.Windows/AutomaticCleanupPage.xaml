@@ -7,10 +7,10 @@
         <FontIcon Glyph="&#xE9F5;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
         <TextBlock Text="Automatic Cleanup" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
       </StackPanel>
-      <TextBlock Text="Let CleanMachine clean safely on its own - when browsers close, when free space runs low, at startup, while the PC is idle, and by keeping the Recycle Bin tidy. Everything here only ever removes safe items unless you opt in."
+      <TextBlock Text="Let CleanMachine clean on its own - when browsers close, when free space runs low, at startup, while the PC is idle, and by keeping the Recycle Bin tidy. Each trigger below has its own on/off switch and its own choice of what to clean. Automatic runs only ever touch cleanup categories, never the Review or Advanced ones from Windows Cleanup."
                  TextWrapping="Wrap" Foreground="#89958F"/>
 
-      <!-- Browser monitoring -->
+      <!-- Browser close -->
       <TextBlock Text="WHEN A BROWSER CLOSES" FontSize="10" Foreground="#7F9189" Margin="0,4,0,0"/>
       <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
         <StackPanel Spacing="10">
@@ -70,10 +70,10 @@
       </Border>
 
       <!-- Low disk space -->
-      <TextBlock Text="WHEN FREE DISK SPACE RUNS LOW" FontSize="10" Foreground="#7F9189" Margin="0,4,0,0"/>
+      <TextBlock Text="WHEN FREE DISK SPACE IS LOW" FontSize="10" Foreground="#7F9189" Margin="0,4,0,0"/>
       <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
         <StackPanel Spacing="12">
-          <CheckBox x:Name="SystemMonitoringToggle" Content="Clean safe items when free disk space drops below"
+          <CheckBox x:Name="SystemMonitoringToggle" Content="Clean up when free disk space drops below"
                     Checked="Setting_Changed" Unchecked="Setting_Changed"/>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
             <NumberBox x:Name="FreeSpaceBox" Value="1" Minimum="0.1" Maximum="100" SpinButtonPlacementMode="Inline"
@@ -85,7 +85,7 @@
             <TextBlock Text="on the Windows drive" VerticalAlignment="Center" Foreground="#53635B"/>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
-            <TextBlock Text="Action:" VerticalAlignment="Center" Foreground="#53635B"/>
+            <TextBlock Text="Then:" VerticalAlignment="Center" Foreground="#53635B"/>
             <ComboBox x:Name="SystemMonitorAction" SelectedIndex="1" Width="220" SelectionChanged="Setting_ComboChanged">
               <ComboBoxItem Content="Do nothing"/>
               <ComboBoxItem Content="Clean silently"/>
@@ -96,28 +96,48 @@
             <Button Content="Choose items…" Click="ChooseMonitorItems_Click" Padding="14,8"/>
             <TextBlock x:Name="MonitorItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
           </StackPanel>
-          <TextBlock Text="Only safe categories are cleaned. Choose the items above, or leave the default to clean every safe category enabled on the Windows Cleanup page. Runs at most once per hour and waits until space recovers before triggering again. The same category set is used by the startup and idle cleans below."
+          <TextBlock Text="Runs at most once per hour and waits until space recovers before triggering again."
                      FontSize="11" Foreground="#89958F" TextWrapping="Wrap"/>
         </StackPanel>
       </Border>
 
-      <!-- Startup / idle / recycle bin -->
-      <TextBlock Text="MORE AUTOMATIC CLEANUP" FontSize="10" Foreground="#7F9189" Margin="0,4,0,0"/>
+      <!-- At startup -->
+      <TextBlock Text="AT STARTUP" FontSize="10" Foreground="#7F9189" Margin="0,4,0,0"/>
       <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
         <StackPanel Spacing="12">
-          <CheckBox x:Name="StartupCleanToggle" Content="Run a safe clean when CleanMachine starts"
+          <CheckBox x:Name="StartupCleanToggle" Content="Clean up when CleanMachine starts"
                     Checked="Setting_Changed" Unchecked="Setting_Changed"/>
-          <TextBlock Text="Paired with 'Start CleanMachine when I sign in to Windows' (Settings), this cleans once at every logon."
-                     FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
+            <Button Content="Choose items…" Click="ChooseStartupItems_Click" Padding="14,8"/>
+            <TextBlock x:Name="StartupItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
+          </StackPanel>
+          <TextBlock Text="With 'Start CleanMachine when I sign in to Windows' (Settings), this runs once at every logon."
+                     FontSize="11" Foreground="#89958F" TextWrapping="Wrap"/>
+        </StackPanel>
+      </Border>
 
-          <CheckBox x:Name="IdleCleanToggle" Content="Run a safe clean when the PC has been idle"
+      <!-- When idle -->
+      <TextBlock Text="WHEN THE PC IS IDLE" FontSize="10" Foreground="#7F9189" Margin="0,4,0,0"/>
+      <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
+        <StackPanel Spacing="12">
+          <CheckBox x:Name="IdleCleanToggle" Content="Clean up after the PC has been idle"
                     Checked="Setting_Changed" Unchecked="Setting_Changed"/>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
             <NumberBox x:Name="IdleMinutesBox" Value="15" Minimum="1" Maximum="240" SpinButtonPlacementMode="Inline"
                        SmallChange="1" LargeChange="15" Width="120" ValueChanged="IdleMinutes_ValueChanged"/>
             <TextBlock Text="minutes of inactivity" VerticalAlignment="Center" Foreground="#53635B"/>
           </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
+            <Button Content="Choose items…" Click="ChooseIdleItems_Click" Padding="14,8"/>
+            <TextBlock x:Name="IdleItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
 
+      <!-- Recycle Bin -->
+      <TextBlock Text="RECYCLE BIN" FontSize="10" Foreground="#7F9189" Margin="0,4,0,0"/>
+      <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
+        <StackPanel Spacing="12">
           <CheckBox x:Name="RecycleBinToggle" Content="Automatically empty Recycle Bin items older than"
                     Checked="Setting_Changed" Unchecked="Setting_Changed"/>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
@@ -125,7 +145,7 @@
                        SmallChange="1" LargeChange="7" Width="120" ValueChanged="RecycleBinDays_ValueChanged"/>
             <TextBlock Text="days" VerticalAlignment="Center" Foreground="#53635B"/>
           </StackPanel>
-          <TextBlock Text="The startup and idle cleans remove the same safe categories chosen for the low-disk monitor above. Recycle Bin auto-empty only removes items already in the Recycle Bin that are older than the set age."
+          <TextBlock Text="Only removes items that are already in the Recycle Bin."
                      FontSize="11" Foreground="#89958F" TextWrapping="Wrap"/>
         </StackPanel>
       </Border>

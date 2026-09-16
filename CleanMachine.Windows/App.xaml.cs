@@ -73,7 +73,7 @@ public partial class App : Application
         // with Windows" this cleans at every logon). Fire-and-forget so it never
         // delays the window coming up.
         if (settings.CleanAtStartup)
-            _ = RunSafeCleanAsync(settings, "Startup cleanup", "At startup", CancellationToken.None);
+            _ = RunSafeCleanAsync(settings, "Startup cleanup", "At startup", settings.StartupCleanCategories, CancellationToken.None);
         // Keep the OS task store in step with whatever schedules are saved.
         _ = ScheduleService.SyncAllAsync(settings);
     }
@@ -264,23 +264,24 @@ public partial class App : Application
         await RecycleBinTickAsync(settings, token);
     }
 
-    /// <summary>The Safe-risk categories an automatic clean removes: the user's chosen
+    /// <summary>The Safe-risk categories an automatic clean removes: the given chosen
     /// set when configured, otherwise every Safe category enabled on the Windows
-    /// Cleanup page. Review/Advanced categories are never included.</summary>
-    private static List<CleanupCategory> SelectedSafeCategories(AppSettings settings) =>
+    /// Cleanup page. Review/Advanced categories are never included, so an unattended
+    /// run can never touch them.</summary>
+    private static List<CleanupCategory> SelectedSafeCategories(AppSettings settings, IReadOnlySet<string>? categoryIds) =>
         WindowsCleanupService.Catalog
             .Where(c => c.Risk == CleanupRisk.Safe
-                && (settings.SystemMonitorCategories is { } set
+                && (categoryIds is { } set
                     ? set.Contains(c.Id)
                     : WindowsCleanupService.IsEnabled(c, settings)))
             .ToList();
 
-    /// <summary>Cleans the selected safe categories and logs the result (with a
+    /// <summary>Cleans the given category selection and logs the result (with a
     /// per-category breakdown) when anything was removed. Shared by the startup and
     /// idle triggers; never shows a toast, so it stays quiet in the background.</summary>
-    private static async Task RunSafeCleanAsync(AppSettings settings, string activityTitle, string reason, CancellationToken token)
+    private static async Task RunSafeCleanAsync(AppSettings settings, string activityTitle, string reason, IReadOnlySet<string>? categoryIds, CancellationToken token)
     {
-        var selected = SelectedSafeCategories(settings);
+        var selected = SelectedSafeCategories(settings, categoryIds);
         if (selected.Count == 0) return;
         var report = await new WindowsCleanupService().CleanSelectedAsync(
             selected,
@@ -305,7 +306,7 @@ public partial class App : Application
             if (IdleTime().TotalMinutes < Math.Max(1, settings.IdleCleanMinutes)) { _idleCleanArmed = true; return; }
             if (!_idleCleanArmed) return;
             _idleCleanArmed = false; // one clean per idle period
-            await RunSafeCleanAsync(settings, "Idle cleanup", $"Idle {Math.Max(1, settings.IdleCleanMinutes)}+ min", token);
+            await RunSafeCleanAsync(settings, "Idle cleanup", $"Idle {Math.Max(1, settings.IdleCleanMinutes)}+ min", settings.IdleCleanCategories, token);
         }
         catch { /* best-effort; never kill the agent loop */ }
     }
@@ -374,15 +375,8 @@ public partial class App : Application
                 return;
 
             // Only Safe-risk categories are ever cleaned here; Review/Advanced
-            // categories always stay behind the manual page. When the user has
-            // chosen a specific set, honor it; otherwise fall back to every Safe
-            // category enabled on the Windows Cleanup page.
-            var selected = WindowsCleanupService.Catalog
-                .Where(c => c.Risk == CleanupRisk.Safe
-                    && (settings.SystemMonitorCategories is { } set
-                        ? set.Contains(c.Id)
-                        : WindowsCleanupService.IsEnabled(c, settings)))
-                .ToList();
+            // categories always stay behind the manual page.
+            var selected = SelectedSafeCategories(settings, settings.SystemMonitorCategories);
             if (selected.Count == 0) return;
             var report = await new WindowsCleanupService().CleanSelectedAsync(
                 selected,
