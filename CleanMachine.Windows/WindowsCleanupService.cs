@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
@@ -5,7 +6,7 @@ using Microsoft.Win32;
 namespace CleanMachine.Windows;
 
 public enum CleanupRisk { Safe, Review, Advanced }
-public enum CleanupKind { Files, RegistryValues, RecycleBin, DnsCache }
+public enum CleanupKind { Files, RegistryValues, RecycleBin, DnsCache, ComponentStore }
 
 public sealed record CleanupCategory(
     string Id,
@@ -88,6 +89,7 @@ public sealed class WindowsCleanupService
         new("advanced-setupapi-logs", "Windows Advanced Options", "Driver Installation Log Files", "Driver install/update logs", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF"), Pattern: "setupapi*.log"),
         new("advanced-delivery-optimization", "Windows Advanced Options", "Delivery Optimization Files", "Cached update/install packages", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "DeliveryOptimization"), Pattern: "*"),
         new("advanced-windows-update-cache", "Windows Advanced Options", "Windows Update Cache", "Downloaded update installers (clearing mid-update can interrupt one)", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "Download"), Pattern: "*"),
+        new("advanced-component-store", "Windows Advanced Options", "Windows Update Cleanup", "Remove superseded Windows Update components from the component store (WinSxS). Requires admin, can take several minutes, and cannot be undone.", CleanupRisk.Advanced, false, CleanupKind.ComponentStore),
 
         // ---- Windows Downloads (user files: disabled by default, require confirmation) ----
         new("downloads-apps", "Windows Downloads", "Apps/Programs", "Downloaded installers (exe/msi) - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".exe", ".msi", ".msix", ".appx"]),
@@ -209,6 +211,31 @@ public sealed class WindowsCleanupService
             }
         }
 
+        // Windows Update Cleanup (WinSxS component store) runs last: it is an elevated,
+        // minutes-long DISM operation, so anything already cleaned above is reported even
+        // if this step is declined or fails.
+        foreach (var category in selected.Where(c => c.Kind == CleanupKind.ComponentStore))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var reclaimed = await RunComponentStoreCleanupAsync(cancellationToken);
+                removed++;
+                recovered += reclaimed;
+                breakdown.Add(new CleanupCategoryResult(category.Name, 1, reclaimed));
+                progress?.Report(new CleanupProgress(category.Name, 1, 1, recovered));
+            }
+            catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+            {
+                // ERROR_CANCELLED: the user declined the UAC prompt. Nothing was changed.
+                issues.Add(new(category.Name, "Administrator permission was declined - Windows Update Cleanup was skipped."));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                issues.Add(new(category.Name, $"Windows Update Cleanup failed: {ex.Message}"));
+            }
+        }
+
         return new CleanupReport(new CleanupResult(removed, recovered), issues, breakdown);
     }
 
@@ -244,6 +271,10 @@ public sealed class WindowsCleanupService
                 case CleanupKind.DnsCache:
                     total++;
                     shown.Add(new CleanupPreviewItem(category.Name, "Flush the DNS cache", 0));
+                    break;
+                case CleanupKind.ComponentStore:
+                    total++;
+                    shown.Add(new CleanupPreviewItem(category.Name, "Remove superseded Windows Update components (admin; several minutes; cannot be undone)", 0));
                     break;
             }
         }
@@ -381,6 +412,102 @@ public sealed class WindowsCleanupService
         process.Start();
         process.WaitForExit();
         if (process.ExitCode != 0) throw new IOException($"ipconfig /flushdns returned exit code {process.ExitCode}.");
+    }
+
+    /// <summary>Runs Windows Update Cleanup via DISM: analyzes the component store,
+    /// removes superseded components (StartComponentCleanup), then re-analyzes so the
+    /// before/after "Actual Size" difference gives a best-effort reclaimed figure.
+    /// Elevated (prompts UAC), can take several minutes, and is irreversible. Returns
+    /// the reclaimed bytes, or 0 if DISM's output could not be measured.</summary>
+    private static async Task<long> RunComponentStoreCleanupAsync(CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("Windows Update Cleanup is supported on Windows only.");
+
+        var stamp = Guid.NewGuid().ToString("N");
+        var logPath = Path.Combine(Path.GetTempPath(), $"cleanmachine-dism-{stamp}.log");
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"cleanmachine-dism-{stamp}.cmd");
+
+        // A batch file avoids the nested-quote pitfalls of "cmd /c" and lets each DISM
+        // step redirect into one log we read afterwards. Elevation (Verb=runas) needs
+        // UseShellExecute, which cannot redirect the child's streams directly, so the
+        // batch does the redirection itself. StartComponentCleanup's own exit code is
+        // surfaced as the script's exit code so a real failure is still detected.
+        var script =
+            "@echo off\r\n" +
+            $"dism.exe /Online /Cleanup-Image /AnalyzeComponentStore >> \"{logPath}\" 2>&1\r\n" +
+            $"dism.exe /Online /Cleanup-Image /StartComponentCleanup >> \"{logPath}\" 2>&1\r\n" +
+            "set CM_RC=%errorlevel%\r\n" +
+            $"dism.exe /Online /Cleanup-Image /AnalyzeComponentStore >> \"{logPath}\" 2>&1\r\n" +
+            "exit /b %CM_RC%\r\n";
+        await File.WriteAllTextAsync(scriptPath, script, cancellationToken);
+
+        try
+        {
+            var psi = new ProcessStartInfo(scriptPath)
+            {
+                UseShellExecute = true,   // required for Verb=runas (the elevation prompt)
+                Verb = "runas",
+                WindowStyle = ProcessWindowStyle.Hidden,
+                CreateNoWindow = true
+            };
+            using (var process = Process.Start(psi) ?? throw new IOException("Could not start DISM."))
+            {
+                await process.WaitForExitAsync(cancellationToken);
+                // 0 = success; 3010/3011 = success but a reboot is recommended.
+                if (process.ExitCode is not (0 or 3010 or 3011))
+                    throw new IOException($"DISM returned exit code {process.ExitCode}.");
+            }
+
+            try
+            {
+                var output = await File.ReadAllTextAsync(logPath, cancellationToken);
+                return ParseReclaimedBytes(output);
+            }
+            catch { return 0; } // the cleanup ran; the reclaimed figure is best-effort
+        }
+        finally
+        {
+            try { File.Delete(scriptPath); } catch { /* temp cleanup is best-effort */ }
+            try { File.Delete(logPath); } catch { /* temp cleanup is best-effort */ }
+        }
+    }
+
+    /// <summary>Best-effort reclaimed-space parse from DISM's before/after component-store
+    /// analysis: the difference between the first and last "Actual Size of Component Store"
+    /// figures. Locale-dependent wording means this can legitimately return 0.</summary>
+    internal static long ParseReclaimedBytes(string dismOutput)
+    {
+        var sizes = new List<long>();
+        foreach (var raw in dismOutput.Split('\n'))
+        {
+            if (raw.IndexOf("Actual Size of Component Store", StringComparison.OrdinalIgnoreCase) < 0) continue;
+            var match = System.Text.RegularExpressions.Regex.Match(
+                raw, @"([0-9][0-9.,]*)\s*(GB|MB|KB|B)\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success && TryParseSize(match.Groups[1].Value, match.Groups[2].Value, out var bytes))
+                sizes.Add(bytes);
+        }
+        if (sizes.Count < 2) return 0;
+        var reclaimed = sizes[0] - sizes[^1];
+        return reclaimed > 0 ? reclaimed : 0;
+    }
+
+    private static bool TryParseSize(string number, string unit, out long bytes)
+    {
+        bytes = 0;
+        if (!double.TryParse(number,
+                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+            return false;
+        bytes = unit.ToUpperInvariant() switch
+        {
+            "GB" => (long)(value * 1024 * 1024 * 1024),
+            "MB" => (long)(value * 1024 * 1024),
+            "KB" => (long)(value * 1024),
+            _ => (long)value
+        };
+        return true;
     }
 
     [DllImport("Shell32.dll", CharSet = CharSet.Unicode)] private static extern int SHEmptyRecycleBin(IntPtr hwnd, string? rootPath, uint flags);
