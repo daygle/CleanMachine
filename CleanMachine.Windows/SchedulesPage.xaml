@@ -51,7 +51,7 @@
 
             <StackPanel x:Name="EditorFields" Spacing="10" Visibility="Collapsed">
               <TextBox x:Name="NameBox" Header="Name" PlaceholderText="Scheduled cleanup"/>
-              <CheckBox x:Name="EnabledCheck" Content="Enabled (register this task with Windows)"/>
+              <CheckBox x:Name="EnabledCheck" Content="Enabled"/>
 
               <ComboBox x:Name="TriggerCombo" Header="Trigger" HorizontalAlignment="Stretch" SelectionChanged="Trigger_Changed">
                 <ComboBoxItem Content="Daily"/>
