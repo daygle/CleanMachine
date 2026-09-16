@@ -48,11 +48,11 @@ public sealed partial class StartupAppsPage : Page
         if (orphans > 0)
         {
             OrphanCount.Text = $"{orphans} orphaned";
-            OrphanCount.Visibility = Visibility.Visible;
+            OrphanBadge.Visibility = Visibility.Visible;
         }
         else
         {
-            OrphanCount.Visibility = Visibility.Collapsed;
+            OrphanBadge.Visibility = Visibility.Collapsed;
         }
 
         if (total == 0)

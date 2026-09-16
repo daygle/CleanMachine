@@ -37,9 +37,11 @@
             <TextBlock x:Name="EnabledCount" Text="0 enabled" FontSize="13"
                        Foreground="#6E8178" VerticalAlignment="Center"/>
           </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="6">
+          <!-- Orphaned-entry warning: shown (icon + text together) only when there are
+               orphans, so the error icon never appears on a clean startup list. -->
+          <StackPanel x:Name="OrphanBadge" Orientation="Horizontal" Spacing="6" Visibility="Collapsed">
             <FontIcon Glyph="&#xEA39;" FontSize="14" Foreground="#C7775D" VerticalAlignment="Center"/>
-            <TextBlock x:Name="OrphanCount" Text="0 orphaned" FontSize="13" Visibility="Collapsed"
+            <TextBlock x:Name="OrphanCount" Text="0 orphaned" FontSize="13"
                        Foreground="#C7775D" VerticalAlignment="Center"/>
           </StackPanel>
         </StackPanel>
