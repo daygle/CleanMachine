@@ -57,6 +57,7 @@ public sealed class WindowsCleanupService
         new("explorer-thumbnails", "Windows Explorer", "Thumbnail Cache", "Cached image previews Windows can recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Explorer"), Pattern: "thumbcache*.db"),
         new("explorer-typed-paths", "Windows Explorer", "Other Explorer MRUs", "Typed paths and other Explorer history", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths"),
         new("explorer-icon-cache", "Windows Explorer", "Icon Cache", "Cached icons Windows can recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Explorer"), Pattern: "iconcache*.db"),
+        new("explorer-jump-lists-custom", "Windows Explorer", "Custom Jump Lists", "App-defined recent-item jump lists", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "Recent", "CustomDestinations"), Pattern: "*"),
 
         // ---- Windows System ----
         new("system-temp", "Windows System", "Temporary Files", "Old temporary files no longer in use", CleanupRisk.Safe, true, CleanupKind.Files, Path: Temp, Pattern: "*"),
@@ -66,6 +67,10 @@ public sealed class WindowsCleanupService
         new("system-inet-cache", "Windows System", "Internet Cache", "Temporary internet files cached by Windows (WinINet)", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "INetCache"), Pattern: "*"),
         new("system-rdp-cache", "Windows System", "Remote Desktop Cache", "Cached bitmaps from Remote Desktop sessions", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Terminal Server Client", "Cache"), Pattern: "*"),
         new("system-powershell-history", "Windows System", "PowerShell Command History", "Saved history of commands typed in PowerShell", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "PowerShell", "PSReadLine"), Pattern: "ConsoleHost_history.txt"),
+        new("system-gpu-nvidia-dx", "Windows System", "NVIDIA DirectX Shader Cache", "Compiled DirectX shaders NVIDIA drivers recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "NVIDIA", "DXCache"), Pattern: "*"),
+        new("system-gpu-nvidia-gl", "Windows System", "NVIDIA OpenGL Shader Cache", "Compiled OpenGL shaders NVIDIA drivers recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "NVIDIA", "GLCache"), Pattern: "*"),
+        new("system-gpu-amd", "Windows System", "AMD Shader Cache", "Compiled shaders AMD drivers recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "AMD", "DxCache"), Pattern: "*"),
+        new("system-gpu-intel", "Windows System", "Intel Shader Cache", "Compiled shaders Intel drivers recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Intel", "ShaderCache"), Pattern: "*"),
         new("system-dns-cache", "Windows System", "DNS Cache", "Cached DNS resolver entries", CleanupRisk.Safe, true, CleanupKind.DnsCache),
         new("system-recycle-bin", "Windows System", "Recycle Bin", "Deleted items awaiting permanent removal", CleanupRisk.Review, false, CleanupKind.RecycleBin),
 
@@ -76,6 +81,7 @@ public sealed class WindowsCleanupService
         new("advanced-event-logs", "Windows Advanced Options", "Windows Event Logs", "Event log archives", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "winevt", "Logs"), Pattern: "*.evtx"),
         new("advanced-setupapi-logs", "Windows Advanced Options", "Driver Installation Log Files", "Driver install/update logs", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF"), Pattern: "setupapi*.log"),
         new("advanced-delivery-optimization", "Windows Advanced Options", "Delivery Optimization Files", "Cached update/install packages", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "DeliveryOptimization"), Pattern: "*"),
+        new("advanced-windows-update-cache", "Windows Advanced Options", "Windows Update Cache", "Downloaded update installers (clearing mid-update can interrupt one)", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "Download"), Pattern: "*"),
 
         // ---- Windows Downloads (user files: disabled by default, require confirmation) ----
         new("downloads-apps", "Windows Downloads", "Apps/Programs", "Downloaded installers (exe/msi) - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".exe", ".msi", ".msix", ".appx"]),
@@ -163,14 +169,13 @@ public sealed class WindowsCleanupService
             {
                 using var key = Registry.CurrentUser.OpenSubKey(category.Path!, writable: true);
                 if (key is null) { issues.Add(new(category.Path!, "Registry key not found")); continue; }
-                var names = key.GetValueNames();
-                if (names.Length == 0) { issues.Add(new(category.Path!, "Nothing to clean")); continue; }
-                foreach (var name in names)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    key.DeleteValue(name, throwOnMissingValue: false);
-                    removed++;
-                }
+                // Recurse sub-keys: many history MRUs (ComDlg32, RecentDocs) store
+                // their entries as values inside sub-keys, so clearing only the top
+                // level would leave the actual history behind. Sub-keys are kept;
+                // only their values are removed.
+                var cleared = DeleteValuesRecursive(key, cancellationToken);
+                if (cleared == 0) { issues.Add(new(category.Path!, "Nothing to clean")); continue; }
+                removed += cleared;
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
             {
@@ -291,8 +296,52 @@ public sealed class WindowsCleanupService
 
     private static long CountRegistryValues(string keyPath)
     {
-        try { using var key = Registry.CurrentUser.OpenSubKey(keyPath); return key?.ValueCount ?? 0; }
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(keyPath);
+            return key is null ? 0 : CountValuesRecursive(key);
+        }
         catch { return 0; }
+    }
+
+    /// <summary>Counts values in a key and all of its sub-keys, matching what the
+    /// recursive cleaner will remove.</summary>
+    private static long CountValuesRecursive(RegistryKey key)
+    {
+        long count = key.ValueCount;
+        foreach (var subName in key.GetSubKeyNames())
+        {
+            try { using var child = key.OpenSubKey(subName); if (child is not null) count += CountValuesRecursive(child); }
+            catch { /* skip inaccessible sub-keys */ }
+        }
+        return count;
+    }
+
+    /// <summary>Deletes every value in a key and, recursively, in its sub-keys,
+    /// leaving the key structure intact. Returns how many values were removed.</summary>
+    private static int DeleteValuesRecursive(RegistryKey key, CancellationToken cancellationToken)
+    {
+        var removed = 0;
+        foreach (var name in key.GetValueNames())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            key.DeleteValue(name, throwOnMissingValue: false);
+            removed++;
+        }
+        foreach (var subName in key.GetSubKeyNames())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                using var child = key.OpenSubKey(subName, writable: true);
+                if (child is not null) removed += DeleteValuesRecursive(child, cancellationToken);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                /* skip sub-keys we cannot open for writing */
+            }
+        }
+        return removed;
     }
 
     private static long GetLength(string path) { try { return new FileInfo(path).Length; } catch { return 0; } }
