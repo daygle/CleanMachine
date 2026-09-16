@@ -26,6 +26,7 @@
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <AutoSuggestBox x:Name="SearchBox" Grid.Column="0" PlaceholderText="Search by name, publisher, or version..."
                         MinHeight="34" VerticalAlignment="Center"
@@ -34,9 +35,20 @@
             <SymbolIcon Symbol="Find"/>
           </AutoSuggestBox.QueryIcon>
         </AutoSuggestBox>
-        <TextBlock x:Name="EntryCount" Grid.Column="1" Text="0 apps"
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="Sort" FontSize="12" Foreground="#6E8178" VerticalAlignment="Center"/>
+          <ComboBox x:Name="SortBox" MinWidth="150" VerticalAlignment="Center"
+                    SelectionChanged="SortBox_SelectionChanged"
+                    ToolTipService.ToolTip="Choose how the application list is ordered">
+            <ComboBoxItem Content="Publisher" IsSelected="True"/>
+            <ComboBoxItem Content="Name (A–Z)"/>
+            <ComboBoxItem Content="Size (largest first)"/>
+            <ComboBoxItem Content="Recently installed"/>
+          </ComboBox>
+        </StackPanel>
+        <TextBlock x:Name="EntryCount" Grid.Column="2" Text="0 apps"
                    FontSize="13" Foreground="#6E8178" VerticalAlignment="Center" Margin="4,0"/>
-        <Button Grid.Column="2" Content="Scan" x:Name="ScanButton" Click="Scan_Click"
+        <Button Grid.Column="3" Content="Scan" x:Name="ScanButton" Click="Scan_Click"
                 Background="#286E58" Foreground="White" Padding="20,8"/>
       </Grid>
     </Border>

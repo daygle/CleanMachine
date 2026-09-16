@@ -43,6 +43,12 @@ public sealed partial class InstalledAppsPage : Page
             RenderList();
     }
 
+    private void SortBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_allApps.Count > 0)
+            RenderList();
+    }
+
     private void RenderList()
     {
         AppListPanel.Children.Clear();
@@ -64,8 +70,21 @@ public sealed partial class InstalledAppsPage : Page
         ListLabel.Text = "APPLICATIONS";
         EmptyState.Visibility = Visibility.Collapsed;
 
+        // Index 0 keeps the publisher-grouped view; the others render one flat,
+        // sorted list. SortBox can be null very early in initialization.
+        if ((SortBox?.SelectedIndex ?? 0) <= 0)
+            RenderGroupedByPublisher(filtered);
+        else
+            RenderSortedFlat(filtered, SortBox!.SelectedIndex);
+
+        FooterText.Text = $"{filtered.Count} application{(filtered.Count == 1 ? "" : "s")} found. " +
+                          "Uninstall and Modify launch the vendor's own installer.";
+    }
+
+    private void RenderGroupedByPublisher(IReadOnlyList<InstalledApp> apps)
+    {
         // Group by publisher for visual structure
-        var groups = filtered
+        var groups = apps
             .GroupBy(a => string.IsNullOrWhiteSpace(a.Publisher) ? "Other" : a.Publisher)
             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
 
@@ -97,9 +116,24 @@ public sealed partial class InstalledAppsPage : Page
             foreach (var app in group)
                 AppListPanel.Children.Add(BuildAppRow(app));
         }
+    }
 
-        FooterText.Text = $"{filtered.Count} application{(filtered.Count == 1 ? "" : "s")} found. " +
-                          "Uninstall and Modify launch the vendor's own installer.";
+    private void RenderSortedFlat(IReadOnlyList<InstalledApp> apps, int sortIndex)
+    {
+        // 1 = Name (A–Z), 2 = Size (largest first), 3 = Recently installed.
+        var sorted = sortIndex switch
+        {
+            2 => apps.OrderByDescending(a => a.EstimatedSize ?? -1)
+                     .ThenBy(a => a.Name, StringComparer.OrdinalIgnoreCase),
+            // InstallDate is an ISO "yyyy-MM-dd" string (or empty), so a descending
+            // string sort orders newest first and pushes undated entries to the end.
+            3 => apps.OrderByDescending(a => a.InstallDate ?? "", StringComparer.Ordinal)
+                     .ThenBy(a => a.Name, StringComparer.OrdinalIgnoreCase),
+            _ => apps.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase),
+        };
+
+        foreach (var app in sorted)
+            AppListPanel.Children.Add(BuildAppRow(app));
     }
 
     private Border BuildAppRow(InstalledApp app)

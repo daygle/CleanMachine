@@ -64,6 +64,14 @@ public sealed partial class StartupAppsPage : Page
 
         ListLabel.Text = "STARTUP ENTRIES";
 
+        // Index 0 keeps the section-grouped view; the others render one flat, sorted
+        // list. SortBox can be null very early in initialization.
+        if ((SortBox?.SelectedIndex ?? 0) > 0)
+        {
+            RenderSortedFlat(SortBox!.SelectedIndex);
+            return;
+        }
+
         // Group by section for clean visual separation
         var sections = _entries
             .GroupBy(e => e.Section)
@@ -97,6 +105,25 @@ public sealed partial class StartupAppsPage : Page
             foreach (var entry in section)
                 EntryPanel.Children.Add(BuildEntryRow(entry));
         }
+    }
+
+    private void SortBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_entries.Count > 0)
+            RenderEntries();
+    }
+
+    /// <summary>Renders a flat, ungrouped entry list. 1 = Name (A–Z),
+    /// 2 = Status (enabled first, then name).</summary>
+    private void RenderSortedFlat(int sortIndex)
+    {
+        var sorted = sortIndex == 2
+            ? _entries.OrderByDescending(e => e.Enabled)
+                      .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+            : _entries.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in sorted)
+            EntryPanel.Children.Add(BuildEntryRow(entry));
     }
 
     private Border BuildEntryRow(StartupEntry entry)
