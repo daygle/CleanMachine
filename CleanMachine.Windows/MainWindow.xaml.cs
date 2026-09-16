@@ -197,7 +197,9 @@ public sealed partial class MainWindow : Window
         var settings = await AppSettings.LoadAsync();
         ApplyShowInTaskbar(settings.ShowInTaskbar);
         ApplyMinimizeToTray(settings.MinimizeToTray);
-        _startMinimizedToTray = settings.StartMinimizedToTray;
+        // A logon autostart (--background) always opens to the tray, regardless of the
+        // "minimize to tray on startup" preference.
+        _startMinimizedToTray = settings.StartMinimizedToTray || App.LaunchedAtLogon;
         _closeToTray = settings.CloseToTray;
 
         // Create desktop shortcut on first launch for MSIX installs only

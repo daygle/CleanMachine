@@ -42,6 +42,8 @@ public sealed partial class SettingsPage : Page
         UpdateMonitorItemsSummary();
 
         UpdateCheckToggle.IsChecked = _settings.CheckForUpdatesAutomatically;
+        SkipUpdateConfirmToggle.IsChecked = _settings.SkipUpdateConfirmation;
+        StartWithWindowsToggle.IsChecked = _settings.StartWithWindows;
         ShowInTaskbarToggle.IsChecked = _settings.ShowInTaskbar;
         StartMinimizedToTrayToggle.IsChecked = _settings.StartMinimizedToTray;
         CloseToTrayToggle.IsChecked = _settings.CloseToTray;
@@ -202,6 +204,8 @@ public sealed partial class SettingsPage : Page
         _settings.SystemMonitorAction = FromComboIndex(SystemMonitorAction.SelectedIndex);
 
         _settings.CheckForUpdatesAutomatically = UpdateCheckToggle.IsChecked == true;
+        _settings.SkipUpdateConfirmation = SkipUpdateConfirmToggle.IsChecked == true;
+        _settings.StartWithWindows = StartWithWindowsToggle.IsChecked == true;
         _settings.ShowInTaskbar = ShowInTaskbarToggle.IsChecked == true;
         _settings.StartMinimizedToTray = StartMinimizedToTrayToggle.IsChecked == true;
         _settings.CloseToTray = CloseToTrayToggle.IsChecked == true;
@@ -250,6 +254,8 @@ public sealed partial class SettingsPage : Page
         _settings.SystemMonitorCategories = defaults.SystemMonitorCategories; // back to the default set
         UpdateMonitorItemsSummary();
         UpdateCheckToggle.IsChecked = defaults.CheckForUpdatesAutomatically;
+        SkipUpdateConfirmToggle.IsChecked = defaults.SkipUpdateConfirmation;
+        StartWithWindowsToggle.IsChecked = defaults.StartWithWindows;
         ShowInTaskbarToggle.IsChecked = defaults.ShowInTaskbar;
         StartMinimizedToTrayToggle.IsChecked = defaults.StartMinimizedToTray;
         CloseToTrayToggle.IsChecked = defaults.CloseToTray;

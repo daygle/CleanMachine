@@ -39,6 +39,13 @@ public sealed class AppSettings
     // which keeps the ask-first behavior of listing what must be closed.
     public bool CloseOpenBrowsersAutomatically { get; set; }
     public bool CheckForUpdatesAutomatically { get; set; } = true;
+    // When true, the Updates flow installs without CleanMachine's own confirmation
+    // dialog. Windows still shows its UAC elevation prompt for each install.
+    public bool SkipUpdateConfirmation { get; set; }
+    // Explicit "start with Windows" preference, independent of background services.
+    // The app is registered for logon startup when this is set OR a background
+    // service (browser-exit cleaning / low-disk monitoring) needs it.
+    public bool StartWithWindows { get; set; }
     // When false the main window is hidden from the taskbar and, when minimized,
     // it collapses to a system-tray icon instead.
     public bool ShowInTaskbar { get; set; } = true;
@@ -107,6 +114,12 @@ public sealed class AppSettings
     // it is never persisted.
     [JsonIgnore]
     public bool RequiresBackgroundAgent => CleanOnBrowserExit || SystemMonitoringEnabled;
+
+    // The app is registered to launch at logon when the user asked for it, or when a
+    // background service needs it running while the window is closed. Derived, never
+    // persisted.
+    [JsonIgnore]
+    public bool ShouldStartWithWindows => StartWithWindows || RequiresBackgroundAgent;
 
     // User-defined cleanup schedules, executed by Windows Task Scheduler so they run
     // even when the app is closed. An optional action (shutdown/restart/sleep) can

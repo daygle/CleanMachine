@@ -38,8 +38,17 @@
       <TextBlock Text="UPDATES" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
       <CheckBox x:Name="UpdateCheckToggle" Content="Check for updates automatically"
                 Checked="Setting_Changed" Unchecked="Setting_Changed"/>
+      <CheckBox x:Name="SkipUpdateConfirmToggle" Content="Install updates without asking me to confirm first"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
+      <TextBlock Text="Windows still shows its administrator-permission prompt for each update; this only skips CleanMachine's own confirmation step."
+                 FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
 
       <TextBlock Text="WINDOW" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
+      <CheckBox x:Name="StartWithWindowsToggle" Content="Start CleanMachine when I sign in to Windows"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
+      <TextBlock x:Name="StartWithWindowsHint"
+                 Text="Background cleaning (browser-close cleanup or low-disk monitoring) also starts CleanMachine with Windows so it can run while closed."
+                 FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
       <CheckBox x:Name="ShowInTaskbarToggle" Content="Show in taskbar"
                 Checked="Setting_Changed" Unchecked="Setting_Changed"/>
       <CheckBox x:Name="StartMinimizedToTrayToggle" Content="Minimize to system tray when program starts up"

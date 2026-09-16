@@ -119,7 +119,8 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 ### Settings
 - Settings save instantly on change - there is no Save button (Restore Defaults applies immediately too)
 - System monitoring threshold (entered in MB or GB), action, and a picker for exactly which safe categories the monitor cleans
-- Automatic update check toggle
+- Automatic update check toggle, and an option to install updates without CleanMachine's own confirmation step (Windows still shows its administrator-permission prompt)
+- "Start CleanMachine when I sign in to Windows" toggle, independent of the background services; a logon start opens straight to the tray
 - Minimize to tray options (start minimized, on close, on minimize; taskbar visibility)
 - Tray icon: left-click restores the window; right-click opens a menu to Open or Exit CleanMachine
 - Default wipe method selection

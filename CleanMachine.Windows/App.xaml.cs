@@ -13,6 +13,11 @@ public partial class App : Application
 
     public static Window? MainWindow { get; private set; }
 
+    /// <summary>True when this instance was launched by the logon startup entry
+    /// (registered with <c>--background</c>), so the window should open straight to
+    /// the tray instead of onto the desktop.</summary>
+    public static bool LaunchedAtLogon { get; private set; }
+
     public App()
     {
         InitializeComponent();
@@ -49,6 +54,9 @@ public partial class App : Application
             return;
         }
         _instanceMutex = instanceMutex;
+        // A logon autostart launches with --background; open to the tray, not the desktop.
+        LaunchedAtLogon = Environment.GetCommandLineArgs()
+            .Any(a => a.Equals("--background", StringComparison.OrdinalIgnoreCase));
         // The listener runs on its own thread; UI work it triggers is posted through
         // the dispatcher captured here on the UI thread.
         _uiDispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
@@ -162,7 +170,7 @@ public partial class App : Application
         try
         {
             StartupRegistration.SetEnabled(
-                settings.RequiresBackgroundAgent,
+                settings.ShouldStartWithWindows,
                 Environment.ProcessPath ?? string.Empty);
         }
         catch { /* startup registration is best-effort */ }
