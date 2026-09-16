@@ -37,6 +37,15 @@ public sealed partial class CleanerPage : Page
         await _settings.SaveAsync();
     }
 
+    /// <summary>Ticks or clears every item box currently shown (all browsers, all
+    /// items). Each box's own handler persists its state.</summary>
+    private void SelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        var value = SelectAllCheck.IsChecked == true;
+        foreach (var entry in _itemBoxes)
+            entry.Box.IsChecked = value;
+    }
+
 
     /// <summary>Persists one item's tick state so the Browser Cleaner page restores
     /// the user's selection next time. Best-effort - a failed save just means the

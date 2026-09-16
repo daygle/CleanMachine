@@ -110,6 +110,14 @@ public sealed partial class AppCleanupPage : Page
         RenderAppList(installed);
     }
 
+    /// <summary>Ticks or clears every item box currently shown (all apps, all items).</summary>
+    private void SelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        var value = SelectAllCheck.IsChecked == true;
+        foreach (var entry in _itemBoxes)
+            entry.Box.IsChecked = value;
+    }
+
     private Expander BuildAppCard(AppScan scan)
     {
         var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };

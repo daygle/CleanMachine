@@ -130,6 +130,8 @@
                 Background="#286E58" Foreground="White" Padding="20,10"/>
         <CheckBox x:Name="CloseBrowsersCheck" Content="Close Browsers First" VerticalAlignment="Center"
                   Checked="CloseBrowsers_Changed" Unchecked="CloseBrowsers_Changed"/>
+        <CheckBox x:Name="SelectAllCheck" Content="Select All" VerticalAlignment="Center"
+                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
         <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete" VerticalAlignment="Center"/>

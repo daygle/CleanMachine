@@ -135,6 +135,8 @@
         <CheckBox x:Name="ShowAllCheck" Content="Show All" VerticalAlignment="Center"
                   IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"
                   ToolTipService.ToolTip="Also show findings that aren't eligible for automatic cleaning"/>
+        <CheckBox x:Name="SelectAllCheck" Content="Select All" VerticalAlignment="Center"
+                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
         <Button x:Name="RestoreButton" Content="Restore Last Backup" Click="Restore_Click"

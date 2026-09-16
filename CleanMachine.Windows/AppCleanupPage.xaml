@@ -135,6 +135,8 @@
               Background="#286E58" Foreground="White" Padding="26,10"/>
         <CheckBox x:Name="ShowCleanCheck" Content="Show All" VerticalAlignment="Center"
                   IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"/>
+        <CheckBox x:Name="SelectAllCheck" Content="Select All" VerticalAlignment="Center"
+                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
         <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete" VerticalAlignment="Center"/>

@@ -87,6 +87,16 @@ public sealed partial class WindowsCleanupPage : Page
 
     private void Filter_Changed(object sender, RoutedEventArgs e) => BuildCategoryList();
 
+    /// <summary>Ticks or clears every selectable category currently shown; empty
+    /// categories are disabled and left untouched.</summary>
+    private void SelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        var value = SelectAllCheck.IsChecked == true;
+        foreach (var box in CategoryPanel.Children.OfType<CheckBox>())
+            if (box.IsEnabled)
+                box.IsChecked = value;
+    }
+
     private static TextBlock Hint(string text) => new()
     {
         Text = text,
