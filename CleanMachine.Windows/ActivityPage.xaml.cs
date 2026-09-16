@@ -144,6 +144,35 @@ public sealed partial class ActivityPage : Page
         grid.Children.Add(info);
         grid.Children.Add(timePanel);
 
+        // When the event carries a per-category breakdown, make the card expandable so
+        // the user can drill into exactly what was cleaned.
+        if (entry.Details is { Count: > 0 } details)
+        {
+            var content = new StackPanel { Spacing = 3, Margin = new Thickness(46, 2, 8, 6) };
+            foreach (var line in details)
+                content.Children.Add(new TextBlock
+                {
+                    Text = line,
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x53, 0x63, 0x5B))
+                });
+
+            var expander = new Expander
+            {
+                Header = grid,
+                Content = content,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 1, 0, 1)
+            };
+            return new Border
+            {
+                Child = expander,
+                CornerRadius = new CornerRadius(6)
+            };
+        }
+
         return new Border
         {
             Child = grid,

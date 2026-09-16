@@ -39,6 +39,13 @@ public sealed class AppSettings
     // which keeps the ask-first behavior of listing what must be closed.
     public bool CloseOpenBrowsersAutomatically { get; set; }
     public bool CheckForUpdatesAutomatically { get; set; } = true;
+    // When true, the Updates flow installs without CleanMachine's own confirmation
+    // dialog. Windows still shows its UAC elevation prompt for each install.
+    public bool SkipUpdateConfirmation { get; set; }
+    // Explicit "start with Windows" preference, independent of background services.
+    // The app is registered for logon startup when this is set OR a background
+    // service (browser-exit cleaning / low-disk monitoring) needs it.
+    public bool StartWithWindows { get; set; }
     // When false the main window is hidden from the taskbar and, when minimized,
     // it collapses to a system-tray icon instead.
     public bool ShowInTaskbar { get; set; } = true;
@@ -94,6 +101,20 @@ public sealed class AppSettings
     // stored in GB; this is only which unit the Settings UI shows and edits in.
     public string SystemMonitorFreeSpaceUnit { get; set; } = "GB";
     public ExitAction SystemMonitorAction { get; set; } = ExitAction.CleanSilently;
+
+    // Automatic cleanup: run a safe clean once each time CleanMachine starts (paired
+    // with "Start with Windows" this cleans at every logon).
+    public bool CleanAtStartup { get; set; }
+    // Automatic cleanup: run a safe clean after the machine has been idle this many
+    // minutes (fires once per idle period; re-arms after the next activity).
+    public bool IdleCleanEnabled { get; set; }
+    public int IdleCleanMinutes { get; set; } = 15;
+    // Automatic cleanup: empty Recycle Bin items older than this many days.
+    public bool RecycleBinAutoEmptyEnabled { get; set; }
+    public int RecycleBinAutoEmptyDays { get; set; } = 30;
+    // The safe clean run by the startup and idle triggers uses the same category set
+    // as the low-disk monitor (SystemMonitorCategories); null means every enabled
+    // Safe category on the Windows Cleanup page.
     // Which Safe Windows categories the low-disk-space monitor cleans. A null set
     // means "not configured" - it falls back to every Safe category enabled on the
     // Windows Cleanup page. An empty set means the user deselected everything, so
@@ -106,7 +127,15 @@ public sealed class AppSettings
     // is present to run those services while the window is closed. Derived, so
     // it is never persisted.
     [JsonIgnore]
-    public bool RequiresBackgroundAgent => CleanOnBrowserExit || SystemMonitoringEnabled;
+    public bool RequiresBackgroundAgent =>
+        CleanOnBrowserExit || SystemMonitoringEnabled || IdleCleanEnabled || RecycleBinAutoEmptyEnabled;
+
+    // The app is registered to launch at logon when the user asked for it, when a
+    // background service needs it running while the window is closed, or when a
+    // startup clean is set (which only makes sense if the app starts at logon).
+    // Derived, never persisted.
+    [JsonIgnore]
+    public bool ShouldStartWithWindows => StartWithWindows || RequiresBackgroundAgent || CleanAtStartup;
 
     // User-defined cleanup schedules, executed by Windows Task Scheduler so they run
     // even when the app is closed. An optional action (shutdown/restart/sleep) can
@@ -133,14 +162,17 @@ public sealed class AppSettings
         if (browserDefinition is null) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var catalogItems = BrowserCatalog.ItemsFor(browserDefinition.Family);
         if (FindBrowserMonitor(browser)?.Items is { } chosen)
+            // An explicit selection is honored as-is, including any destructive items
+            // the user opted in to (they are unticked by default in the picker).
             // Project back to the catalog's canonical ids: BrowserCleanupService
             // matches item ids with ordinal comparisons, so a stored "CACHE" must
             // come out as "cache" or it would silently clean nothing.
             return catalogItems
-                .Where(item => !item.Destructive
-                    && chosen.Any(id => id.Equals(item.Id, StringComparison.OrdinalIgnoreCase)))
+                .Where(item => chosen.Any(id => id.Equals(item.Id, StringComparison.OrdinalIgnoreCase)))
                 .Select(item => item.Id)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // No explicit selection: the safe default excludes destructive items, so a
+        // background clean never wipes user data unless it was deliberately enabled.
         return catalogItems
             .Where(item => !item.Destructive)
             .Select(item => item.Id)

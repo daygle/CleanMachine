@@ -133,6 +133,7 @@ public sealed class WindowsCleanupService
     {
         var selected = categories.ToArray();
         var issues = new List<CleanupIssue>();
+        var breakdown = new List<CleanupCategoryResult>();
         var removed = 0;
         long recovered = 0;
         var requiresConfirmation = selected.Any(c => c.Risk != CleanupRisk.Safe);
@@ -147,6 +148,8 @@ public sealed class WindowsCleanupService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var files = GetCleanableFiles(category, options.ExcludedPaths);
+            var categoryRemoved = 0;
+            long categoryBytes = 0;
             for (var index = 0; index < files.Count; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -159,13 +162,14 @@ public sealed class WindowsCleanupService
                         deleted = await SecureDeleteService.SecureDeleteFileAsync(file, options.SecureDeleteOptions, cancellationToken);
                     else
                         File.Delete(file);
-                    if (deleted) { removed++; recovered += length; }
+                    if (deleted) { removed++; recovered += length; categoryRemoved++; categoryBytes += length; }
                     else issues.Add(new(file, "Protected, locked, or empty - not securely deleted"));
                 }
                 catch (IOException) { issues.Add(new(file, "Locked or unavailable")); }
                 catch (UnauthorizedAccessException) { issues.Add(new(file, "Access denied (administrator may be required)")); }
                 progress?.Report(new CleanupProgress(category.Name, index + 1, files.Count, recovered));
             }
+            if (categoryRemoved > 0) breakdown.Add(new CleanupCategoryResult(category.Name, categoryRemoved, categoryBytes));
         }
 
         foreach (var category in selected.Where(c => c.Kind == CleanupKind.RegistryValues))
@@ -182,6 +186,7 @@ public sealed class WindowsCleanupService
                 var cleared = DeleteValuesRecursive(key, cancellationToken);
                 if (cleared == 0) { issues.Add(new(category.Path!, "Nothing to clean")); continue; }
                 removed += cleared;
+                breakdown.Add(new CleanupCategoryResult(category.Name, cleared, 0));
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
             {
@@ -196,6 +201,7 @@ public sealed class WindowsCleanupService
             {
                 if (category.Kind == CleanupKind.RecycleBin) { EmptyRecycleBin(); removed++; }
                 else { FlushDnsCache(); removed++; }
+                breakdown.Add(new CleanupCategoryResult(category.Name, 1, 0));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or COMException)
             {
@@ -203,7 +209,7 @@ public sealed class WindowsCleanupService
             }
         }
 
-        return new CleanupReport(new CleanupResult(removed, recovered), issues);
+        return new CleanupReport(new CleanupResult(removed, recovered), issues, breakdown);
     }
 
     public CleanupPreview BuildPreview(IEnumerable<CleanupCategory> categories, IReadOnlySet<string>? excludedPaths = null, int maxFileItems = 100)

@@ -58,19 +58,25 @@ public sealed partial class UpdatesPage : Page
         if (result.Error is not null) { StatusText.Text = result.Error; return; }
         if (!result.Available) { StatusText.Text = "You are running the latest version."; return; }
 
-        var dialog = new ContentDialog
+        // Skip our own confirmation when the user opted in; Windows still shows its
+        // administrator-permission prompt at install time.
+        var settings = await AppSettings.LoadAsync();
+        if (!settings.SkipUpdateConfirmation)
         {
-            Title = $"Version {result.Manifest!.Version} available",
-            Content = $"{result.Manifest.ReleaseNotes}\n\nCleanMachine will download, verify and install this update, then restart. Windows may ask for administrator permission.",
-            PrimaryButtonText = "Update Now",
-            CloseButtonText = "Later",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = XamlRoot
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
-        {
-            StatusText.Text = $"Version {result.Manifest.Version} is available. Use Check for Updates when you're ready.";
-            return;
+            var dialog = new ContentDialog
+            {
+                Title = $"Version {result.Manifest!.Version} available",
+                Content = $"{result.Manifest.ReleaseNotes}\n\nCleanMachine will download, verify and install this update, then restart. Windows may ask for administrator permission.",
+                PrimaryButtonText = "Update Now",
+                CloseButtonText = "Later",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = XamlRoot
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
+                StatusText.Text = $"Version {result.Manifest!.Version} is available. Use Check for Updates when you're ready.";
+                return;
+            }
         }
 
         await RunUpdateAsync(result.Package!);
@@ -120,15 +126,19 @@ public sealed partial class UpdatesPage : Page
     {
         if (string.IsNullOrEmpty(_stagedPackagePath)) { StatusText.Text = "No staged package found."; return; }
 
-        var confirm = new ContentDialog
+        var settings = await AppSettings.LoadAsync();
+        if (!settings.SkipUpdateConfirmation)
         {
-            Title = "Install update?",
-            Content = "CleanMachine will install the staged update and restart. Windows may ask for administrator permission.",
-            PrimaryButtonText = "Install Now",
-            CloseButtonText = "Cancel",
-            XamlRoot = XamlRoot
-        };
-        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+            var confirm = new ContentDialog
+            {
+                Title = "Install update?",
+                Content = "CleanMachine will install the staged update and restart. Windows may ask for administrator permission.",
+                PrimaryButtonText = "Install Now",
+                CloseButtonText = "Cancel",
+                XamlRoot = XamlRoot
+            };
+            if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        }
 
         InstallButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;

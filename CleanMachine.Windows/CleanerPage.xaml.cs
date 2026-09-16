@@ -10,7 +10,7 @@ public sealed partial class CleanerPage : Page
     private readonly List<(string BrowserId, string ItemId, bool Destructive, CheckBox Box)> _itemBoxes = [];
     private AppSettings _settings = new();
     // Guards the change handlers while the page loads settings into the controls.
-    private bool _monitorReady;
+    private bool _ready;
     // Detected browsers and the one whose detail is currently shown on the right.
     private IReadOnlyList<BrowserScan> _scans = [];
     private BrowserScan? _detailScan;
@@ -19,154 +19,24 @@ public sealed partial class CleanerPage : Page
     {
         InitializeComponent();
         // Load monitoring settings, then scan browsers automatically when opened.
-        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); LoadMonitoring(); await CheckInterruptedAsync(); await ScanAsync(); };
-    }
-
-    /// <summary>Browser monitoring (clean cache on browser close) and the background
-    /// agent it runs under live here on the Browser Cleaner page, next to the
-    /// cleaning flow they control. Changes apply immediately - there is no save
-    /// button on this page.</summary>
-    private void LoadMonitoring()
-    {
-        _monitorReady = false;
-
-        CleanToggle.IsChecked = _settings.CleanOnBrowserExit;
-        var chrome = _settings.FindBrowserMonitor("chrome");
-        var edge = _settings.FindBrowserMonitor("edge");
-        var firefox = _settings.FindBrowserMonitor("firefox");
-        ChromeEnabled.IsChecked = chrome?.Enabled ?? true;
-        ChromeAction.SelectedIndex = ToComboIndex(chrome?.AfterExit ?? ExitAction.CleanAndNotify);
-        EdgeEnabled.IsChecked = edge?.Enabled ?? true;
-        EdgeAction.SelectedIndex = ToComboIndex(edge?.AfterExit ?? ExitAction.CleanAndNotify);
-        FirefoxEnabled.IsChecked = firefox?.Enabled ?? true;
-        FirefoxAction.SelectedIndex = ToComboIndex(firefox?.AfterExit ?? ExitAction.CleanAndNotify);
-        UpdateExitItemsButton(ChromeItemsButton, "chrome");
-        UpdateExitItemsButton(EdgeItemsButton, "edge");
-        UpdateExitItemsButton(FirefoxItemsButton, "firefox");
-        CloseBrowsersCheck.IsChecked = _settings.CloseOpenBrowsersAutomatically;
-        UpdateMonitorHint();
-
-        _monitorReady = true;
-    }
-
-    private async void CleanToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_monitorReady) return;
-        _settings.CleanOnBrowserExit = CleanToggle.IsChecked == true;
-        await _settings.SaveAsync();
-        // Turning this on/off is what makes the agent (and Windows startup) needed,
-        // so bring them in step immediately.
-        (App.Current as App)?.ApplyBackgroundServices(_settings);
-        UpdateMonitorHint();
-    }
-
-    private async void BrowserMonitor_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_monitorReady) return;
-        ApplyMonitor("chrome", ChromeEnabled, ChromeAction);
-        ApplyMonitor("edge", EdgeEnabled, EdgeAction);
-        ApplyMonitor("firefox", FirefoxEnabled, FirefoxAction);
-        await _settings.SaveAsync();
-        UpdateMonitorHint();
-    }
-
-    private void ApplyMonitor(string id, CheckBox enabled, ComboBox action)
-    {
-        var monitor = _settings.FindBrowserMonitor(id);
-        if (monitor is null)
+        Loaded += async (_, _) =>
         {
-            monitor = new BrowserMonitorSetting { Browser = id };
-            _settings.BrowserMonitors.Add(monitor);
-        }
-        monitor.Enabled = enabled.IsChecked == true;
-        monitor.AfterExit = FromComboIndex(action.SelectedIndex);
-    }
-
-    private static int ToComboIndex(ExitAction action) => action switch
-    {
-        ExitAction.DoNothing => 0,
-        ExitAction.CleanSilently => 1,
-        _ => 2
-    };
-
-    private static ExitAction FromComboIndex(int index) => index switch
-    {
-        0 => ExitAction.DoNothing,
-        1 => ExitAction.CleanSilently,
-        _ => ExitAction.CleanAndNotify
-    };
-
-    /// <summary>Shows which items a browser's exit-clean covers: the count, or the
-    /// picker's implicit default before the user has configured anything.</summary>
-    private void UpdateExitItemsButton(Button button, string browser)
-    {
-        var monitor = _settings.FindBrowserMonitor(browser);
-        button.Content = monitor?.Items is { } chosen
-            ? $"{chosen.Count} item(s)…"
-            : "Safe items (default)…";
-    }
-
-    /// <summary>Lets the user pick exactly which items a browser's after-exit clean
-    /// covers. Safe (non-destructive) catalog items are offered and saved
-    /// immediately on confirm; destructive items are listed greyed out so it is
-    /// visible they can never be auto-cleaned. Saving an explicit set (even an
-    /// empty one) marks the browser as configured; Cancel changes nothing.</summary>
-    private async void ChooseExitItems_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: string browser }) return;
-        var monitor = _settings.FindBrowserMonitor(browser);
-        var browserDefinition = BrowserCatalog.Find(browser);
-        if (monitor is null || browserDefinition is null) return;
-
-        var effective = _settings.EffectiveExitItems(browser);
-        var panel = new StackPanel { Spacing = 6 };
-        var boxes = new List<(string Id, CheckBox Box)>();
-        foreach (var item in BrowserCatalog.ItemsFor(browserDefinition.Family))
-        {
-            var box = new CheckBox
-            {
-                Content = item.Name,
-                IsChecked = effective.Contains(item.Id),
-                IsEnabled = !item.Destructive,
-                MinHeight = 26
-            };
-            if (item.Destructive)
-                ToolTipService.SetToolTip(box, "Destructive - cleaned only manually on this page, never automatically.");
-            boxes.Add((item.Id, box));
-            panel.Children.Add(box);
-        }
-
-        var displayName = browserDefinition.Name;
-        var dialog = new ContentDialog
-        {
-            Title = $"{displayName} - items cleaned when it closes",
-            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 360 },
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = XamlRoot
+            _settings = await AppSettings.LoadAsync();
+            CloseBrowsersCheck.IsChecked = _settings.CloseOpenBrowsersAutomatically;
+            _ready = true;
+            await CheckInterruptedAsync();
+            await ScanAsync();
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-        monitor.Items = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        await _settings.SaveAsync();
-        UpdateExitItemsButton((Button)sender, browser);
-        UpdateMonitorHint();
     }
+
 
     private async void CloseBrowsers_Changed(object sender, RoutedEventArgs e)
     {
-        if (!_monitorReady) return;
+        if (!_ready) return;
         _settings.CloseOpenBrowsersAutomatically = CloseBrowsersCheck.IsChecked == true;
         await _settings.SaveAsync();
     }
 
-    private void UpdateMonitorHint()
-    {
-        MonitoringHint.Text = _settings.CleanOnBrowserExit
-            ? "Cleans the items chosen per browser (safe items by default). The browser that just closed is cleaned even if other browsers are still open; passwords, cookies, history, and other destructive items are never cleaned automatically. CleanMachine runs in the background and starts with Windows so exits are detected."
-            : "Monitoring is off - browsers are only cleaned when you run it manually here.";
-    }
 
     /// <summary>Persists one item's tick state so the Browser Cleaner page restores
     /// the user's selection next time. Best-effort - a failed save just means the
@@ -333,8 +203,10 @@ public sealed partial class CleanerPage : Page
         return expander;
     }
 
-    /// <summary>Browser-level detail: summary chips plus one framed row per item,
-    /// each mirroring the left checkbox so the left list stays authoritative.</summary>
+    /// <summary>Browser-level detail: summary chips plus one read-only framed row per
+    /// item (size and file count), each drilling into that item's files on click.
+    /// Selection lives only in the left list, so the right card never duplicates the
+    /// checkboxes.</summary>
     private void ShowBrowserDetail(BrowserScan scan)
     {
         _detailScan = scan;
@@ -342,7 +214,7 @@ public sealed partial class CleanerPage : Page
         DetailGroupBadge.Visibility = Visibility.Visible;
         DetailGroupBadgeText.Text = "BROWSER";
         DetailHeadline.Text = scan.Name;
-        DetailSubHeadline.Text = "Click an item to see details.";
+        DetailSubHeadline.Text = "Click an item to see the files it will clean. Tick items in the list on the left.";
         DetailPanel.Children.Clear();
 
         if (scan.Items.Count == 0)
@@ -359,23 +231,13 @@ public sealed partial class CleanerPage : Page
         foreach (var item in scan.Items)
         {
             var current = item;
-            var sourceBox = _itemBoxes.FirstOrDefault(x => x.BrowserId == scan.Id && x.ItemId == item.Id).Box;
 
+            // The right card is a read-only breakdown: it shows each item and drills
+            // into its files. Selection lives only in the left list, so there is no
+            // duplicate checkbox here.
             var row = new Grid { ColumnSpacing = 10 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var mirror = new CheckBox
-            {
-                IsChecked = sourceBox?.IsChecked == true,
-                MinWidth = 0,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            mirror.Checked += (_, _) => { if (sourceBox is not null) sourceBox.IsChecked = true; };
-            mirror.Unchecked += (_, _) => { if (sourceBox is not null) sourceBox.IsChecked = false; };
-            Grid.SetColumn(mirror, 0);
-            row.Children.Add(mirror);
 
             var body = new Button
             {
@@ -407,7 +269,7 @@ public sealed partial class CleanerPage : Page
             body.Content = label;
             body.Click += (_, _) => ShowItemDetail(scan, current);
             ToolTipService.SetToolTip(body, item.Description);
-            Grid.SetColumn(body, 1);
+            Grid.SetColumn(body, 0);
             row.Children.Add(body);
 
             var side = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
@@ -424,7 +286,7 @@ public sealed partial class CleanerPage : Page
                 FontSize = 10,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
-            Grid.SetColumn(side, 2);
+            Grid.SetColumn(side, 1);
             row.Children.Add(side);
 
             DetailPanel.Children.Add(new Border
@@ -439,8 +301,9 @@ public sealed partial class CleanerPage : Page
         }
     }
 
-    /// <summary>Item-level detail: what the item is, its size, and a caution for
-    /// destructive items. The Back button returns to the browser's item list.</summary>
+    /// <summary>Item-level detail: the actual files the item would clean (with sizes),
+    /// plus a caution for destructive items. The Back button returns to the browser's
+    /// item list.</summary>
     private void ShowItemDetail(BrowserScan scan, BrowserItemInfo item)
     {
         _detailScan = scan;
@@ -448,15 +311,71 @@ public sealed partial class CleanerPage : Page
         DetailGroupBadge.Visibility = Visibility.Visible;
         DetailGroupBadgeText.Text = "BROWSER";
         DetailHeadline.Text = $"{scan.Name} - {item.Name}";
-        DetailSubHeadline.Text = item.Destructive ? "Destructive item - off by default." : "Safe cache item.";
+        DetailSubHeadline.Text = item.Description;
         SetChips(item.Bytes > 0 ? AppNotifications.FormatBytes(item.Bytes) : "-", item.FileCount.ToString("N0"), "1");
         DetailPanel.Children.Clear();
-        DetailPanel.Children.Add(DetailRow("Item", item.Name));
-        DetailPanel.Children.Add(DetailRow("What it is", item.Description));
-        DetailPanel.Children.Add(DetailRow("Size", $"{AppNotifications.FormatBytes(item.Bytes)} · {item.FileCount:N0} file(s)"));
+
         if (item.Destructive)
             DetailPanel.Children.Add(DetailRow("Caution",
-                "Deletes personal data such as cookies, history or saved passwords. Never cleaned automatically; ticking it here removes it permanently."));
+                "Deletes personal data such as cookies, history or saved passwords. Cleaned automatically only if you opt this item in on the close-monitor; ticking it here removes it permanently."));
+
+        const int shown = 200;
+        var files = _service.ListItemFiles(scan.Id, item.Id, shown + 1)
+            .OrderByDescending(f => f.Bytes)
+            .ToList();
+        if (files.Count == 0)
+        {
+            DetailPanel.Children.Add(BuildDetailPlaceholder("No files in this location right now."));
+            return;
+        }
+
+        foreach (var file in files.Take(shown))
+            DetailPanel.Children.Add(FileRow(file.Path, file.Bytes));
+
+        if (item.FileCount > shown)
+            DetailPanel.Children.Add(new TextBlock
+            {
+                Text = $"+ {item.FileCount - shown:N0} more file(s)",
+                FontSize = 10,
+                Margin = new Thickness(4, 4, 0, 0),
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
+    }
+
+    private static Border FileRow(string path, long bytes)
+    {
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var name = new TextBlock
+        {
+            Text = path,
+            FontSize = 11,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ToolTipService.SetToolTip(name, path);
+        Grid.SetColumn(name, 0);
+        grid.Children.Add(name);
+        var size = new TextBlock
+        {
+            Text = AppNotifications.FormatBytes(bytes),
+            FontSize = 10,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(size, 1);
+        grid.Children.Add(size);
+        return new Border
+        {
+            Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+            BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 5, 10, 5),
+            Child = grid
+        };
     }
 
     private static Border DetailRow(string label, string value) => new()

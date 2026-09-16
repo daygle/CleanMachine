@@ -300,6 +300,28 @@ public sealed class BrowserCleanupService
         return [];
     }
 
+    /// <summary>The individual files an item's clean would remove for a browser, with
+    /// sizes, for the detail drill-down. An item can map to several roots (cache
+    /// spans Cache, Code Cache, GPUCache, ... across every profile), so this flattens
+    /// them all into one list.</summary>
+    public IReadOnlyList<CleanupFileDetail> ListItemFiles(string browserId, string itemId, int max = 500)
+    {
+        var browser = BrowserCatalog.Find(browserId);
+        if (browser is null || !BrowserCatalog.IsInstalled(browser)) return [];
+        var profiles = BrowserCatalog.Profiles(browser);
+        var userData = browser.UserDataRoots.Where(Directory.Exists).ToArray();
+        var files = new List<CleanupFileDetail>();
+        foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
+            foreach (var file in EnumerateFiles(path))
+            {
+                try { files.Add(new CleanupFileDetail(file, new FileInfo(file).Length)); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+                if (files.Count >= max) return files; // cap the UI drill-down; the scan carries the true total
+            }
+        return files;
+    }
+
     private static (int Removed, long Bytes, List<CleanupIssue> Skipped) DeletePath(string path, SecureDeleteOptions? secureDelete = null)
     {
         var removed = 0;

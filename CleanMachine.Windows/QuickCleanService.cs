@@ -5,7 +5,7 @@ public enum QuickCleanArea { Browsers, Windows, Registry, Apps }
 
 /// <summary>Result of one area's Quick Clean. <see cref="Note"/> carries a short
 /// explanation when nothing was cleaned (e.g. no items selected).</summary>
-public sealed record QuickCleanResult(int Items, long Bytes, IReadOnlyList<string> Issues, string? Note = null);
+public sealed record QuickCleanResult(int Items, long Bytes, IReadOnlyList<string> Issues, string? Note = null, IReadOnlyList<string>? Details = null);
 
 /// <summary>Runs a single Overview area's Quick Clean using the user's saved per-area
 /// item selection (<see cref="AppSettings.QuickCleanWindowsCategories"/> and friends).
@@ -45,7 +45,8 @@ public static class QuickCleanService
                 DateTimeOffset.UtcNow,
                 $"Quick Clean · {Title(area)}",
                 $"Cleaned {result.Items:N0} item(s), {AppNotifications.FormatBytes(result.Bytes)} recovered"
-                + (result.Issues.Count > 0 ? $" · {result.Issues.Count} skipped" : string.Empty)));
+                + (result.Issues.Count > 0 ? $" · {result.Issues.Count} skipped" : string.Empty),
+                result.Details));
         }
         return result;
     }
@@ -73,7 +74,8 @@ public static class QuickCleanService
             categories,
             new WindowsCleanupOptions(ConfirmReviewCategories: false, AllowElevation: false, ExcludedPaths: settings.ExcludedPaths),
             cancellationToken: token);
-        return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped));
+        return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped),
+            Details: ActivityStore.BreakdownLines(report.Breakdown));
     }
 
     private static async Task<QuickCleanResult> RunRegistryAsync(AppSettings settings, CancellationToken token)

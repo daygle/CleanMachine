@@ -24,7 +24,25 @@ public sealed partial class DriveWiperPage : Page
         for (var i = 0; i < _drives.Count; i++)
             if (_drives[i].IsSystemDrive) { systemIndex = i; break; }
         DriveCombo.SelectedIndex = systemIndex >= 0 ? systemIndex : _drives.Count > 0 ? 0 : -1;
+        UpdateMetadataOptions();
         return Task.CompletedTask;
+    }
+
+    // Enable each metadata-wipe option only for the filesystem it applies to, so the
+    // checkboxes never imply an effect the selected drive cannot deliver.
+    private void Drive_Changed(object sender, SelectionChangedEventArgs e) => UpdateMetadataOptions();
+
+    private void UpdateMetadataOptions()
+    {
+        var target = DriveCombo.SelectedIndex >= 0 && DriveCombo.SelectedIndex < _drives.Count
+            ? _drives[DriveCombo.SelectedIndex]
+            : null;
+        WipeMftCheck.IsEnabled = target?.IsNtfs == true;
+        WipeFatCheck.IsEnabled = target?.IsFat == true;
+        ToolTipService.SetToolTip(WipeMftCheck,
+            target?.IsNtfs == true ? null : "Only applies to NTFS volumes.");
+        ToolTipService.SetToolTip(WipeFatCheck,
+            target?.IsFat == true ? null : "Only applies to FAT/exFAT volumes.");
     }
 
     private async Task CheckInterruptedWipeAsync()
@@ -38,11 +56,15 @@ public sealed partial class DriveWiperPage : Page
         if (DriveCombo.SelectedIndex < 0 || DriveCombo.SelectedIndex >= _drives.Count) return;
         var target = _drives[DriveCombo.SelectedIndex];
         var passes = PassesCombo.SelectedIndex switch { 1 => 3, 2 => 7, _ => 1 };
+        var metadataNote =
+            WipeMftCheck.IsChecked == true && target.IsNtfs ? " It will then overwrite free MFT records (many small temp files, briefly)." :
+            WipeFatCheck.IsChecked == true && target.IsFat ? " It will then overwrite freed FAT directory entries (many small temp files, briefly)." :
+            string.Empty;
 
         var confirm = new ContentDialog
         {
             Title = $"Wipe free space on {target.DisplayName}?",
-            Content = $"{passes} pass(es) will overwrite {WindowsCleanupPage.FormatBytes(target.FreeBytes)} of unused space. " +
+            Content = $"{passes} pass(es) will overwrite {WindowsCleanupPage.FormatBytes(target.FreeBytes)} of unused space.{metadataNote} " +
                       "This can take a long time on large or slow drives and cannot be cancelled without losing progress. Continue?",
             PrimaryButtonText = "Wipe",
             CloseButtonText = "Cancel",
@@ -53,6 +75,8 @@ public sealed partial class DriveWiperPage : Page
         WipeButton.IsEnabled = false;
         DriveCombo.IsEnabled = false;
         PassesCombo.IsEnabled = false;
+        WipeMftCheck.IsEnabled = false;
+        WipeFatCheck.IsEnabled = false;
         CancelButton.IsEnabled = true;
         Progress.Visibility = Visibility.Visible;
         _cancel = new CancellationTokenSource();
@@ -63,7 +87,9 @@ public sealed partial class DriveWiperPage : Page
                 Progress.Value = p.Total == 0 ? 0 : (double)p.Completed / p.Total;
                 StatusText.Text = $"{p.Phase}: {p.Completed:N0}/{p.Total:N0} MB written";
             });
-            var result = await _service.WipeFreeSpaceAsync(target, passes, progress, _cancel.Token);
+            var result = await _service.WipeFreeSpaceAsync(target, passes, progress, _cancel.Token,
+                wipeMftFreeSpace: WipeMftCheck.IsChecked == true && target.IsNtfs,
+                wipeFatFreeSpace: WipeFatCheck.IsChecked == true && target.IsFat);
             StatusText.Text = $"Done: {result.Passes} pass(es), {WindowsCleanupPage.FormatBytes(result.BytesOverwritten)} overwritten in {result.Duration:hh\\:mm\\:ss}.";
         }
         catch (OperationCanceledException)

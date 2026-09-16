@@ -70,6 +70,7 @@ public sealed class ScheduleService
         CleanupSchedule schedule, AppSettings settings, CancellationToken token = default)
     {
         var issues = new List<string>();
+        var details = new List<string>();
         var items = 0;
         long bytes = 0;
 
@@ -92,6 +93,7 @@ public sealed class ScheduleService
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;
                 issues.AddRange(report.Skipped.Select(s => $"{s.Path}: {s.Reason}"));
+                details.AddRange(ActivityStore.BreakdownLines(report.Breakdown) ?? []);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -111,6 +113,8 @@ public sealed class ScheduleService
                     token: token);
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;
+                if (report.Result.ItemsRemoved > 0)
+                    details.Add($"Browser caches - {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)}");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -136,6 +140,8 @@ public sealed class ScheduleService
                     items += report.Result.ItemsRemoved;
                     bytes += report.Result.BytesRecovered;
                     issues.AddRange(report.Skipped.Select(s => $"{s.Path}: {s.Reason}"));
+                    if (report.Result.ItemsRemoved > 0)
+                        details.Add($"Application temp files - {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)}");
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -158,7 +164,12 @@ public sealed class ScheduleService
                 if (review.Findings.Count > 0 && review.Backups.Count == 0)
                     issues.Add("Registry cleanup skipped: no backup could be created.");
                 else if (review.Findings.Count > 0)
-                    items += (await service.CleanAsync(review, token)).Removed;
+                {
+                    var registryRemoved = (await service.CleanAsync(review, token)).Removed;
+                    items += registryRemoved;
+                    if (registryRemoved > 0)
+                        details.Add($"Registry - {registryRemoved:N0} item(s)");
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -173,7 +184,8 @@ public sealed class ScheduleService
             DateTimeOffset.UtcNow,
             "Scheduled cleanup",
             $"'{schedule.Name}' cleaned {items:N0} item(s), {AppNotifications.FormatBytes(bytes)} recovered" +
-            (issues.Count > 0 ? $" · {issues.Count} skipped" : string.Empty)), token);
+            (issues.Count > 0 ? $" · {issues.Count} skipped" : string.Empty),
+            details.Count > 0 ? details : null), token);
 
         if (schedule.AfterClean == ScheduleAction.Notify && items > 0)
             AppNotifications.ShowSystemCleanupComplete(new CleanupResult(items, bytes));
