@@ -20,10 +20,11 @@
 
     <!-- Summary bar -->
     <Border Grid.Row="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16,12">
-      <Grid>
+      <Grid ColumnSpacing="12">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="20">
@@ -37,13 +38,25 @@
             <TextBlock x:Name="EnabledCount" Text="0 enabled" FontSize="13"
                        Foreground="#6E8178" VerticalAlignment="Center"/>
           </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="6">
+          <!-- Orphaned-entry warning: shown (icon + text together) only when there are
+               orphans, so the error icon never appears on a clean startup list. -->
+          <StackPanel x:Name="OrphanBadge" Orientation="Horizontal" Spacing="6" Visibility="Collapsed">
             <FontIcon Glyph="&#xEA39;" FontSize="14" Foreground="#C7775D" VerticalAlignment="Center"/>
-            <TextBlock x:Name="OrphanCount" Text="0 orphaned" FontSize="13" Visibility="Collapsed"
+            <TextBlock x:Name="OrphanCount" Text="0 orphaned" FontSize="13"
                        Foreground="#C7775D" VerticalAlignment="Center"/>
           </StackPanel>
         </StackPanel>
-        <Button Grid.Column="2" Content="Scan" x:Name="ScanButton" Click="Scan_Click"
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="Sort" FontSize="12" Foreground="#6E8178" VerticalAlignment="Center"/>
+          <ComboBox x:Name="SortBox" MinWidth="150" VerticalAlignment="Center"
+                    SelectionChanged="SortBox_SelectionChanged"
+                    ToolTipService.ToolTip="Choose how the startup entries are ordered">
+            <ComboBoxItem Content="Location" IsSelected="True"/>
+            <ComboBoxItem Content="Name (A–Z)"/>
+            <ComboBoxItem Content="Status (enabled first)"/>
+          </ComboBox>
+        </StackPanel>
+        <Button Grid.Column="3" Content="Scan" x:Name="ScanButton" Click="Scan_Click"
                 Background="#286E58" Foreground="White" Padding="20,8"/>
       </Grid>
     </Border>

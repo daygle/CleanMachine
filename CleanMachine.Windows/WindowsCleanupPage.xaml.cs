@@ -53,7 +53,10 @@ public sealed partial class WindowsCleanupPage : Page
                      .OrderBy(g => GroupIndex(g.Key)))
         {
             var categories = group.OrderBy(c => c.Name)
-                .Where(c => showClean || (bytesById.TryGetValue(c.Id, out var b) && b > 0))
+                // Windows Update Cleanup (component store) can't be pre-measured without a
+                // slow, elevated DISM analysis, so it is always listed and selectable
+                // rather than gated on a scanned byte count like the file categories.
+                .Where(c => showClean || c.Kind == CleanupKind.ComponentStore || (bytesById.TryGetValue(c.Id, out var b) && b > 0))
                 .ToList();
             if (categories.Count == 0) continue;
 
@@ -61,19 +64,25 @@ public sealed partial class WindowsCleanupPage : Page
             foreach (var category in categories)
             {
                 var bytes = bytesById.TryGetValue(category.Id, out var b) ? b : 0;
+                var isComponentStore = category.Kind == CleanupKind.ComponentStore;
                 var hasData = bytes > 0;
-                var size = category.Kind == CleanupKind.RegistryValues
-                    ? (hasData ? $"{bytes:N0} entries" : "Clean")
-                    : (hasData ? FormatBytes(bytes) : "Clean");
+                var selectable = hasData || isComponentStore;
+                var size = isComponentStore
+                    ? "Admin"
+                    : category.Kind == CleanupKind.RegistryValues
+                        ? (hasData ? $"{bytes:N0} entries" : "Clean")
+                        : (hasData ? FormatBytes(bytes) : "Clean");
                 var box = new CheckBox
                 {
                     Content = $"{category.Name}  ·  {size}",
                     IsChecked = WindowsCleanupService.IsEnabled(category, _settings),
                     Tag = category,
                     MinHeight = 30,
-                    IsEnabled = hasData,                 // empty categories are shown but not selectable
-                    Opacity = hasData ? 1.0 : 0.5
+                    IsEnabled = selectable,              // empty file categories are shown but not selectable
+                    Opacity = selectable ? 1.0 : 0.5
                 };
+                if (isComponentStore)
+                    ToolTipService.SetToolTip(box, "Removes superseded Windows Update components from the component store (WinSxS). Requires administrator approval, can take several minutes, and cannot be undone.");
                 box.Checked += (_, _) => SetEnabled(category, true);
                 box.Unchecked += (_, _) => SetEnabled(category, false);
                 CategoryPanel.Children.Add(box);
