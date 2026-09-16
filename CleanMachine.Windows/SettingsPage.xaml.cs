@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Windows.Globalization.NumberFormatting;
 
 namespace CleanMachine.Windows;
 
@@ -34,7 +35,8 @@ public sealed partial class SettingsPage : Page
         _unitIsMb = string.Equals(_settings.SystemMonitorFreeSpaceUnit, "MB", StringComparison.OrdinalIgnoreCase);
         FreeSpaceUnit.SelectedIndex = _unitIsMb ? 1 : 0;
         ApplyFreeSpaceBounds(_unitIsMb);
-        FreeSpaceBox.Value = _unitIsMb ? _settings.SystemMonitorFreeSpaceGb * MbPerGb : _settings.SystemMonitorFreeSpaceGb;
+        var loaded = RoundForUnit(_unitIsMb ? _settings.SystemMonitorFreeSpaceGb * MbPerGb : _settings.SystemMonitorFreeSpaceGb, _unitIsMb);
+        FreeSpaceBox.Value = Math.Clamp(loaded, FreeSpaceBox.Minimum, FreeSpaceBox.Maximum);
         _loadingUnit = false;
         SystemMonitorAction.SelectedIndex = ToComboIndex(_settings.SystemMonitorAction);
         UpdateMonitorItemsSummary();
@@ -79,7 +81,8 @@ public sealed partial class SettingsPage : Page
         if (newIsMb == _unitIsMb) return;
         var current = double.IsNaN(FreeSpaceBox.Value) ? 0 : FreeSpaceBox.Value;
         ApplyFreeSpaceBounds(newIsMb);
-        FreeSpaceBox.Value = newIsMb ? current * MbPerGb : current / MbPerGb;
+        var converted = RoundForUnit(newIsMb ? current * MbPerGb : current / MbPerGb, newIsMb);
+        FreeSpaceBox.Value = Math.Clamp(converted, FreeSpaceBox.Minimum, FreeSpaceBox.Maximum);
         _unitIsMb = newIsMb;
         if (!_loading) _ = PersistAsync();
     }
@@ -98,13 +101,33 @@ public sealed partial class SettingsPage : Page
         {
             FreeSpaceBox.Minimum = 50; FreeSpaceBox.Maximum = 102400;
             FreeSpaceBox.SmallChange = 50; FreeSpaceBox.LargeChange = 500;
+            // Whole megabytes only: an integer formatter keeps the displayed text in
+            // sync with the value. Without an explicit formatter the default one can
+            // render a converted value like 549.99 oddly, which desyncs the text from
+            // the value and leaves the box unable to accept typed input.
+            FreeSpaceBox.NumberFormatter = MakeFormatter(0);
         }
         else
         {
             FreeSpaceBox.Minimum = 0.1; FreeSpaceBox.Maximum = 100;
             FreeSpaceBox.SmallChange = 0.1; FreeSpaceBox.LargeChange = 1;
+            FreeSpaceBox.NumberFormatter = MakeFormatter(2);
         }
     }
+
+    /// <summary>A plain decimal formatter with a fixed number of fraction digits and
+    /// no digit grouping, so the NumberBox never shows a stray leading zero or a long
+    /// floating-point tail after a unit conversion.</summary>
+    private static DecimalFormatter MakeFormatter(int fractionDigits) => new()
+    {
+        IntegerDigits = 1,
+        FractionDigits = fractionDigits,
+        IsGrouped = false
+    };
+
+    /// <summary>Rounds a value for display in the given unit: whole megabytes, or
+    /// gigabytes to two decimals.</summary>
+    private static double RoundForUnit(double value, bool isMb) => isMb ? Math.Round(value) : Math.Round(value, 2);
 
     /// <summary>The Safe Windows categories the monitor may clean, with each one's
     /// current tick state: the user's saved selection when configured, otherwise the
