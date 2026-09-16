@@ -120,6 +120,16 @@ public sealed partial class RegistryCarePage : Page
         if (_findings.Count > 0) RenderFindings();
     }
 
+    /// <summary>Ticks or clears every cleanable finding currently shown; findings that
+    /// aren't eligible for cleaning are disabled and left untouched.</summary>
+    private void SelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        var value = SelectAllCheck.IsChecked == true;
+        foreach (var (_, box) in _findingBoxes)
+            if (box.IsEnabled)
+                box.IsChecked = value;
+    }
+
     private Expander BuildCategoryExpander(string category, IReadOnlyList<RegistryFinding> findings)
     {
         var eligible = findings.Count(RegistryCareService.IsCleanable);

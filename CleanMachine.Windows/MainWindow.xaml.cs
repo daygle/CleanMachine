@@ -92,18 +92,44 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            var logoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppLogo.png");
-            if (!File.Exists(logoPath)) return;
-            // Decode from a stream rather than a file:// Uri: in unpackaged (installer)
-            // builds a BitmapImage built from a file Uri can silently fail to load,
-            // leaving the sidebar mark blank. A stream decode is reliable in both
-            // packaged and unpackaged builds.
-            var bitmap = new BitmapImage();
-            await using (var stream = File.OpenRead(logoPath))
+            // Prefer the copy embedded in the assembly: loose Content files can fail to
+            // be laid down (or found) in unpackaged/installer builds, which showed the
+            // sidebar mark blank. The embedded stream is always present. Fall back to the
+            // loose Assets\AppLogo.png next to the executable if, for any reason, the
+            // manifest resource is missing.
+            var stream = OpenLogoStream();
+            if (stream is null) return;
+            await using (stream)
+            {
+                // Decode from a stream rather than a file:// Uri: in unpackaged (installer)
+                // builds a BitmapImage built from a file Uri can silently fail to load,
+                // leaving the sidebar mark blank. A stream decode is reliable in both
+                // packaged and unpackaged builds.
+                var bitmap = new BitmapImage();
                 await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
-            SidebarLogo.Source = bitmap;
+                SidebarLogo.Source = bitmap;
+            }
         }
         catch { /* the logo is decorative; a blank image is an acceptable fallback */ }
+    }
+
+    /// <summary>Opens the sidebar logo bytes, preferring the embedded assembly resource
+    /// and falling back to the loose file next to the executable. Returns null if
+    /// neither source is available.</summary>
+    private static Stream? OpenLogoStream()
+    {
+        var assembly = typeof(MainWindow).Assembly;
+        var resourceName = Array.Find(
+            assembly.GetManifestResourceNames(),
+            n => n.EndsWith("AppLogo.png", StringComparison.OrdinalIgnoreCase));
+        if (resourceName is not null)
+        {
+            var embedded = assembly.GetManifestResourceStream(resourceName);
+            if (embedded is not null) return embedded;
+        }
+
+        var logoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppLogo.png");
+        return File.Exists(logoPath) ? File.OpenRead(logoPath) : null;
     }
 
     /// <summary>Loads the app icon embedded in the executable (resource 32512),

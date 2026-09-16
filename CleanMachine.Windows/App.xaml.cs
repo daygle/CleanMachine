@@ -73,7 +73,7 @@ public partial class App : Application
         // with Windows" this cleans at every logon). Fire-and-forget so it never
         // delays the window coming up.
         if (settings.CleanAtStartup)
-            _ = RunSafeCleanAsync(settings, "Startup cleanup", "At startup", settings.StartupCleanCategories, CancellationToken.None);
+            _ = RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, CancellationToken.None);
         // Keep the OS task store in step with whatever schedules are saved.
         _ = ScheduleService.SyncAllAsync(settings);
     }
@@ -240,7 +240,7 @@ public partial class App : Application
                 AppNotifications.ShowCleanupComplete(report.Result);
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
-                "Browser monitoring",
+                "Browser Monitoring",
                 $"{displayName} closed - cleaned {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered"),
                 token);
         }
@@ -306,7 +306,7 @@ public partial class App : Application
             if (IdleTime().TotalMinutes < Math.Max(1, settings.IdleCleanMinutes)) { _idleCleanArmed = true; return; }
             if (!_idleCleanArmed) return;
             _idleCleanArmed = false; // one clean per idle period
-            await RunSafeCleanAsync(settings, "Idle cleanup", $"Idle {Math.Max(1, settings.IdleCleanMinutes)}+ min", settings.IdleCleanCategories, token);
+            await RunSafeCleanAsync(settings, "Idle Cleanup", $"Idle {Math.Max(1, settings.IdleCleanMinutes)}+ min", settings.IdleCleanCategories, token);
         }
         catch { /* best-effort; never kill the agent loop */ }
     }
@@ -393,7 +393,7 @@ public partial class App : Application
             var thresholdLabel = usingMb ? $"{thresholdGb * 1024.0:0.#} MB" : $"{thresholdGb:0.#} GB";
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
-                "System monitoring",
+                "System Monitoring",
                 $"Free space below {thresholdLabel} - cleaned {report.Result.ItemsRemoved:N0} items, {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered",
                 ActivityStore.BreakdownLines(report.Breakdown)),
                 token);

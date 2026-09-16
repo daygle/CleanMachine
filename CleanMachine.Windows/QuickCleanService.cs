@@ -20,10 +20,10 @@ public static class QuickCleanService
 
     public static string Title(QuickCleanArea area) => area switch
     {
-        QuickCleanArea.Browsers => "Browser caches",
-        QuickCleanArea.Windows => "Windows cleanup",
-        QuickCleanArea.Registry => "Registry care",
-        _ => "Application temp files"
+        QuickCleanArea.Browsers => "Browser Caches",
+        QuickCleanArea.Windows => "Windows Cleanup",
+        QuickCleanArea.Registry => "Registry Care",
+        _ => "Application Temp Files"
     };
 
     public static async Task<QuickCleanResult> RunAsync(QuickCleanArea area, CancellationToken token = default)

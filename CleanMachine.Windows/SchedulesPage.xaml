@@ -44,14 +44,14 @@
       <Border Grid.Column="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel x:Name="EditorPanel" Spacing="10">
-            <TextBlock x:Name="EditorHeadline" Text="No schedule selected"
+            <TextBlock x:Name="EditorHeadline" Text="No Schedule Selected"
                        FontSize="16" FontWeight="SemiBold" Foreground="#273630"/>
             <TextBlock x:Name="EditorHint" Text="Add a schedule or pick one on the left to edit it."
                        FontSize="12" Foreground="#89958F" TextWrapping="Wrap"/>
 
             <StackPanel x:Name="EditorFields" Spacing="10" Visibility="Collapsed">
               <TextBox x:Name="NameBox" Header="Name" PlaceholderText="Scheduled cleanup"/>
-              <CheckBox x:Name="EnabledCheck" Content="Enabled (register this task with Windows)"/>
+              <CheckBox x:Name="EnabledCheck" Content="Enabled"/>
 
               <ComboBox x:Name="TriggerCombo" Header="Trigger" HorizontalAlignment="Stretch" SelectionChanged="Trigger_Changed">
                 <ComboBoxItem Content="Daily"/>
@@ -79,7 +79,7 @@
 
               <Grid Margin="0,4,0,0">
                 <TextBlock Text="ITEMS TO CLEAN" FontSize="10" Foreground="#7F9189" VerticalAlignment="Center"/>
-                <CheckBox x:Name="SelectAllItems" Content="Select all" FontSize="12" MinWidth="0"
+                <CheckBox x:Name="SelectAllItems" Content="Select All" FontSize="12" MinWidth="0"
                           HorizontalAlignment="Right" Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
               </Grid>
               <StackPanel x:Name="ItemsPanel" Spacing="2"/>
