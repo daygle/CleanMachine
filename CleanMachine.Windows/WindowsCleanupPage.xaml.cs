@@ -186,65 +186,125 @@ public sealed partial class WindowsCleanupPage : Page
         }
     }
 
-    private StackPanel BuildReportRow(CleanupCategory category, string group, CleanupItem item)
+    private Border BuildReportRow(CleanupCategory category, string group, CleanupItem item)
     {
         var isFile = category.Kind == CleanupKind.Files;
         var isHistory = category.Kind == CleanupKind.RegistryValues;
 
-        var border = new Border
-        {
-            Padding = new Thickness(8, 5, 8, 5),
-            CornerRadius = new CornerRadius(6),
-            Margin = new Thickness(0, 1, 0, 1),
-            Tag = category,
-            Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0))
-        };
-        if (isFile)
-        {
-            border.PointerEntered += (_, _) => border.Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xF3, 0xF8, 0xF5));
-            border.PointerExited += (_, _) => border.Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0));
-            border.PointerPressed += (_, _) => OnReportRowClicked(category);
-        }
+        // Framed card matching the Application Cleanup / Browser Cleaner right panels:
+        // a two-line body on the left, a size/entries stack on the right.
+        var row = new Grid { ColumnSpacing = 10 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, MinHeight = 26 };
-        row.Children.Add(new FontIcon
+        var label = new StackPanel { Spacing = 1 };
+        label.Children.Add(new TextBlock
         {
-            Glyph = isFile ? "\xE8A5" : "\xEA18", // Document : Database
-            FontSize = 13,
-            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69))
-        });
-        row.Children.Add(new TextBlock
-        {
-            Text = $"{group} · {category.Name}",
-            FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
-        });
-        row.Children.Add(new TextBlock
-        {
-            Text = isHistory ? $"{item.Bytes:N0} entries" : FormatBytes(item.Bytes),
+            Text = category.Name,
             FontSize = 12,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
         });
+        label.Children.Add(new TextBlock
+        {
+            Text = category.Description,
+            FontSize = 10,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+        });
+
+        // File categories drill into their files on click (transparent button gives the
+        // hover/press feedback); history categories have no file list, so they stay static.
         if (isFile)
         {
-            row.Children.Add(new TextBlock
+            var body = new Button
             {
-                Text = "\uE974", // RightArrow
-                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe MDL2 Assets"),
-                FontSize = 12,
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(10, 8, 10, 8),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Center,
-                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x9A, 0xA6, 0xA1))
-            });
+                CornerRadius = new CornerRadius(8),
+                Content = label
+            };
+            body.Click += (_, _) => OnReportRowClicked(category);
+            ToolTipService.SetToolTip(body, category.Path ?? category.Description);
+            Grid.SetColumn(body, 0);
+            row.Children.Add(body);
+        }
+        else
+        {
+            label.Margin = new Thickness(10, 8, 10, 8);
+            Grid.SetColumn(label, 0);
+            row.Children.Add(label);
         }
 
-        border.Child = row;
-        var panel = new StackPanel { Spacing = 0 };
-        panel.Children.Add(border);
-        return panel;
+        var side = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+        side.Children.Add(new TextBlock
+        {
+            Text = isHistory ? $"{item.Bytes:N0}" : FormatBytes(item.Bytes),
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58))
+        });
+        side.Children.Add(new TextBlock
+        {
+            Text = isHistory ? "entries" : group,
+            FontSize = 10,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+        });
+        Grid.SetColumn(side, 1);
+        row.Children.Add(side);
+
+        return new Border
+        {
+            Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+            BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 6, 10, 6),
+            Tag = category,
+            Child = row
+        };
+    }
+
+    /// <summary>A framed file row for the drill-down, matching the other pages' file
+    /// lists: file name on the left, size on the right, full path on hover.</summary>
+    private static Border FileCard(string path, long bytes)
+    {
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var name = new TextBlock
+        {
+            Text = Path.GetFileName(path),
+            FontSize = 11,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ToolTipService.SetToolTip(name, path);
+        Grid.SetColumn(name, 0);
+        grid.Children.Add(name);
+        var size = new TextBlock
+        {
+            Text = FormatBytes(bytes),
+            FontSize = 10,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(size, 1);
+        grid.Children.Add(size);
+        return new Border
+        {
+            Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+            BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 5, 10, 5),
+            Child = grid
+        };
     }
 
     private async void OnReportRowClicked(CleanupCategory category)
@@ -280,27 +340,7 @@ public sealed partial class WindowsCleanupPage : Page
 
             var display = files.Take(300).ToList();
             foreach (var file in display)
-            {
-                var fileRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 2, 0, 2) };
-                fileRow.Children.Add(new TextBlock
-                {
-                    Text = Path.GetFileName(file.Path),
-                    FontSize = 11,
-                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    MaxWidth = 320,
-                    VerticalAlignment = VerticalAlignment.Center
-                });
-                fileRow.Children.Add(new TextBlock
-                {
-                    Text = FormatBytes(file.Bytes),
-                    FontSize = 10,
-                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
-                    VerticalAlignment = VerticalAlignment.Center
-                });
-                ToolTipService.SetToolTip(fileRow, file.Path);
-                ReportPanel.Children.Add(fileRow);
-            }
+                ReportPanel.Children.Add(FileCard(file.Path, file.Bytes));
 
             if (files.Count > 300)
             {
