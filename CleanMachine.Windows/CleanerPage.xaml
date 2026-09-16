@@ -5,7 +5,6 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
@@ -17,67 +16,8 @@
     <TextBlock Grid.Row="1" Text="Tick what to clear for each installed browser. Destructive items - cookies, history, saved passwords - are off by default. Close the browser before cleaning."
                TextWrapping="Wrap" Foreground="#89958F"/>
 
-    <!-- Browser monitoring: what happens when each browser closes. -->
-    <Border Grid.Row="2" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
-      <StackPanel Spacing="10">
-        <CheckBox x:Name="CleanToggle" Content="Monitor supported browsers and clean caches when they close"
-                  FontSize="13" Checked="CleanToggle_Changed" Unchecked="CleanToggle_Changed"/>
-        <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="8" Padding="14">
-          <Grid MinWidth="460">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="230"/>
-              <ColumnDefinition Width="170"/>
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/>
-              <RowDefinition Height="Auto"/>
-              <RowDefinition Height="Auto"/>
-              <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0" Grid.Column="0" Text="Browser" FontSize="11" Foreground="#7F9189" Margin="0,0,0,6"/>
-            <TextBlock Grid.Row="0" Grid.Column="1" Text="After closing" FontSize="11" Foreground="#7F9189" Margin="0,0,0,6"/>
-            <TextBlock Grid.Row="0" Grid.Column="2" Text="Items cleaned" FontSize="11" Foreground="#7F9189" Margin="0,0,0,6"/>
-            <CheckBox Grid.Row="1" Grid.Column="0" x:Name="ChromeEnabled" Content="Google Chrome" Margin="0,4,0,4"
-                      Checked="BrowserMonitor_Changed" Unchecked="BrowserMonitor_Changed"/>
-            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="ChromeAction" SelectedIndex="2" Margin="0,4,0,4"
-                      SelectionChanged="BrowserMonitor_Changed">
-              <ComboBoxItem Content="Do nothing"/>
-              <ComboBoxItem Content="Clean silently"/>
-              <ComboBoxItem Content="Clean and notify"/>
-            </ComboBox>
-            <Button Grid.Row="1" Grid.Column="2" x:Name="ChromeItemsButton" Tag="chrome" Click="ChooseExitItems_Click"
-                    Padding="10,4" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Left"/>
-            <CheckBox Grid.Row="2" Grid.Column="0" x:Name="EdgeEnabled" Content="Microsoft Edge" Margin="0,4,0,4"
-                      Checked="BrowserMonitor_Changed" Unchecked="BrowserMonitor_Changed"/>
-            <ComboBox Grid.Row="2" Grid.Column="1" x:Name="EdgeAction" SelectedIndex="2" Margin="0,4,0,4"
-                      SelectionChanged="BrowserMonitor_Changed">
-              <ComboBoxItem Content="Do nothing"/>
-              <ComboBoxItem Content="Clean silently"/>
-              <ComboBoxItem Content="Clean and notify"/>
-            </ComboBox>
-            <Button Grid.Row="2" Grid.Column="2" x:Name="EdgeItemsButton" Tag="edge" Click="ChooseExitItems_Click"
-                    Padding="10,4" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Left"/>
-            <CheckBox Grid.Row="3" Grid.Column="0" x:Name="FirefoxEnabled" Content="Firefox" Margin="0,4,0,4"
-                      Checked="BrowserMonitor_Changed" Unchecked="BrowserMonitor_Changed"/>
-            <ComboBox Grid.Row="3" Grid.Column="1" x:Name="FirefoxAction" SelectedIndex="2" Margin="0,4,0,4"
-                      SelectionChanged="BrowserMonitor_Changed">
-              <ComboBoxItem Content="Do nothing"/>
-              <ComboBoxItem Content="Clean silently"/>
-              <ComboBoxItem Content="Clean and notify"/>
-            </ComboBox>
-            <Button Grid.Row="3" Grid.Column="2" x:Name="FirefoxItemsButton" Tag="firefox" Click="ChooseExitItems_Click"
-                    Padding="10,4" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Left"/>
-          </Grid>
-        </Border>
-        <TextBlock x:Name="MonitoringHint"
-                   Text="Cleans the items chosen per browser (safe items by default; open-browser detection included). Open browsers other than the one that closed are not touched; passwords, cookies, history, and other destructive items are never cleaned automatically."
-                   FontSize="11" Foreground="#709086" TextWrapping="Wrap"/>
-      </StackPanel>
-    </Border>
-
     <!-- Two-pane cleaning area: browser list on the left, detail on the right. -->
-    <Grid Grid.Row="3" ColumnSpacing="14">
+    <Grid Grid.Row="2" ColumnSpacing="14">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="*"/>
@@ -184,7 +124,7 @@
       </Border>
     </Grid>
 
-    <Grid Grid.Row="4">
+    <Grid Grid.Row="3">
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Left">
         <Button x:Name="ScanButton" Content="Scan Browsers" Click="Scan_Click"
                 Background="#286E58" Foreground="White" Padding="20,10"/>

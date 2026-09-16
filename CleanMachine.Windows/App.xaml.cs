@@ -69,6 +69,11 @@ public partial class App : Application
         var settings = await AppSettings.LoadAsync();
         if (settings.RequiresBackgroundAgent)
             StartBackgroundAgent(settings);
+        // Automatic cleanup: run one safe clean on launch when enabled (with "Start
+        // with Windows" this cleans at every logon). Fire-and-forget so it never
+        // delays the window coming up.
+        if (settings.CleanAtStartup)
+            _ = RunSafeCleanAsync(settings, "Startup cleanup", "At startup", CancellationToken.None);
         // Keep the OS task store in step with whatever schedules are saved.
         _ = ScheduleService.SyncAllAsync(settings);
     }
@@ -242,17 +247,113 @@ public partial class App : Application
         catch { /* monitoring is best-effort; never let it kill the agent loop */ }
     }
 
-    /// <summary>System monitoring: when free space on the Windows drive is below
-    /// the threshold, clean the enabled safe categories. Fires at most once per
-    /// hour and re-arms only after free space recovers above the threshold.</summary>
     private static DateTimeOffset? _systemMonitorLastRun;
     private static bool _systemMonitorArmed = true;
+    private static bool _idleCleanArmed = true;
+    private static DateTimeOffset? _recycleBinLastRun;
 
+    /// <summary>Runs every agent tick: the independent automatic-cleanup checks each
+    /// decide for themselves whether to act, so one being off never blocks another.</summary>
     private static async Task OnAgentTickAsync(CancellationToken token)
+    {
+        AppSettings settings;
+        try { settings = await AppSettings.LoadAsync(token); }
+        catch { return; }
+        await SystemMonitorTickAsync(settings, token);
+        await IdleCleanTickAsync(settings, token);
+        await RecycleBinTickAsync(settings, token);
+    }
+
+    /// <summary>The Safe-risk categories an automatic clean removes: the user's chosen
+    /// set when configured, otherwise every Safe category enabled on the Windows
+    /// Cleanup page. Review/Advanced categories are never included.</summary>
+    private static List<CleanupCategory> SelectedSafeCategories(AppSettings settings) =>
+        WindowsCleanupService.Catalog
+            .Where(c => c.Risk == CleanupRisk.Safe
+                && (settings.SystemMonitorCategories is { } set
+                    ? set.Contains(c.Id)
+                    : WindowsCleanupService.IsEnabled(c, settings)))
+            .ToList();
+
+    /// <summary>Cleans the selected safe categories and logs the result (with a
+    /// per-category breakdown) when anything was removed. Shared by the startup and
+    /// idle triggers; never shows a toast, so it stays quiet in the background.</summary>
+    private static async Task RunSafeCleanAsync(AppSettings settings, string activityTitle, string reason, CancellationToken token)
+    {
+        var selected = SelectedSafeCategories(settings);
+        if (selected.Count == 0) return;
+        var report = await new WindowsCleanupService().CleanSelectedAsync(
+            selected,
+            new WindowsCleanupOptions(ConfirmReviewCategories: false, AllowElevation: false, ExcludedPaths: settings.ExcludedPaths),
+            cancellationToken: token);
+        await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
+        if (report.Result.ItemsRemoved > 0)
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                activityTitle,
+                $"{reason} - cleaned {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered",
+                ActivityStore.BreakdownLines(report.Breakdown)), token);
+    }
+
+    /// <summary>Run a safe clean after the machine has been idle for the configured
+    /// time. Fires once per idle period and re-arms after the next activity.</summary>
+    private static async Task IdleCleanTickAsync(AppSettings settings, CancellationToken token)
     {
         try
         {
-            var settings = await AppSettings.LoadAsync(token);
+            if (!settings.IdleCleanEnabled) { _idleCleanArmed = true; return; }
+            if (IdleTime().TotalMinutes < Math.Max(1, settings.IdleCleanMinutes)) { _idleCleanArmed = true; return; }
+            if (!_idleCleanArmed) return;
+            _idleCleanArmed = false; // one clean per idle period
+            await RunSafeCleanAsync(settings, "Idle cleanup", $"Idle {Math.Max(1, settings.IdleCleanMinutes)}+ min", token);
+        }
+        catch { /* best-effort; never kill the agent loop */ }
+    }
+
+    /// <summary>Empty Recycle Bin items older than the configured age, at most once
+    /// per hour.</summary>
+    private static async Task RecycleBinTickAsync(AppSettings settings, CancellationToken token)
+    {
+        try
+        {
+            if (!settings.RecycleBinAutoEmptyEnabled) return;
+            if (_recycleBinLastRun is { } last && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(1)) return;
+            _recycleBinLastRun = DateTimeOffset.UtcNow;
+            var (removed, bytes) = await Task.Run(() => RecycleBinService.EmptyOlderThan(settings.RecycleBinAutoEmptyDays, token), token);
+            if (removed > 0)
+            {
+                await new CleanupStatsStore().RecordAsync(removed, bytes, token);
+                await new ActivityStore().AddAsync(new ActivityEntry(
+                    DateTimeOffset.UtcNow,
+                    "Recycle Bin",
+                    $"Emptied {removed:N0} item(s) older than {settings.RecycleBinAutoEmptyDays} day(s), {AppNotifications.FormatBytes(bytes)} recovered"),
+                    token);
+            }
+        }
+        catch { /* best-effort */ }
+    }
+
+    // Idle time since the last keyboard/mouse input, for the idle-clean trigger.
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct LastInputInfo { public uint Size; public uint Time; }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetLastInputInfo(ref LastInputInfo info);
+
+    private static TimeSpan IdleTime()
+    {
+        var info = new LastInputInfo { Size = (uint)System.Runtime.InteropServices.Marshal.SizeOf<LastInputInfo>() };
+        if (!GetLastInputInfo(ref info)) return TimeSpan.Zero;
+        return TimeSpan.FromMilliseconds(unchecked((uint)Environment.TickCount - info.Time));
+    }
+
+    /// <summary>System monitoring: when free space on the Windows drive is below
+    /// the threshold, clean the enabled safe categories. Fires at most once per
+    /// hour and re-arms only after free space recovers above the threshold.</summary>
+    private static async Task SystemMonitorTickAsync(AppSettings settings, CancellationToken token)
+    {
+        try
+        {
             if (!settings.SystemMonitoringEnabled)
             {
                 _systemMonitorArmed = true;

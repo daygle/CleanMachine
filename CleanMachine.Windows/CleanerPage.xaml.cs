@@ -10,7 +10,7 @@ public sealed partial class CleanerPage : Page
     private readonly List<(string BrowserId, string ItemId, bool Destructive, CheckBox Box)> _itemBoxes = [];
     private AppSettings _settings = new();
     // Guards the change handlers while the page loads settings into the controls.
-    private bool _monitorReady;
+    private bool _ready;
     // Detected browsers and the one whose detail is currently shown on the right.
     private IReadOnlyList<BrowserScan> _scans = [];
     private BrowserScan? _detailScan;
@@ -19,169 +19,24 @@ public sealed partial class CleanerPage : Page
     {
         InitializeComponent();
         // Load monitoring settings, then scan browsers automatically when opened.
-        Loaded += async (_, _) => { _settings = await AppSettings.LoadAsync(); LoadMonitoring(); await CheckInterruptedAsync(); await ScanAsync(); };
-    }
-
-    /// <summary>Browser monitoring (clean cache on browser close) and the background
-    /// agent it runs under live here on the Browser Cleaner page, next to the
-    /// cleaning flow they control. Changes apply immediately - there is no save
-    /// button on this page.</summary>
-    private void LoadMonitoring()
-    {
-        _monitorReady = false;
-
-        CleanToggle.IsChecked = _settings.CleanOnBrowserExit;
-        var chrome = _settings.FindBrowserMonitor("chrome");
-        var edge = _settings.FindBrowserMonitor("edge");
-        var firefox = _settings.FindBrowserMonitor("firefox");
-        ChromeEnabled.IsChecked = chrome?.Enabled ?? true;
-        ChromeAction.SelectedIndex = ToComboIndex(chrome?.AfterExit ?? ExitAction.CleanAndNotify);
-        EdgeEnabled.IsChecked = edge?.Enabled ?? true;
-        EdgeAction.SelectedIndex = ToComboIndex(edge?.AfterExit ?? ExitAction.CleanAndNotify);
-        FirefoxEnabled.IsChecked = firefox?.Enabled ?? true;
-        FirefoxAction.SelectedIndex = ToComboIndex(firefox?.AfterExit ?? ExitAction.CleanAndNotify);
-        UpdateExitItemsButton(ChromeItemsButton, "chrome");
-        UpdateExitItemsButton(EdgeItemsButton, "edge");
-        UpdateExitItemsButton(FirefoxItemsButton, "firefox");
-        CloseBrowsersCheck.IsChecked = _settings.CloseOpenBrowsersAutomatically;
-        UpdateMonitorHint();
-
-        _monitorReady = true;
-    }
-
-    private async void CleanToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_monitorReady) return;
-        _settings.CleanOnBrowserExit = CleanToggle.IsChecked == true;
-        await _settings.SaveAsync();
-        // Turning this on/off is what makes the agent (and Windows startup) needed,
-        // so bring them in step immediately.
-        (App.Current as App)?.ApplyBackgroundServices(_settings);
-        UpdateMonitorHint();
-    }
-
-    private async void BrowserMonitor_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_monitorReady) return;
-        ApplyMonitor("chrome", ChromeEnabled, ChromeAction);
-        ApplyMonitor("edge", EdgeEnabled, EdgeAction);
-        ApplyMonitor("firefox", FirefoxEnabled, FirefoxAction);
-        await _settings.SaveAsync();
-        UpdateMonitorHint();
-    }
-
-    private void ApplyMonitor(string id, CheckBox enabled, ComboBox action)
-    {
-        var monitor = _settings.FindBrowserMonitor(id);
-        if (monitor is null)
+        Loaded += async (_, _) =>
         {
-            monitor = new BrowserMonitorSetting { Browser = id };
-            _settings.BrowserMonitors.Add(monitor);
-        }
-        monitor.Enabled = enabled.IsChecked == true;
-        monitor.AfterExit = FromComboIndex(action.SelectedIndex);
-    }
-
-    private static int ToComboIndex(ExitAction action) => action switch
-    {
-        ExitAction.DoNothing => 0,
-        ExitAction.CleanSilently => 1,
-        _ => 2
-    };
-
-    private static ExitAction FromComboIndex(int index) => index switch
-    {
-        0 => ExitAction.DoNothing,
-        1 => ExitAction.CleanSilently,
-        _ => ExitAction.CleanAndNotify
-    };
-
-    /// <summary>Shows which items a browser's exit-clean covers: the count, or the
-    /// picker's implicit default before the user has configured anything.</summary>
-    private void UpdateExitItemsButton(Button button, string browser)
-    {
-        var monitor = _settings.FindBrowserMonitor(browser);
-        button.Content = monitor?.Items is { } chosen
-            ? $"{chosen.Count} item(s)…"
-            : "Safe items (default)…";
-    }
-
-    /// <summary>Lets the user pick exactly which items a browser's after-exit clean
-    /// covers. Safe (non-destructive) catalog items are offered and saved
-    /// immediately on confirm; destructive items are listed greyed out so it is
-    /// visible they can never be auto-cleaned. Saving an explicit set (even an
-    /// empty one) marks the browser as configured; Cancel changes nothing.</summary>
-    private async void ChooseExitItems_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: string browser }) return;
-        var monitor = _settings.FindBrowserMonitor(browser);
-        var browserDefinition = BrowserCatalog.Find(browser);
-        if (monitor is null || browserDefinition is null) return;
-
-        var effective = _settings.EffectiveExitItems(browser);
-        var panel = new StackPanel { Spacing = 6 };
-        var boxes = new List<(string Id, CheckBox Box)>();
-        var hasDestructive = BrowserCatalog.ItemsFor(browserDefinition.Family).Any(i => i.Destructive);
-        if (hasDestructive)
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Ticking a destructive item (cookies, history, passwords) lets the automatic close-clean remove it without asking. These stay off by default.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xB0, 0x3A, 0x2E)),
-                Margin = new Thickness(0, 0, 0, 4)
-            });
-        foreach (var item in BrowserCatalog.ItemsFor(browserDefinition.Family))
-        {
-            // Destructive items can now be opted into for the automatic close-clean.
-            // They remain unticked unless the user explicitly enables them, and are
-            // flagged so the risk is clear.
-            var box = new CheckBox
-            {
-                Content = item.Destructive ? $"{item.Name}  (destructive)" : item.Name,
-                IsChecked = effective.Contains(item.Id),
-                MinHeight = 26
-            };
-            if (item.Destructive)
-            {
-                box.Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xB0, 0x3A, 0x2E));
-                ToolTipService.SetToolTip(box, "Destructive: when ticked, this is removed automatically every time the browser closes.");
-            }
-            boxes.Add((item.Id, box));
-            panel.Children.Add(box);
-        }
-
-        var displayName = browserDefinition.Name;
-        var dialog = new ContentDialog
-        {
-            Title = $"{displayName} - items cleaned when it closes",
-            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 360 },
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = XamlRoot
+            _settings = await AppSettings.LoadAsync();
+            CloseBrowsersCheck.IsChecked = _settings.CloseOpenBrowsersAutomatically;
+            _ready = true;
+            await CheckInterruptedAsync();
+            await ScanAsync();
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-        monitor.Items = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        await _settings.SaveAsync();
-        UpdateExitItemsButton((Button)sender, browser);
-        UpdateMonitorHint();
     }
+
 
     private async void CloseBrowsers_Changed(object sender, RoutedEventArgs e)
     {
-        if (!_monitorReady) return;
+        if (!_ready) return;
         _settings.CloseOpenBrowsersAutomatically = CloseBrowsersCheck.IsChecked == true;
         await _settings.SaveAsync();
     }
 
-    private void UpdateMonitorHint()
-    {
-        MonitoringHint.Text = _settings.CleanOnBrowserExit
-            ? "Cleans the items chosen per browser (safe items by default). The browser that just closed is cleaned even if other browsers are still open; passwords, cookies, history, and other destructive items are never cleaned automatically. CleanMachine runs in the background and starts with Windows so exits are detected."
-            : "Monitoring is off - browsers are only cleaned when you run it manually here.";
-    }
 
     /// <summary>Persists one item's tick state so the Browser Cleaner page restores
     /// the user's selection next time. Best-effort - a failed save just means the

@@ -5,7 +5,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 ## Project
 
 - `CleanMachine.Windows/` - native WinUI desktop application
-- Dedicated pages for Overview, Browser Cleaner, Registry Care, Windows Cleanup, Application Cleanup, Secure Delete, Drive Wiper, Startup Apps, Installed Apps, Activity, Schedules, Settings, and Updates
+- Dedicated pages for Overview, Browser Cleaner, Registry Care, Windows Cleanup, Application Cleanup, Secure Delete, Drive Wiper, Startup Apps, Installed Apps, Activity, Schedules, Automatic Cleanup, Settings, and Updates
 - Safe browser-cache and Windows-cleanup review workflows
 - Read-only Registry Care with `.reg` backup/restore helpers
 - Explicit-file Secure Delete with selectable wipe methods
@@ -34,7 +34,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - The list re-scans after a clean so sizes reflect what was removed
 - Whole-file deletion, with a backup taken before any preference-file edit
 - Browser monitoring lives here: choose what happens when each supported browser closes (do nothing, clean silently, clean and notify), with a master on/off switch
-- Enabling browser monitoring (or the low-disk-space monitor in Settings) automatically runs the background agent and registers CleanMachine to start with Windows, so those services work without the window open; there is no separate agent switch to remember
+- Enabling any Automatic Cleanup option automatically runs the background agent and registers CleanMachine to start with Windows, so those services work without the window open; there is no separate agent switch to remember
 
 ### Application Cleanup
 - Two-pane list/detail view: detected apps (grouped by Desktop / Microsoft Store) on the left, a summary header with size/file/item chips and a per-item file drill-down on the right
@@ -102,10 +102,14 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Optional post-clean action - notify, shut down, restart, or sleep - with a 60-second abort window for shutdown and restart
 - Runs with least privilege, so only per-user items are touched
 
-### Background Agent
-- The agent has no switch of its own: it runs (and CleanMachine registers to start with Windows) automatically whenever a service that needs it is enabled, and stops when the last one is turned off. Each service is controlled by its own checkbox on its page:
-  - Browser-exit monitoring (Browser Cleaner page): cleans a monitored browser's cache when it closes, with a per-browser action
-  - System monitoring (Settings): when free space on the Windows drive drops below a threshold - set in MB or GB - cleans a chosen set of Safe-risk categories (or all enabled ones by default) at most once per hour, re-arming after free space recovers
+### Automatic Cleanup
+- A single page for all hands-off cleaning; the background agent has no switch of its own - it runs (and CleanMachine registers to start with Windows) automatically whenever any option here needs it, and stops when the last one is turned off:
+  - Browser-exit monitoring: cleans a monitored browser's cache when it closes, with a per-browser action and item picker (destructive items opt-in)
+  - Low-disk monitoring: when free space on the Windows drive drops below a threshold - set in MB or GB - cleans a chosen set of Safe-risk categories (or all enabled ones by default) at most once per hour, re-arming after free space recovers
+  - At startup: run one safe clean each time CleanMachine starts (with "Start with Windows", that is every logon)
+  - On idle: run a safe clean after the PC has been idle a configurable number of minutes, once per idle period
+  - Recycle Bin: automatically empty items older than a configurable number of days (only ever removes items already in the Recycle Bin)
+- The startup and idle cleans use the same safe-category selection as the low-disk monitor
 - Every automated run records into the same stats store and activity log as manual cleans
 
 ### Updates and Releases
@@ -127,7 +131,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Default wipe method selection
 - Configurable exclusion paths
 - Persisted startup registration
-- Background agent and browser-monitoring preferences live on the Browser Cleaner page, next to the flow they control
+- All automatic/background cleaning preferences live on the Automatic Cleanup page
 
 ## Safety model
 

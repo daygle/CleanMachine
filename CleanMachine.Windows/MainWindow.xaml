@@ -120,6 +120,12 @@
                 <TextBlock Text="Schedules" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
+            <Button x:Name="NavAutomaticCleanup" Style="{StaticResource NavButton}" Click="AutomaticCleanup_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <FontIcon Glyph="&#xE9F5;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
+                <TextBlock Text="Automatic Cleanup" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
           </StackPanel>
         </ScrollViewer>
 

@@ -101,6 +101,20 @@ public sealed class AppSettings
     // stored in GB; this is only which unit the Settings UI shows and edits in.
     public string SystemMonitorFreeSpaceUnit { get; set; } = "GB";
     public ExitAction SystemMonitorAction { get; set; } = ExitAction.CleanSilently;
+
+    // Automatic cleanup: run a safe clean once each time CleanMachine starts (paired
+    // with "Start with Windows" this cleans at every logon).
+    public bool CleanAtStartup { get; set; }
+    // Automatic cleanup: run a safe clean after the machine has been idle this many
+    // minutes (fires once per idle period; re-arms after the next activity).
+    public bool IdleCleanEnabled { get; set; }
+    public int IdleCleanMinutes { get; set; } = 15;
+    // Automatic cleanup: empty Recycle Bin items older than this many days.
+    public bool RecycleBinAutoEmptyEnabled { get; set; }
+    public int RecycleBinAutoEmptyDays { get; set; } = 30;
+    // The safe clean run by the startup and idle triggers uses the same category set
+    // as the low-disk monitor (SystemMonitorCategories); null means every enabled
+    // Safe category on the Windows Cleanup page.
     // Which Safe Windows categories the low-disk-space monitor cleans. A null set
     // means "not configured" - it falls back to every Safe category enabled on the
     // Windows Cleanup page. An empty set means the user deselected everything, so
@@ -113,13 +127,15 @@ public sealed class AppSettings
     // is present to run those services while the window is closed. Derived, so
     // it is never persisted.
     [JsonIgnore]
-    public bool RequiresBackgroundAgent => CleanOnBrowserExit || SystemMonitoringEnabled;
+    public bool RequiresBackgroundAgent =>
+        CleanOnBrowserExit || SystemMonitoringEnabled || IdleCleanEnabled || RecycleBinAutoEmptyEnabled;
 
-    // The app is registered to launch at logon when the user asked for it, or when a
-    // background service needs it running while the window is closed. Derived, never
-    // persisted.
+    // The app is registered to launch at logon when the user asked for it, when a
+    // background service needs it running while the window is closed, or when a
+    // startup clean is set (which only makes sense if the app starts at logon).
+    // Derived, never persisted.
     [JsonIgnore]
-    public bool ShouldStartWithWindows => StartWithWindows || RequiresBackgroundAgent;
+    public bool ShouldStartWithWindows => StartWithWindows || RequiresBackgroundAgent || CleanAtStartup;
 
     // User-defined cleanup schedules, executed by Windows Task Scheduler so they run
     // even when the app is closed. An optional action (shutdown/restart/sleep) can
