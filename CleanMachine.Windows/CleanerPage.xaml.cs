@@ -121,17 +121,32 @@ public sealed partial class CleanerPage : Page
         var effective = _settings.EffectiveExitItems(browser);
         var panel = new StackPanel { Spacing = 6 };
         var boxes = new List<(string Id, CheckBox Box)>();
+        var hasDestructive = BrowserCatalog.ItemsFor(browserDefinition.Family).Any(i => i.Destructive);
+        if (hasDestructive)
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Ticking a destructive item (cookies, history, passwords) lets the automatic close-clean remove it without asking. These stay off by default.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xB0, 0x3A, 0x2E)),
+                Margin = new Thickness(0, 0, 0, 4)
+            });
         foreach (var item in BrowserCatalog.ItemsFor(browserDefinition.Family))
         {
+            // Destructive items can now be opted into for the automatic close-clean.
+            // They remain unticked unless the user explicitly enables them, and are
+            // flagged so the risk is clear.
             var box = new CheckBox
             {
-                Content = item.Name,
+                Content = item.Destructive ? $"{item.Name}  (destructive)" : item.Name,
                 IsChecked = effective.Contains(item.Id),
-                IsEnabled = !item.Destructive,
                 MinHeight = 26
             };
             if (item.Destructive)
-                ToolTipService.SetToolTip(box, "Destructive - cleaned only manually on this page, never automatically.");
+            {
+                box.Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xB0, 0x3A, 0x2E));
+                ToolTipService.SetToolTip(box, "Destructive: when ticked, this is removed automatically every time the browser closes.");
+            }
             boxes.Add((item.Id, box));
             panel.Children.Add(box);
         }

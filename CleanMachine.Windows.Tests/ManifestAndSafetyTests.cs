@@ -397,15 +397,16 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
-    public void ExitItemsHonorExplicitSelectionAndFilterStaleOrDestructiveIds()
+    public void ExitItemsHonorExplicitSelectionIncludingOptedInDestructiveAndFilterStaleIds()
     {
         var settings = new AppSettings();
         settings.FindBrowserMonitor("chrome")!.Items =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cache", "sessions", "cookies", "vanished-item" };
 
         var items = settings.EffectiveExitItems("chrome");
-        // Explicit selection is honored; stale ids vanish, destructive ids never pass.
-        Assert.Equal(new[] { "cache", "sessions" }.OrderBy(i => i), items.OrderBy(i => i));
+        // Explicit selection is honored as-is: stale ids vanish, but a destructive id
+        // the user deliberately ticked ("cookies") is now included (opt-in).
+        Assert.Equal(new[] { "cache", "cookies", "sessions" }.OrderBy(i => i), items.OrderBy(i => i));
 
         // Case-insensitive ids keep working across catalog versions.
         settings.FindBrowserMonitor("edge")!.Items = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CACHE" };

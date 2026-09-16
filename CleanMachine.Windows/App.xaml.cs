@@ -203,9 +203,23 @@ public partial class App : Application
             // item paths, so skip the global all-browsers-closed check.
             var itemIds = settings.EffectiveExitItems(browser).ToArray();
             if (itemIds.Length == 0) return;
-            var report = await cleanup.CleanItemsAsync(
-                itemIds.Select(id => (browser, id)),
-                secureDelete: null, token, requireBrowsersClosed: false);
+
+            // Give the OS a moment to release the cache files the browser had open.
+            // Cleaning the instant the last process disappears often finds them still
+            // locked - every file is skipped, so the pass reports nothing removed and
+            // the "clean and notify" toast never fires. Wait, then retry once if the
+            // first pass only hit locked files (no point retrying when there was
+            // simply nothing to clean).
+            CleanupReport report;
+            var attempt = 0;
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), token);
+                report = await cleanup.CleanItemsAsync(
+                    itemIds.Select(id => (browser, id)),
+                    secureDelete: null, token, requireBrowsersClosed: false);
+                if (report.Result.ItemsRemoved > 0 || report.Skipped.Count == 0 || ++attempt >= 2) break;
+            }
             _ = new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
 
             var displayName = char.ToUpperInvariant(browser[0]) + browser[1..];

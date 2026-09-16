@@ -133,14 +133,17 @@ public sealed class AppSettings
         if (browserDefinition is null) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var catalogItems = BrowserCatalog.ItemsFor(browserDefinition.Family);
         if (FindBrowserMonitor(browser)?.Items is { } chosen)
+            // An explicit selection is honored as-is, including any destructive items
+            // the user opted in to (they are unticked by default in the picker).
             // Project back to the catalog's canonical ids: BrowserCleanupService
             // matches item ids with ordinal comparisons, so a stored "CACHE" must
             // come out as "cache" or it would silently clean nothing.
             return catalogItems
-                .Where(item => !item.Destructive
-                    && chosen.Any(id => id.Equals(item.Id, StringComparison.OrdinalIgnoreCase)))
+                .Where(item => chosen.Any(id => id.Equals(item.Id, StringComparison.OrdinalIgnoreCase)))
                 .Select(item => item.Id)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // No explicit selection: the safe default excludes destructive items, so a
+        // background clean never wipes user data unless it was deliberately enabled.
         return catalogItems
             .Where(item => !item.Destructive)
             .Select(item => item.Id)
