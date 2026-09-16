@@ -77,6 +77,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 ### Drive Wiper
 - CCleaner-style free-space wipe: overwrites free clusters by writing a temporary wiper file (always cleaned up, including from interrupted runs)
 - Drive picker for fixed internal drives, 1/3/7-pass options, live progress and cancellation
+- Optional filesystem-metadata wipe that a free-cluster pass misses: overwrite free NTFS MFT records (where small deleted files can linger resident) or freed FAT/exFAT directory entries; each option is enabled only for the matching filesystem of the selected drive, and works by briefly creating and deleting many small temp files
 - Wiper file lands in `Users\Public` on non-admin accounts since `C:\` root is not writable without elevation
 - SSD caveat surfaced in the UI: wear leveling means free-space wiping cannot guarantee sanitization there
 

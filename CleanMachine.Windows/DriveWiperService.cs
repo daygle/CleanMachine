@@ -4,9 +4,18 @@ using System.Security.Cryptography;
 namespace CleanMachine.Windows;
 
 /// <summary>A fixed drive that free-space wiping can target.</summary>
-public sealed record DriveWipeTarget(string RootPath, string Label, long TotalBytes, long FreeBytes, bool IsSystemDrive)
+public sealed record DriveWipeTarget(string RootPath, string Label, long TotalBytes, long FreeBytes, bool IsSystemDrive, string FileSystem = "")
 {
     public string DisplayName => string.IsNullOrEmpty(Label) ? RootPath : $"{Label} ({RootPath})";
+
+    /// <summary>NTFS keeps small deleted files resident in the Master File Table, so
+    /// wiping MFT free space applies only to NTFS volumes.</summary>
+    public bool IsNtfs => FileSystem.Equals("NTFS", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>FAT/exFAT volumes have no MFT; the analogous metadata is freed
+    /// directory entries.</summary>
+    public bool IsFat => FileSystem.StartsWith("FAT", StringComparison.OrdinalIgnoreCase)
+        || FileSystem.Equals("exFAT", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record DriveWipeResult(int Passes, long BytesOverwritten, TimeSpan Duration);
@@ -52,7 +61,8 @@ public sealed class DriveWiperService
                         drive.VolumeLabel,
                         drive.TotalSize,
                         drive.AvailableFreeSpace,
-                        string.Equals(root, systemRoot, StringComparison.OrdinalIgnoreCase)));
+                        string.Equals(root, systemRoot, StringComparison.OrdinalIgnoreCase),
+                        drive.DriveFormat));
                 }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
@@ -77,6 +87,17 @@ public sealed class DriveWiperService
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
             }
+            // Also sweep any metadata-churn folder left by an interrupted run.
+            foreach (var metaDir in new[]
+            {
+                Path.Combine(drive.RootPath, "CleanMachine.meta-wipe"),
+                Path.Combine(drive.RootPath, "Users", "Public", "CleanMachine.meta-wipe")
+            })
+            {
+                try { if (Directory.Exists(metaDir)) Directory.Delete(metaDir, recursive: true); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
         }
     }
 
@@ -87,7 +108,9 @@ public sealed class DriveWiperService
         DriveWipeTarget target,
         int passes,
         IProgress<CleanupProgress>? progress = null,
-        CancellationToken token = default)
+        CancellationToken token = default,
+        bool wipeMftFreeSpace = false,
+        bool wipeFatFreeSpace = false)
     {
         var clampedPasses = Math.Clamp(passes, 1, 8);
         var wiperPath = WiperPathFor(target);
@@ -144,7 +167,73 @@ public sealed class DriveWiperService
             catch { /* best-effort; CleanupAbandonedWiperFiles also sweeps */ }
         }
 
+        // The big-file pass above overwrites free clusters, but not the filesystem's
+        // own free metadata (NTFS MFT records that held small resident files, or FAT
+        // directory entries of deleted files). Overwrite that separately when asked
+        // and applicable to this volume's filesystem.
+        if (wipeMftFreeSpace && target.IsNtfs)
+            totalWritten += await WipeMetadataFreeSpaceAsync(target, "Wiping MFT free space", progress, token);
+        if (wipeFatFreeSpace && target.IsFat)
+            totalWritten += await WipeMetadataFreeSpaceAsync(target, "Wiping FAT free space", progress, token);
+
         watch.Stop();
         return new DriveWipeResult(clampedPasses, totalWritten, watch.Elapsed);
+    }
+
+    // Where the metadata-churn temp files live (a sub-folder next to the wiper file).
+    private static string MetaWipeDirFor(DriveWipeTarget target)
+        => Path.Combine(Path.GetDirectoryName(WiperPathFor(target))!, "CleanMachine.meta-wipe");
+
+    // Bounded so the churn always terminates even on a volume with vast free space.
+    private const int MaxMetadataFiles = 100_000;
+
+    /// <summary>Overwrites the volume's free filesystem metadata - the free records and
+    /// slack of the NTFS Master File Table (small deleted files can leave data resident
+    /// there), or the freed directory entries of a FAT/exFAT volume - which a free-cluster
+    /// wipe does not reach. It creates many small files (each just large enough to be
+    /// MFT-resident on NTFS) so the freed metadata is rewritten, then deletes them.
+    /// Existing files are never touched; a reserve of free space is always kept.
+    /// Best-effort and bounded: it stops at the reserve or a file-count cap.</summary>
+    private static async Task<long> WipeMetadataFreeSpaceAsync(
+        DriveWipeTarget target, string phase, IProgress<CleanupProgress>? progress, CancellationToken token)
+    {
+        var dir = MetaWipeDirFor(target);
+        Directory.CreateDirectory(dir);
+        var buffer = new byte[512];
+        long created = 0;
+        long bytes = 0;
+        try
+        {
+            for (var i = 0; i < MaxMetadataFiles; i++)
+            {
+                token.ThrowIfCancellationRequested();
+                // Check the reserve only periodically - AvailableFreeSpace is a syscall.
+                if ((i & 0xFF) == 0)
+                {
+                    var free = new DriveInfo(target.RootPath).AvailableFreeSpace;
+                    if (free <= Math.Max(ReserveBytes, free / 100)) break;
+                }
+                RandomNumberGenerator.Fill(buffer);
+                try
+                {
+                    await using var s = new FileStream(
+                        Path.Combine(dir, $"m{i:D7}.tmp"),
+                        FileMode.Create, FileAccess.Write, FileShare.None, buffer.Length, FileOptions.WriteThrough);
+                    await s.WriteAsync(buffer, token);
+                }
+                catch (IOException) { break; }               // out of records/space - done
+                catch (UnauthorizedAccessException) { break; }
+                created++;
+                bytes += buffer.Length;
+                if ((created & 0x3FF) == 0)
+                    progress?.Report(new CleanupProgress(phase, (int)(created / 1000), MaxMetadataFiles / 1000, bytes));
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); }
+            catch { /* best-effort; CleanupAbandonedWiperFiles also sweeps */ }
+        }
+        return bytes;
     }
 }

@@ -20,12 +20,17 @@
     <Border Grid.Row="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16" VerticalAlignment="Top">
       <StackPanel Spacing="12">
         <TextBlock Text="OPTIONS" FontSize="10" Foreground="#7F9189"/>
-        <ComboBox x:Name="DriveCombo" Header="Drive" MinWidth="360" HorizontalAlignment="Left"/>
+        <ComboBox x:Name="DriveCombo" Header="Drive" MinWidth="360" HorizontalAlignment="Left" SelectionChanged="Drive_Changed"/>
         <ComboBox x:Name="PassesCombo" Header="Passes" MinWidth="360" HorizontalAlignment="Left" SelectedIndex="0">
           <ComboBoxItem Content="1 pass (random + zero) - fast"/>
           <ComboBoxItem Content="3 passes - thorough"/>
           <ComboBoxItem Content="7 passes - maximum"/>
         </ComboBox>
+        <CheckBox x:Name="WipeMftCheck" Content="Also wipe MFT free space (NTFS)" IsChecked="True"/>
+        <CheckBox x:Name="WipeFatCheck" Content="Also wipe FAT free space (FAT/exFAT)" IsChecked="True"/>
+        <TextBlock x:Name="MetadataHint"
+                   Text="Also overwrites the filesystem's own free metadata (NTFS MFT records, or FAT directory entries) where small deleted files can linger. Only the option matching the selected drive's filesystem applies."
+                   Foreground="#89958F" FontSize="11" TextWrapping="Wrap" MaxWidth="560" HorizontalAlignment="Left"/>
         <TextBlock Text="SSD note: due to wear levelling, overwriting free space cannot guarantee sanitization on solid-state drives. For sensitive data use device encryption; wiping free space is most useful for traditional hard drives."
                    Foreground="#C7775D" FontSize="11" TextWrapping="Wrap" MaxWidth="560" HorizontalAlignment="Left"/>
         <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed" Margin="0,4,0,0"/>
