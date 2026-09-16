@@ -112,9 +112,11 @@ public sealed class AppSettings
     // Automatic cleanup: empty Recycle Bin items older than this many days.
     public bool RecycleBinAutoEmptyEnabled { get; set; }
     public int RecycleBinAutoEmptyDays { get; set; } = 30;
-    // The safe clean run by the startup and idle triggers uses the same category set
-    // as the low-disk monitor (SystemMonitorCategories); null means every enabled
-    // Safe category on the Windows Cleanup page.
+    // Which categories the startup and idle cleans remove. Each is independent; null
+    // means every enabled category on the Windows Cleanup page. Automatic runs only
+    // ever offer/clean Safe-risk categories (Review/Advanced are never included).
+    public HashSet<string>? StartupCleanCategories { get; set; }
+    public HashSet<string>? IdleCleanCategories { get; set; }
     // Which Safe Windows categories the low-disk-space monitor cleans. A null set
     // means "not configured" - it falls back to every Safe category enabled on the
     // Windows Cleanup page. An empty set means the user deselected everything, so

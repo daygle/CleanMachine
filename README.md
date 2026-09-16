@@ -106,10 +106,10 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - A single page for all hands-off cleaning; the background agent has no switch of its own - it runs (and CleanMachine registers to start with Windows) automatically whenever any option here needs it, and stops when the last one is turned off:
   - Browser-exit monitoring: cleans a monitored browser's cache when it closes, with a per-browser action and item picker (destructive items opt-in)
   - Low-disk monitoring: when free space on the Windows drive drops below a threshold - set in MB or GB - cleans a chosen set of Safe-risk categories (or all enabled ones by default) at most once per hour, re-arming after free space recovers
-  - At startup: run one safe clean each time CleanMachine starts (with "Start with Windows", that is every logon)
-  - On idle: run a safe clean after the PC has been idle a configurable number of minutes, once per idle period
+  - At startup: run a clean each time CleanMachine starts (with "Start with Windows", that is every logon)
+  - On idle: run a clean after the PC has been idle a configurable number of minutes, once per idle period
   - Recycle Bin: automatically empty items older than a configurable number of days (only ever removes items already in the Recycle Bin)
-- The startup and idle cleans use the same safe-category selection as the low-disk monitor
+- The low-disk, startup, and idle triggers each have their own independent category selection (defaulting to every category enabled on the Windows Cleanup page); automatic runs only ever offer the cleanup categories, never Review/Advanced ones
 - Every automated run records into the same stats store and activity log as manual cleans
 
 ### Updates and Releases
