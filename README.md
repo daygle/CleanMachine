@@ -39,7 +39,8 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 ### Application Cleanup
 - Two-pane list/detail view: detected apps (grouped by Desktop / Microsoft Store) on the left, a summary header with size/file/item chips and a per-item file drill-down on the right
 - Shows only apps with items by default (clean apps hidden, or shown greyed out behind Show All)
-- Broad built-in catalog of desktop apps (Chrome, Edge, Brave, Vivaldi, Opera, Discord, Slack, Signal, Spotify, Teams, VS Code, Postman, Steam, Epic Games, Zoom, Office, Adobe Acrobat, Adobe media cache and more) and Microsoft Store apps (Teams, Outlook, Phone Link, Mail and Calendar, Maps, Camera, Xbox, WhatsApp, Netflix, Photos, Solitaire and more), plus Windows components (Defender logs, search index, media player caches, activity history)
+- Broad built-in catalog of desktop apps (Chrome, Edge, Brave, Vivaldi, Opera, Discord, Slack, Signal, Spotify, Teams, VS Code, JetBrains IDEs, Postman, Steam, Epic Games, Zoom, Office, Thunderbird, Adobe Acrobat, Adobe media cache and more) and Microsoft Store apps (Teams, Outlook, Phone Link, Mail and Calendar, Maps, Camera, Xbox, WhatsApp, Netflix, Photos, Solitaire and more), plus Windows components (Defender logs, search index, media player caches, activity history)
+- Temp-file locations support wildcard path segments, so apps that store caches under randomly-named or versioned per-profile folders (e.g. Thunderbird profiles, JetBrains product/version folders) are matched correctly
 - The list re-scans after a clean so sizes reflect what was removed
 - Secure Delete option uses the wipe method from Settings
 - Same availability figure feeds the Overview dashboard

@@ -313,6 +313,25 @@ public static class AppCatalog
             ])
         ]),
 
+        new("thunderbird", "Mozilla Thunderbird", "Desktop App", false,
+        [
+            // Each profile lives in a randomly-named folder, so the profile segment is a
+            // wildcard. Only the disk cache is cleaned; mail and settings are untouched.
+            (AppDataRoot.LocalAppData, [
+                new("Thunderbird\\Profiles\\*\\cache2", "Disk cache")
+            ])
+        ]),
+
+        new("jetbrains", "JetBrains IDEs", "Desktop App", false,
+        [
+            // One folder per product+version (e.g. IntelliJIdea2024.1), matched by wildcard.
+            (AppDataRoot.LocalAppData, [
+                new("JetBrains\\*\\caches", "IDE caches"),
+                new("JetBrains\\*\\log", "Log files"),
+                new("JetBrains\\*\\tmp", "Temp files")
+            ])
+        ]),
+
         // ---- Microsoft Store Apps ----
         new("store-bing-news", "Bing News", "Microsoft Store App", true,
         [
