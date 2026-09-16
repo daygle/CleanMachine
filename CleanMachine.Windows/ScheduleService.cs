@@ -67,7 +67,7 @@ public sealed class ScheduleService
     /// rather than thrown, so a partial run still records activity and never crashes
     /// the headless process.</summary>
     public static async Task<ScheduleRunResult> RunAsync(
-        CleanupSchedule schedule, AppSettings settings, CancellationToken token = default)
+        CleanupSchedule schedule, AppSettings settings, CancellationToken token = default, bool manual = false)
     {
         var issues = new List<string>();
         var details = new List<string>();
@@ -180,9 +180,11 @@ public sealed class ScheduleService
         // Record with a fresh (uncancellable) token and await it, so a cancelled run
         // still persists its partial results before the headless process exits.
         await new CleanupStatsStore().RecordAsync(items, bytes, CancellationToken.None);
+        // Distinguish a manual "Run Now" from an automatic Task Scheduler run so the
+        // Activity log makes the trigger clear.
         await new ActivityStore().AddAsync(new ActivityEntry(
             DateTimeOffset.UtcNow,
-            "Scheduled cleanup",
+            manual ? "Manual Cleanup" : "Scheduled Cleanup",
             $"'{schedule.Name}' cleaned {items:N0} item(s), {AppNotifications.FormatBytes(bytes)} recovered" +
             (issues.Count > 0 ? $" · {issues.Count} skipped" : string.Empty),
             details.Count > 0 ? details : null), token);

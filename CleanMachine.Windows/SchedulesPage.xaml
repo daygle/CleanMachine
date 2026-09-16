@@ -44,7 +44,7 @@
       <Border Grid.Column="1" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="10" Padding="16">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel x:Name="EditorPanel" Spacing="10">
-            <TextBlock x:Name="EditorHeadline" Text="No schedule selected"
+            <TextBlock x:Name="EditorHeadline" Text="No Schedule Selected"
                        FontSize="16" FontWeight="SemiBold" Foreground="#273630"/>
             <TextBlock x:Name="EditorHint" Text="Add a schedule or pick one on the left to edit it."
                        FontSize="12" Foreground="#89958F" TextWrapping="Wrap"/>

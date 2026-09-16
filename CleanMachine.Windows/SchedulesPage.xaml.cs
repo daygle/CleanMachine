@@ -129,11 +129,11 @@ public sealed partial class SchedulesPage : Page
 
     private static string DescribeAction(ScheduleAction action) => action switch
     {
-        ScheduleAction.Notify => "notify",
-        ScheduleAction.Shutdown => "shut down",
-        ScheduleAction.Restart => "restart",
-        ScheduleAction.Sleep => "sleep",
-        _ => "do nothing"
+        ScheduleAction.Notify => "Notify",
+        ScheduleAction.Shutdown => "Shut Down",
+        ScheduleAction.Restart => "Restart",
+        ScheduleAction.Sleep => "Sleep",
+        _ => "Do Nothing"
     };
 
     private void Add_Click(object sender, RoutedEventArgs e)
@@ -146,7 +146,7 @@ public sealed partial class SchedulesPage : Page
 
         EditorHint.Visibility = Visibility.Collapsed;
         EditorFields.Visibility = Visibility.Visible;
-        EditorHeadline.Text = isNew ? "New schedule" : "Edit schedule";
+        EditorHeadline.Text = isNew ? "New Schedule" : "Edit Schedule";
         DeleteButton.Visibility = isNew ? Visibility.Collapsed : Visibility.Visible;
 
         NameBox.Text = schedule.Name;
@@ -215,7 +215,7 @@ public sealed partial class SchedulesPage : Page
         button.Content = "Running…";
         try
         {
-            var result = await ScheduleService.RunAsync(schedule, _settings);
+            var result = await ScheduleService.RunAsync(schedule, _settings, manual: true);
             StatusText.Text = $"'{schedule.Name}' completed: {result.ItemsRemoved:N0} items, {AppNotifications.FormatBytes(result.BytesRecovered)} recovered"
                 + (result.Issues.Count > 0 ? $" ({result.Issues.Count} skipped)" : ".");
         }
@@ -287,7 +287,7 @@ public sealed partial class SchedulesPage : Page
         _currentId = schedule.Id;
         _current = schedule;
         DeleteButton.Visibility = Visibility.Visible;
-        EditorHeadline.Text = "Edit schedule";
+        EditorHeadline.Text = "Edit Schedule";
         RebuildList();
 
         StatusText.Text = !schedule.Enabled
@@ -309,7 +309,7 @@ public sealed partial class SchedulesPage : Page
         _currentId = null;
         EditorFields.Visibility = Visibility.Collapsed;
         EditorHint.Visibility = Visibility.Visible;
-        EditorHeadline.Text = "No schedule selected";
+        EditorHeadline.Text = "No Schedule Selected";
         RebuildList();
         StatusText.Text = string.Empty;
     }
