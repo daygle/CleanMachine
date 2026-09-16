@@ -16,6 +16,10 @@ public sealed class RegistryCareService
     private const string StartupRunRoot = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string StartupRunOnceRoot = @"Software\Microsoft\Windows\CurrentVersion\RunOnce";
     private const string SoundAppsRoot = @"AppEvents\Schemes\Apps";
+    private const string AppPathsRoot = @"Software\Microsoft\Windows\CurrentVersion\App Paths";
+    private const string ShellMuiCacheRoot = @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache";
+    private const string FileExtsRoot = @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts";
+    private const string CompatAssistantRoot = @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant";
 
     private readonly CleanupService _cleanup = new();
 
@@ -30,7 +34,11 @@ public sealed class RegistryCareService
         @"Control Panel\Desktop\MuiCached",
         @"Software\Microsoft\Windows\CurrentVersion\Run",
         @"Software\Microsoft\Windows\CurrentVersion\RunOnce",
-        @"AppEvents\Schemes\Apps\"
+        @"AppEvents\Schemes\Apps\",
+        @"Software\Microsoft\Windows\CurrentVersion\App Paths\",
+        @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\",
+        @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\"
+        // Shell MuiCache is covered by the "Software\Classes\" root above.
     ];
 
     internal static bool IsDeletablePath(string? path)
@@ -53,6 +61,19 @@ public sealed class RegistryCareService
             var name = finding.Path[UninstallRoot.Length..].TrimStart('\\');
             return string.IsNullOrEmpty(name) ? "Leftover uninstall entry" : $"Leftover program: {name}";
         }
+        // Shell MuiCache lives under Software\Classes but is a display-name cache,
+        // not a file association - check it before the Classes branch below.
+        if (finding.Path.Equals(ShellMuiCacheRoot, StringComparison.OrdinalIgnoreCase))
+            return "Shell cache entry";
+        if (finding.Path.StartsWith(AppPathsRoot + @"\", StringComparison.OrdinalIgnoreCase))
+            return $"App Paths: {LeafKeyName(finding.Path)}";
+        if (finding.Path.StartsWith(FileExtsRoot + @"\", StringComparison.OrdinalIgnoreCase))
+        {
+            var ext = finding.Path[(FileExtsRoot.Length + 1)..].Split('\\')[0];
+            return $"Open-with entry: {ext}";
+        }
+        if (finding.Path.StartsWith(CompatAssistantRoot + @"\", StringComparison.OrdinalIgnoreCase))
+            return "Compatibility record";
         if (finding.Path.StartsWith(ClassesRoot, StringComparison.OrdinalIgnoreCase))
         {
             var ext = finding.Path[ClassesRoot.Length..].TrimStart('\\');
@@ -187,7 +208,10 @@ public sealed class RegistryCareService
                      .Select(f => f.Path)
                      .Where(p => p.StartsWith(MuiCacheRoot, StringComparison.OrdinalIgnoreCase)
                          || p == StartupRunRoot || p == StartupRunOnceRoot
-                         || p.StartsWith(SoundAppsRoot + @"\", StringComparison.OrdinalIgnoreCase))
+                         || p.StartsWith(SoundAppsRoot + @"\", StringComparison.OrdinalIgnoreCase)
+                         || p.StartsWith(AppPathsRoot + @"\", StringComparison.OrdinalIgnoreCase)
+                         || p.StartsWith(FileExtsRoot + @"\", StringComparison.OrdinalIgnoreCase)
+                         || p.StartsWith(CompatAssistantRoot + @"\", StringComparison.OrdinalIgnoreCase))
                      .Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var name = new string(path[(path.LastIndexOf('\\') + 1)..]

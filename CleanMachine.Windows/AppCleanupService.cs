@@ -115,45 +115,88 @@ public sealed class AppCleanupService
 
             foreach (var entry in entries)
             {
-                var fullPath = Path.Combine(rootPath, entry.RelativePath);
-                try
+                // A relative path may contain wildcard segments (e.g. a browser's random
+                // per-profile directory, "Profiles\*\cache2"), so expand it to every
+                // concrete file/directory that matches before sizing.
+                foreach (var fullPath in ExpandPaths(rootPath, entry.RelativePath))
                 {
-                    if (Directory.Exists(fullPath))
+                    try
                     {
-                        var files = Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories).ToArray();
-                        var totalBytes = files.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0; } });
-                        if (files.Length > 0)
-                            items.Add(new AppTempItem(entry.Description, totalBytes, files.Length, fullPath));
-                    }
-                    else if (File.Exists(fullPath))
-                    {
-                        // Handle wildcard patterns in filenames.
-                        var dir = Path.GetDirectoryName(fullPath)!;
-                        var pattern = Path.GetFileName(fullPath);
-                        if (pattern.Contains('*') || pattern.Contains('?'))
+                        if (Directory.Exists(fullPath))
                         {
-                            if (Directory.Exists(dir))
-                            {
-                                var files = Directory.EnumerateFiles(dir, pattern).ToArray();
-                                var totalBytes = files.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0; } });
-                                if (files.Length > 0)
-                                    items.Add(new AppTempItem(entry.Description, totalBytes, files.Length, dir));
-                            }
+                            var files = Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories).ToArray();
+                            var totalBytes = files.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0; } });
+                            if (files.Length > 0)
+                                items.Add(new AppTempItem(entry.Description, totalBytes, files.Length, fullPath));
                         }
-                        else
+                        else if (File.Exists(fullPath))
                         {
                             var info = new FileInfo(fullPath);
-                            if (info.Exists && info.Length > 0)
+                            if (info.Length > 0)
                                 items.Add(new AppTempItem(entry.Description, info.Length, 1, fullPath));
+                        }
+                    }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+        }
+
+        return new AppScan(def.Id, def.Name, def.Group, def.IsStoreApp, true, items);
+    }
+
+    /// <summary>Expands a relative path that may contain wildcard segments into the set
+    /// of existing files/directories under <paramref name="root"/>. Literal segments are
+    /// matched exactly; a wildcard segment ("*"/"?") matches sub-directories for
+    /// intermediate segments, and any file-or-directory entry for the final segment (so
+    /// both "Profiles\*\cache2" and "logs\*.log" resolve). Returned paths are always
+    /// concrete - never wildcards - so the cleaner's re-scan matches items by the same
+    /// FullPaths it would delete.</summary>
+    private static IEnumerable<string> ExpandPaths(string root, string relativePath)
+    {
+        var segments = relativePath.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        IEnumerable<string> current = [root];
+
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var segment = segments[i];
+            var isLast = i == segments.Length - 1;
+            var hasWildcard = segment.Contains('*') || segment.Contains('?');
+            var next = new List<string>();
+
+            foreach (var dir in current)
+            {
+                if (!Directory.Exists(dir)) continue;
+                try
+                {
+                    if (hasWildcard)
+                    {
+                        next.AddRange(isLast
+                            ? Directory.EnumerateFileSystemEntries(dir, segment)
+                            : Directory.EnumerateDirectories(dir, segment));
+                    }
+                    else
+                    {
+                        var combined = Path.Combine(dir, segment);
+                        if (isLast)
+                        {
+                            if (Directory.Exists(combined) || File.Exists(combined)) next.Add(combined);
+                        }
+                        else if (Directory.Exists(combined))
+                        {
+                            next.Add(combined);
                         }
                     }
                 }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
             }
+
+            current = next;
+            if (next.Count == 0) break;
         }
 
-        return new AppScan(def.Id, def.Name, def.Group, def.IsStoreApp, true, items);
+        return current;
     }
 
     private static bool IsInstalled(AppDefinition def)
@@ -200,6 +243,14 @@ public sealed class AppCleanupService
             "chrome" => DirExists(LocalAppData, "Google\\Chrome"),
             "brave" => DirExists(LocalAppData, "BraveSoftware\\Brave-Browser"),
             "adobe-acrobat" => DirExists(LocalAppData, "Adobe\\Acrobat"),
+            "adobe-media-cache" => DirExists(RoamingAppData, "Adobe\\Common"),
+            "signal" => DirExists(RoamingAppData, "Signal") || DirExists(LocalAppData, "Programs\\signal-desktop"),
+            "postman" => DirExists(RoamingAppData, "Postman") || DirExists(LocalAppData, "Postman"),
+            "vivaldi" => DirExists(LocalAppData, "Vivaldi"),
+            "opera" => DirExists(RoamingAppData, "Opera Software") || DirExists(LocalAppData, "Opera Software"),
+            "epic-games" => DirExists(ProgramFilesX86, "Epic Games") || DirExists(LocalAppData, "EpicGamesLauncher"),
+            "thunderbird" => DirExists(RoamingAppData, "Thunderbird") || DirExists(LocalAppData, "Thunderbird"),
+            "jetbrains" => DirExists(LocalAppData, "JetBrains") || DirExists(RoamingAppData, "JetBrains"),
             "activity-history" => DirExists(LocalAppData, "ConnectedDevicesPlatform"),
             "defender" => FileExists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp"), "MpCmdRun.log"),
             "mediaplayer" => DirExists(RoamingAppData, "Microsoft\\Media Player"),

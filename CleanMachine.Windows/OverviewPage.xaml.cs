@@ -279,13 +279,15 @@ public sealed partial class OverviewPage : Page
     private async void BrowsersSettings_Click(object sender, RoutedEventArgs e)
     {
         var settings = await AppSettings.LoadAsync();
-        (string Key, string Label, bool Checked)[] known =
-        [
-            ("chrome", "Google Chrome", settings.QuickCleanBrowsers.Contains("chrome")),
-            ("edge", "Microsoft Edge", settings.QuickCleanBrowsers.Contains("edge")),
-            ("firefox", "Mozilla Firefox", settings.QuickCleanBrowsers.Contains("firefox"))
-        ];
-        await ShowPickerAsync("Browser Quick Clean - caches to clear", known.ToList(),
+        // Data-driven from the browser catalog so every supported browser (Chrome, Edge,
+        // Brave, Vivaldi, Opera, Firefox) is selectable, not just the default three.
+        // Internet Explorer is omitted: it has no profile cache of its own (its cache is
+        // the Windows Internet Cache, already a Windows Cleanup category).
+        var items = BrowserCatalog.Browsers
+            .Where(b => b.Family != BrowserFamily.InternetExplorer)
+            .Select(b => (b.Id, b.Name, settings.QuickCleanBrowsers.Contains(b.Id)))
+            .ToList();
+        await ShowPickerAsync("Browser Quick Clean - caches to clear", items,
             (s, selected) => s.QuickCleanBrowsers = selected);
     }
 

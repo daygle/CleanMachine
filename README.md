@@ -39,13 +39,14 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 ### Application Cleanup
 - Two-pane list/detail view: detected apps (grouped by Desktop / Microsoft Store) on the left, a summary header with size/file/item chips and a per-item file drill-down on the right
 - Shows only apps with items by default (clean apps hidden, or shown greyed out behind Show All)
-- Broad built-in catalog of desktop apps (browsers, Discord, Slack, Spotify, Teams, VS Code, Steam, Zoom, Office, Adobe Acrobat and more) and Microsoft Store apps (Xbox, WhatsApp, Netflix, Photos, and more), plus Windows components (Defender logs, search index, media player caches, activity history)
+- Broad built-in catalog of desktop apps (Chrome, Edge, Brave, Vivaldi, Opera, Discord, Slack, Signal, Spotify, Teams, VS Code, JetBrains IDEs, Postman, Steam, Epic Games, Zoom, Office, Thunderbird, Adobe Acrobat, Adobe media cache and more) and Microsoft Store apps (Teams, Outlook, Phone Link, Mail and Calendar, Maps, Camera, Xbox, WhatsApp, Netflix, Photos, Solitaire and more), plus Windows components (Defender logs, search index, media player caches, activity history)
+- Temp-file locations support wildcard path segments, so apps that store caches under randomly-named or versioned per-profile folders (e.g. Thunderbird profiles, JetBrains product/version folders) are matched correctly
 - The list re-scans after a clean so sizes reflect what was removed
 - Secure Delete option uses the wipe method from Settings
 - Same availability figure feeds the Overview dashboard
 
 ### Registry Care
-- Read-only scanning of current-user uninstall metadata, file associations, MUI cache, startup entries, and orphaned sound events
+- Read-only scanning of current-user (HKCU) entries only - leftover uninstall metadata (no removal command, or an uninstaller that is missing), dangling file associations (a missing handler class, or one whose open command runs a program that is gone), "Open with" entries referencing a missing handler or program, MUI cache, startup entries, orphaned sound events, Shell app-name cache (MuiCache) for missing programs, App Paths entries pointing at missing programs, and Compatibility Assistant records for missing programs. Machine-wide (HKLM) keys are never touched, since editing them needs elevation and is far riskier
 - Two-pane list/detail view: finding categories as expanders on the left, a summary header with eligible/selected/total chips on the right, and a per-finding drill-down showing its registry key, value, confidence and reason
 - Safe per-user cleanup with value-level deletion, so shared keys are never removed wholesale
 - Confidence-based filtering (minimum 70%) for review eligibility; Show All reveals ineligible findings when there are any (and is disabled with an explanation when there are none)
@@ -54,7 +55,9 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 
 ### Windows Cleanup
 - Two-pane list/detail view: categories on the left, a summary header with chips and a per-category file drill-down on the right
-- Safe category scanning: temporary files, thumbnail and icon caches, error reports, internet cache, Remote Desktop cache, PowerShell history, and more
+- Safe category scanning: temporary files, thumbnail and icon caches, error reports, internet cache, Remote Desktop cache, PowerShell history, GPU shader caches (NVIDIA/AMD/Intel), custom jump lists, Microsoft Store cache, certificate revocation cache (CryptnetUrlCache), Windows Spotlight image cache, and more; plus an Advanced, off-by-default Windows Update download cache
+- Review-tier (off by default, confirm first): Recycle Bin, downloaded files by type, and Action Center notification history
+- History/MRU categories (Run, Search, Open/Save dialog, Recent, jump lists) clear recursively through sub-keys, so entries stored inside sub-keys (e.g. the Open/Save dialog MRUs) are actually removed
 - Categories with nothing to clean are hidden from the selection list (shared, cached scan with the Overview card); if a scan fails the full catalog is shown so nothing becomes unreachable
 - Per-category enable/disable persisted in settings, honoring per-user overrides; the list re-measures after a clean
 - Recycle Bin cleanup through native `SHEmptyRecycleBin` (requires explicit confirmation)

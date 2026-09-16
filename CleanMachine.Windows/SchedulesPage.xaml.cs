@@ -6,10 +6,6 @@ namespace CleanMachine.Windows;
 
 public sealed partial class SchedulesPage : Page
 {
-    /// <summary>Registry Care categories a schedule may clean (see RegistryFinding.Category).</summary>
-    private static readonly string[] RegistryCategories =
-        ["Installer/Uninstaller", "File Extensions", "MUI Cache", "Windows Startup", "Sound AppEvents"];
-
     private readonly List<(string Key, CheckBox Box)> _itemBoxes = [];
     private AppSettings _settings = new();
     private CleanupSchedule? _current;
@@ -36,6 +32,7 @@ public sealed partial class SchedulesPage : Page
         _itemBoxes.Clear();
 
         AddItemBox("browser", "Browser Caches", "Clears Chrome, Edge, and Firefox cache files (locked files are skipped)");
+        AddItemBox("apps", "Application Temp Files", "Clears temp and cache files for detected apps (Application Cleanup catalog)");
 
         foreach (var group in WindowsCleanupService.Catalog.GroupBy(c => c.Group))
         {
@@ -45,7 +42,9 @@ public sealed partial class SchedulesPage : Page
         }
 
         ItemsPanel.Children.Add(SectionLabel("Registry Care"));
-        foreach (var category in RegistryCategories)
+        // Single source of truth (shared with Overview Quick Clean) so new registry
+        // categories appear here automatically.
+        foreach (var category in QuickCleanService.RegistryCategories)
             AddItemBox($"reg:{category}", category, "Read-only scan; only low-risk items are cleaned, always after a backup");
     }
 
@@ -168,6 +167,7 @@ public sealed partial class SchedulesPage : Page
             box.IsChecked = key switch
             {
                 "browser" => schedule.CleanBrowserCache,
+                "apps" => schedule.CleanAppTempFiles,
                 var k when k.StartsWith("win:") => schedule.WindowsCategoryIds.Contains(k[4..], StringComparer.OrdinalIgnoreCase),
                 var k when k.StartsWith("reg:") => schedule.RegistryCategories.Contains(k[4..], StringComparer.OrdinalIgnoreCase),
                 _ => false
@@ -264,6 +264,7 @@ public sealed partial class SchedulesPage : Page
             SecureDelete = SecureDeleteCheck.IsChecked == true,
             WakeToRun = WakeCheck.IsChecked == true && TriggerCombo.SelectedIndex != (int)ScheduleTrigger.AtLogon,
             CleanBrowserCache = _itemBoxes.Any(b => b.Key == "browser" && b.Box.IsChecked == true),
+            CleanAppTempFiles = _itemBoxes.Any(b => b.Key == "apps" && b.Box.IsChecked == true),
             WindowsCategoryIds = _itemBoxes.Where(b => b.Key.StartsWith("win:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList(),
             RegistryCategories = _itemBoxes.Where(b => b.Key.StartsWith("reg:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList()
         };

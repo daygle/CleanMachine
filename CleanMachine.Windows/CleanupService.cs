@@ -91,6 +91,11 @@ public sealed class CleanupService
         ScanMuiCache(findings);
         ScanStartupEntries(findings);
         ScanSoundAppEvents(findings);
+        ScanShellMuiCache(findings);
+        ScanUserAppPaths(findings);
+        ScanOpenWithProgids(findings);
+        ScanOpenWithList(findings);
+        ScanCompatibilityAssistant(findings);
         return Task.FromResult<IReadOnlyList<RegistryFinding>>(findings);
     }
 
@@ -104,27 +109,148 @@ public sealed class CleanupService
             using var entry = uninstall.OpenSubKey(name);
             var displayName = entry?.GetValue("DisplayName") as string;
             var uninstallString = entry?.GetValue("UninstallString") as string;
-            if (!string.IsNullOrWhiteSpace(displayName) && string.IsNullOrWhiteSpace(uninstallString))
+            if (string.IsNullOrWhiteSpace(displayName)) continue;
+            if (string.IsNullOrWhiteSpace(uninstallString))
+            {
                 findings.Add(new RegistryFinding("HKCU",
                     $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{name}",
                     "Uninstall metadata has no removal command", true, 75, "Installer/Uninstaller"));
+                continue;
+            }
+            // The uninstall command names an uninstaller that is gone: the program
+            // is no longer installed, so the leftover entry can't uninstall anything.
+            // Only act when we can resolve an absolute local exe (MsiExec and env-var
+            // commands resolve to null and are left alone).
+            var uninstaller = ResolveStartupExecutable(uninstallString);
+            if (uninstaller is not null && !File.Exists(uninstaller))
+                findings.Add(new RegistryFinding("HKCU",
+                    $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{name}",
+                    $"Uninstaller is missing ({Path.GetFileName(uninstaller)})", true, 70, "Installer/Uninstaller"));
         }
     }
 
+    // Per-user file-type associations (HKCU\Software\Classes\.ext) whose default
+    // ProgID has no handler class anywhere in the merged HKCR view (HKLM + HKCU) -
+    // a dangling association. Removing the per-user key falls back to the system
+    // default, so it only ever undoes a broken override.
     private static void ScanFileAssociations(RegistryHive hive, ICollection<RegistryFinding> findings)
     {
         using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Default);
-        using var extensions = root.OpenSubKey(@"Software\Classes\.obsolete");
-        if (extensions is null) return;
-        foreach (var ext in extensions.GetSubKeyNames())
+        using var classes = root.OpenSubKey(@"Software\Classes");
+        if (classes is null) return;
+        foreach (var ext in classes.GetSubKeyNames())
         {
-            using var extKey = extensions.OpenSubKey(ext);
-            var progId = extKey?.GetValue("") as string;
-            if (string.IsNullOrWhiteSpace(progId)) continue;
-            using var progIdKey = root.OpenSubKey($@"Software\Classes\{progId}\shell");
-            if (progIdKey is null)
+            if (!ext.StartsWith('.')) continue; // only file-extension keys
+            using var extKey = classes.OpenSubKey(ext);
+            if (extKey?.GetValue(null) is not string progId || string.IsNullOrWhiteSpace(progId)) continue;
+            // Resolve the ProgID against the merged HKCR view. Two orphan cases:
+            // the class is entirely absent, or it exists but its open command runs
+            // an executable that is gone. Either way the per-user override is broken;
+            // removing it falls back to the system default.
+            using var handler = Registry.ClassesRoot.OpenSubKey(progId);
+            if (handler is null)
                 findings.Add(new RegistryFinding("HKCU", $@"Software\Classes\{ext}",
-                    $"File extension maps to missing handler '{progId}'", true, 65, "File Extensions"));
+                    $"File type {ext} maps to a missing handler '{progId}'", true, 70, "File Extensions"));
+            else if (TryGetMissingOpenCommandExe(progId, out var exe))
+                findings.Add(new RegistryFinding("HKCU", $@"Software\Classes\{ext}",
+                    $"File type {ext} opens with a missing program ({Path.GetFileName(exe)})", true, 70, "File Extensions"));
+        }
+    }
+
+    /// <summary>True when a ProgID's shell\open\command resolves to an absolute local
+    /// executable that no longer exists. Commands we cannot positively resolve to a
+    /// fully-qualified path (MsiExec, rundll32, env-var or store activations) return
+    /// false so they are never flagged.</summary>
+    private static bool TryGetMissingOpenCommandExe(string progId, out string? exe)
+    {
+        exe = null;
+        using var command = Registry.ClassesRoot.OpenSubKey($@"{progId}\shell\open\command");
+        if (command?.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) return false;
+        var candidate = ResolveStartupExecutable(raw);
+        if (candidate is null || File.Exists(candidate)) return false;
+        exe = candidate;
+        return true;
+    }
+
+    // Per-extension "Open with" ProgID suggestions
+    // (HKCU\...\Explorer\FileExts\.ext\OpenWithProgids) that reference a class no
+    // longer registered anywhere. Each is a single value; deleting it only removes
+    // a dead entry from the "Open with" list.
+    private const string FileExtsKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts";
+
+    private static void ScanOpenWithProgids(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var fileExts = root.OpenSubKey(FileExtsKey);
+        if (fileExts is null) return;
+        foreach (var ext in fileExts.GetSubKeyNames())
+        {
+            using var progids = fileExts.OpenSubKey($@"{ext}\OpenWithProgids");
+            if (progids is null) continue;
+            foreach (var progId in progids.GetValueNames())
+            {
+                if (string.IsNullOrEmpty(progId)) continue;
+                using var handler = Registry.ClassesRoot.OpenSubKey(progId);
+                if (handler is null)
+                    findings.Add(new RegistryFinding("HKCU", $@"{FileExtsKey}\{ext}\OpenWithProgids",
+                        $"'Open with' entry for {ext} references a missing handler '{progId}'", true, 70, "Open With", progId));
+                else if (TryGetMissingOpenCommandExe(progId, out var exe))
+                    findings.Add(new RegistryFinding("HKCU", $@"{FileExtsKey}\{ext}\OpenWithProgids",
+                        $"'Open with' entry for {ext} runs a missing program ({Path.GetFileName(exe)})", true, 70, "Open With", progId));
+            }
+        }
+    }
+
+    // Per-extension "Open with" application list
+    // (HKCU\...\Explorer\FileExts\.ext\OpenWithList) whose entry is an absolute path
+    // to a program that no longer exists. Bare executable names (resolved via App
+    // Paths / PATH) can't be positively verified, so only full paths are flagged.
+    private static void ScanOpenWithList(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var fileExts = root.OpenSubKey(FileExtsKey);
+        if (fileExts is null) return;
+        foreach (var ext in fileExts.GetSubKeyNames())
+        {
+            using var list = fileExts.OpenSubKey($@"{ext}\OpenWithList");
+            if (list is null) continue;
+            foreach (var valueName in list.GetValueNames())
+            {
+                // MRUList just orders the letters; the a/b/c values hold the programs.
+                if (string.IsNullOrEmpty(valueName) || valueName.Equals("MRUList", StringComparison.OrdinalIgnoreCase)) continue;
+                if (list.GetValue(valueName) is not string target || string.IsNullOrWhiteSpace(target)) continue;
+                var exe = target.Trim('"');
+                if (exe.Contains('%') || !Path.IsPathFullyQualified(exe)) continue;
+                if (File.Exists(exe)) continue;
+                findings.Add(new RegistryFinding("HKCU", $@"{FileExtsKey}\{ext}\OpenWithList",
+                    $"'Open with' entry for {ext} points to a missing program ({Path.GetFileName(exe)})", true, 70, "Open With", valueName));
+            }
+        }
+    }
+
+    // Program Compatibility Assistant remembers executables it has prompted about,
+    // keyed by full exe path. Entries for executables that no longer exist are dead.
+    private const string CompatAssistantStoreKey =
+        @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Store";
+    private const string CompatAssistantPersistedKey =
+        @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Persisted";
+
+    private static void ScanCompatibilityAssistant(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        foreach (var keyPath in new[] { CompatAssistantStoreKey, CompatAssistantPersistedKey })
+        {
+            using var key = root.OpenSubKey(keyPath);
+            if (key is null) continue;
+            foreach (var valueName in key.GetValueNames())
+            {
+                // Value names are full executable paths; only act on absolute local
+                // paths we can positively verify are gone.
+                if (string.IsNullOrEmpty(valueName) || valueName.Contains('%') || !Path.IsPathFullyQualified(valueName)) continue;
+                if (File.Exists(valueName)) continue;
+                findings.Add(new RegistryFinding("HKCU", keyPath,
+                    $"Compatibility record for a missing program ({Path.GetFileName(valueName)})", true, 75, "Compatibility Assistant", valueName));
+            }
         }
     }
 
@@ -185,6 +311,63 @@ public sealed class CleanupService
                     findings.Add(new RegistryFinding("HKCU", $@"AppEvents\Schemes\Apps\{appName}\{eventName}",
                         "Sound event references a missing file", true, 70, "Sound AppEvents", ".Default"));
             }
+        }
+    }
+
+    // Shell MuiCache stores friendly display names for executables, keyed by the
+    // executable's full path. Entries whose executable no longer exists are dead
+    // cache; Windows rebuilds the cache on demand, so removing them is safe.
+    private const string ShellMuiCacheKey =
+        @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache";
+
+    private static void ScanShellMuiCache(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var key = root.OpenSubKey(ShellMuiCacheKey);
+        if (key is null) return;
+        foreach (var valueName in key.GetValueNames())
+        {
+            if (string.IsNullOrEmpty(valueName)) continue;
+            // Value names look like "<full exe path>.FriendlyAppName" or
+            // ".ApplicationCompany"; strip the known suffix to get the executable.
+            var exe = valueName;
+            foreach (var suffix in new[] { ".FriendlyAppName", ".ApplicationCompany" })
+            {
+                if (exe.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    exe = exe[..^suffix.Length];
+                    break;
+                }
+            }
+            // Only act on absolute paths we can positively verify are gone; env-var
+            // and non-qualified entries are left alone.
+            if (exe.Contains('%') || !Path.IsPathFullyQualified(exe)) continue;
+            if (File.Exists(exe)) continue;
+            findings.Add(new RegistryFinding("HKCU", ShellMuiCacheKey,
+                $"Cached app name for a missing program ({Path.GetFileName(exe)})", true, 75, "Shell Cache", valueName));
+        }
+    }
+
+    // Per-user App Paths entries whose target executable no longer exists on disk.
+    // App Paths only resolves a program name to its full path; a dead entry does
+    // nothing but point at a program that is gone.
+    private const string AppPathsKey = @"Software\Microsoft\Windows\CurrentVersion\App Paths";
+
+    private static void ScanUserAppPaths(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var appPaths = root.OpenSubKey(AppPathsKey);
+        if (appPaths is null) return;
+        foreach (var name in appPaths.GetSubKeyNames())
+        {
+            using var entry = appPaths.OpenSubKey(name);
+            var target = entry?.GetValue(null) as string; // (Default) = executable path
+            if (string.IsNullOrWhiteSpace(target)) continue;
+            var exe = target.Trim('"');
+            if (exe.Contains('%') || !Path.IsPathFullyQualified(exe)) continue;
+            if (File.Exists(exe)) continue;
+            findings.Add(new RegistryFinding("HKCU", $@"{AppPathsKey}\{name}",
+                $"App Paths entry '{name}' points to a missing program", true, 75, "App Paths"));
         }
     }
 

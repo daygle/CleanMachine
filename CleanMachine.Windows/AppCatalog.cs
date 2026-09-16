@@ -256,6 +256,82 @@ public static class AppCatalog
             ])
         ]),
 
+        new("adobe-media-cache", "Adobe Media Cache", "Desktop App", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Adobe\\Common\\Media Cache Files", "Media cache files (Premiere/After Effects)"),
+                new("Adobe\\Common\\Media Cache", "Media cache database")
+            ])
+        ]),
+
+        new("signal", "Signal", "Desktop App", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Signal\\Cache", "App cache"),
+                new("Signal\\Code Cache", "Code cache"),
+                new("Signal\\GPUCache", "GPU cache"),
+                new("Signal\\Service Worker\\CacheStorage", "Service worker cache"),
+                new("Signal\\logs", "Log files")
+            ])
+        ]),
+
+        new("postman", "Postman", "Desktop App", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Postman\\Cache", "App cache"),
+                new("Postman\\Code Cache", "Code cache"),
+                new("Postman\\GPUCache", "GPU cache"),
+                new("Postman\\Service Worker\\CacheStorage", "Service worker cache")
+            ])
+        ]),
+
+        new("vivaldi", "Vivaldi", "Desktop App", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Vivaldi\\User Data\\Default\\Cache", "Browser cache"),
+                new("Vivaldi\\User Data\\Default\\Code Cache", "Code cache"),
+                new("Vivaldi\\User Data\\Default\\GPUCache", "GPU cache"),
+                new("Vivaldi\\User Data\\Default\\Service Worker\\CacheStorage", "Service worker cache")
+            ])
+        ]),
+
+        new("opera", "Opera", "Desktop App", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Opera Software\\Opera Stable\\Cache", "Browser cache"),
+                new("Opera Software\\Opera Stable\\Code Cache", "Code cache"),
+                new("Opera Software\\Opera Stable\\GPUCache", "GPU cache"),
+                new("Opera Software\\Opera Stable\\Service Worker\\CacheStorage", "Service worker cache")
+            ])
+        ]),
+
+        new("epic-games", "Epic Games Launcher", "Desktop App", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("EpicGamesLauncher\\Saved\\webcache", "Web cache"),
+                new("EpicGamesLauncher\\Saved\\Logs", "Log files")
+            ])
+        ]),
+
+        new("thunderbird", "Mozilla Thunderbird", "Desktop App", false,
+        [
+            // Each profile lives in a randomly-named folder, so the profile segment is a
+            // wildcard. Only the disk cache is cleaned; mail and settings are untouched.
+            (AppDataRoot.LocalAppData, [
+                new("Thunderbird\\Profiles\\*\\cache2", "Disk cache")
+            ])
+        ]),
+
+        new("jetbrains", "JetBrains IDEs", "Desktop App", false,
+        [
+            // One folder per product+version (e.g. IntelliJIdea2024.1), matched by wildcard.
+            (AppDataRoot.LocalAppData, [
+                new("JetBrains\\*\\caches", "IDE caches"),
+                new("JetBrains\\*\\log", "Log files"),
+                new("JetBrains\\*\\tmp", "Temp files")
+            ])
+        ]),
+
         // ---- Microsoft Store Apps ----
         new("store-bing-news", "Bing News", "Microsoft Store App", true,
         [
@@ -407,6 +483,96 @@ public static class AppCatalog
                 new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
                 new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
                 new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-teams", "Microsoft Teams", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-outlook", "Outlook (new)", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-phone-link", "Phone Link", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-mail-calendar", "Mail and Calendar", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-maps", "Windows Maps", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-camera", "Windows Camera", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-solitaire", "Microsoft Solitaire Collection", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-get-help", "Get Help", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-feedback-hub", "Feedback Hub", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\TempState", "Temp state")
+            ])
+        ]),
+
+        new("store-microsoft-store", "Microsoft Store", "Microsoft Store App", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
+                new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
+                new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\TempState", "Temp state")
             ])
         ])
     ];
