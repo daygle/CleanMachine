@@ -91,6 +91,8 @@ public sealed class CleanupService
         ScanMuiCache(findings);
         ScanStartupEntries(findings);
         ScanSoundAppEvents(findings);
+        ScanShellMuiCache(findings);
+        ScanUserAppPaths(findings);
         return Task.FromResult<IReadOnlyList<RegistryFinding>>(findings);
     }
 
@@ -185,6 +187,63 @@ public sealed class CleanupService
                     findings.Add(new RegistryFinding("HKCU", $@"AppEvents\Schemes\Apps\{appName}\{eventName}",
                         "Sound event references a missing file", true, 70, "Sound AppEvents", ".Default"));
             }
+        }
+    }
+
+    // Shell MuiCache stores friendly display names for executables, keyed by the
+    // executable's full path. Entries whose executable no longer exists are dead
+    // cache; Windows rebuilds the cache on demand, so removing them is safe.
+    private const string ShellMuiCacheKey =
+        @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache";
+
+    private static void ScanShellMuiCache(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var key = root.OpenSubKey(ShellMuiCacheKey);
+        if (key is null) return;
+        foreach (var valueName in key.GetValueNames())
+        {
+            if (string.IsNullOrEmpty(valueName)) continue;
+            // Value names look like "<full exe path>.FriendlyAppName" or
+            // ".ApplicationCompany"; strip the known suffix to get the executable.
+            var exe = valueName;
+            foreach (var suffix in new[] { ".FriendlyAppName", ".ApplicationCompany" })
+            {
+                if (exe.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    exe = exe[..^suffix.Length];
+                    break;
+                }
+            }
+            // Only act on absolute paths we can positively verify are gone; env-var
+            // and non-qualified entries are left alone.
+            if (exe.Contains('%') || !Path.IsPathFullyQualified(exe)) continue;
+            if (File.Exists(exe)) continue;
+            findings.Add(new RegistryFinding("HKCU", ShellMuiCacheKey,
+                $"Cached app name for a missing program ({Path.GetFileName(exe)})", true, 75, "Shell Cache", valueName));
+        }
+    }
+
+    // Per-user App Paths entries whose target executable no longer exists on disk.
+    // App Paths only resolves a program name to its full path; a dead entry does
+    // nothing but point at a program that is gone.
+    private const string AppPathsKey = @"Software\Microsoft\Windows\CurrentVersion\App Paths";
+
+    private static void ScanUserAppPaths(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var appPaths = root.OpenSubKey(AppPathsKey);
+        if (appPaths is null) return;
+        foreach (var name in appPaths.GetSubKeyNames())
+        {
+            using var entry = appPaths.OpenSubKey(name);
+            var target = entry?.GetValue(null) as string; // (Default) = executable path
+            if (string.IsNullOrWhiteSpace(target)) continue;
+            var exe = target.Trim('"');
+            if (exe.Contains('%') || !Path.IsPathFullyQualified(exe)) continue;
+            if (File.Exists(exe)) continue;
+            findings.Add(new RegistryFinding("HKCU", $@"{AppPathsKey}\{name}",
+                $"App Paths entry '{name}' points to a missing program", true, 75, "App Paths"));
         }
     }
 
