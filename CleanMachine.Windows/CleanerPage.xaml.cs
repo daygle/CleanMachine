@@ -217,18 +217,21 @@ public sealed partial class CleanerPage : Page
         DetailSubHeadline.Text = "Click an item to see the files it will clean. Tick items in the list on the left.";
         DetailPanel.Children.Clear();
 
-        if (scan.Items.Count == 0)
+        // Only surface items that actually have something to clean; items with no
+        // files/bytes are noise on the right card (the left list still shows them).
+        var cleanable = scan.Items.Where(i => i.Bytes > 0 || i.FileCount > 0).ToList();
+        if (cleanable.Count == 0)
         {
             SetChips(null, null, null);
             DetailPanel.Children.Add(BuildDetailPlaceholder("Nothing to clean for this browser."));
             return;
         }
 
-        SetChips(AppNotifications.FormatBytes(scan.Items.Sum(i => i.Bytes)),
-            scan.Items.Sum(i => i.FileCount).ToString("N0"),
-            scan.Items.Count.ToString());
+        SetChips(AppNotifications.FormatBytes(cleanable.Sum(i => i.Bytes)),
+            cleanable.Sum(i => i.FileCount).ToString("N0"),
+            cleanable.Count.ToString());
 
-        foreach (var item in scan.Items)
+        foreach (var item in cleanable)
         {
             var current = item;
 

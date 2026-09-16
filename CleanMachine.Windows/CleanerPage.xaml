@@ -128,7 +128,7 @@
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Left">
         <Button x:Name="ScanButton" Content="Scan Browsers" Click="Scan_Click"
                 Background="#286E58" Foreground="White" Padding="20,10"/>
-        <CheckBox x:Name="CloseBrowsersCheck" Content="Close open browsers before cleaning" VerticalAlignment="Center"
+        <CheckBox x:Name="CloseBrowsersCheck" Content="Close Browsers First" VerticalAlignment="Center"
                   Checked="CloseBrowsers_Changed" Unchecked="CloseBrowsers_Changed"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
