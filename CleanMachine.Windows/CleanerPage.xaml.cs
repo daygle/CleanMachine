@@ -348,8 +348,10 @@ public sealed partial class CleanerPage : Page
         return expander;
     }
 
-    /// <summary>Browser-level detail: summary chips plus one framed row per item,
-    /// each mirroring the left checkbox so the left list stays authoritative.</summary>
+    /// <summary>Browser-level detail: summary chips plus one read-only framed row per
+    /// item (size and file count), each drilling into that item's files on click.
+    /// Selection lives only in the left list, so the right card never duplicates the
+    /// checkboxes.</summary>
     private void ShowBrowserDetail(BrowserScan scan)
     {
         _detailScan = scan;
@@ -357,7 +359,7 @@ public sealed partial class CleanerPage : Page
         DetailGroupBadge.Visibility = Visibility.Visible;
         DetailGroupBadgeText.Text = "BROWSER";
         DetailHeadline.Text = scan.Name;
-        DetailSubHeadline.Text = "Click an item to see details.";
+        DetailSubHeadline.Text = "Click an item to see the files it will clean. Tick items in the list on the left.";
         DetailPanel.Children.Clear();
 
         if (scan.Items.Count == 0)
@@ -374,23 +376,13 @@ public sealed partial class CleanerPage : Page
         foreach (var item in scan.Items)
         {
             var current = item;
-            var sourceBox = _itemBoxes.FirstOrDefault(x => x.BrowserId == scan.Id && x.ItemId == item.Id).Box;
 
+            // The right card is a read-only breakdown: it shows each item and drills
+            // into its files. Selection lives only in the left list, so there is no
+            // duplicate checkbox here.
             var row = new Grid { ColumnSpacing = 10 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var mirror = new CheckBox
-            {
-                IsChecked = sourceBox?.IsChecked == true,
-                MinWidth = 0,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            mirror.Checked += (_, _) => { if (sourceBox is not null) sourceBox.IsChecked = true; };
-            mirror.Unchecked += (_, _) => { if (sourceBox is not null) sourceBox.IsChecked = false; };
-            Grid.SetColumn(mirror, 0);
-            row.Children.Add(mirror);
 
             var body = new Button
             {
@@ -422,7 +414,7 @@ public sealed partial class CleanerPage : Page
             body.Content = label;
             body.Click += (_, _) => ShowItemDetail(scan, current);
             ToolTipService.SetToolTip(body, item.Description);
-            Grid.SetColumn(body, 1);
+            Grid.SetColumn(body, 0);
             row.Children.Add(body);
 
             var side = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
@@ -439,7 +431,7 @@ public sealed partial class CleanerPage : Page
                 FontSize = 10,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
-            Grid.SetColumn(side, 2);
+            Grid.SetColumn(side, 1);
             row.Children.Add(side);
 
             DetailPanel.Children.Add(new Border
@@ -454,8 +446,9 @@ public sealed partial class CleanerPage : Page
         }
     }
 
-    /// <summary>Item-level detail: what the item is, its size, and a caution for
-    /// destructive items. The Back button returns to the browser's item list.</summary>
+    /// <summary>Item-level detail: the actual files the item would clean (with sizes),
+    /// plus a caution for destructive items. The Back button returns to the browser's
+    /// item list.</summary>
     private void ShowItemDetail(BrowserScan scan, BrowserItemInfo item)
     {
         _detailScan = scan;
@@ -463,15 +456,71 @@ public sealed partial class CleanerPage : Page
         DetailGroupBadge.Visibility = Visibility.Visible;
         DetailGroupBadgeText.Text = "BROWSER";
         DetailHeadline.Text = $"{scan.Name} - {item.Name}";
-        DetailSubHeadline.Text = item.Destructive ? "Destructive item - off by default." : "Safe cache item.";
+        DetailSubHeadline.Text = item.Description;
         SetChips(item.Bytes > 0 ? AppNotifications.FormatBytes(item.Bytes) : "-", item.FileCount.ToString("N0"), "1");
         DetailPanel.Children.Clear();
-        DetailPanel.Children.Add(DetailRow("Item", item.Name));
-        DetailPanel.Children.Add(DetailRow("What it is", item.Description));
-        DetailPanel.Children.Add(DetailRow("Size", $"{AppNotifications.FormatBytes(item.Bytes)} · {item.FileCount:N0} file(s)"));
+
         if (item.Destructive)
             DetailPanel.Children.Add(DetailRow("Caution",
-                "Deletes personal data such as cookies, history or saved passwords. Never cleaned automatically; ticking it here removes it permanently."));
+                "Deletes personal data such as cookies, history or saved passwords. Cleaned automatically only if you opt this item in on the close-monitor; ticking it here removes it permanently."));
+
+        const int shown = 200;
+        var files = _service.ListItemFiles(scan.Id, item.Id, shown + 1)
+            .OrderByDescending(f => f.Bytes)
+            .ToList();
+        if (files.Count == 0)
+        {
+            DetailPanel.Children.Add(BuildDetailPlaceholder("No files in this location right now."));
+            return;
+        }
+
+        foreach (var file in files.Take(shown))
+            DetailPanel.Children.Add(FileRow(file.Path, file.Bytes));
+
+        if (item.FileCount > shown)
+            DetailPanel.Children.Add(new TextBlock
+            {
+                Text = $"+ {item.FileCount - shown:N0} more file(s)",
+                FontSize = 10,
+                Margin = new Thickness(4, 4, 0, 0),
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
+    }
+
+    private static Border FileRow(string path, long bytes)
+    {
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var name = new TextBlock
+        {
+            Text = path,
+            FontSize = 11,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ToolTipService.SetToolTip(name, path);
+        Grid.SetColumn(name, 0);
+        grid.Children.Add(name);
+        var size = new TextBlock
+        {
+            Text = AppNotifications.FormatBytes(bytes),
+            FontSize = 10,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(size, 1);
+        grid.Children.Add(size);
+        return new Border
+        {
+            Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+            BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 5, 10, 5),
+            Child = grid
+        };
     }
 
     private static Border DetailRow(string label, string value) => new()
