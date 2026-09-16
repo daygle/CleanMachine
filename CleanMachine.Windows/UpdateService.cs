@@ -112,8 +112,11 @@ public sealed class UpdateService
                 // .exe installer: launch silently and exit so the installer can replace files.
                 // Inno Setup /SILENT shows a progress bar; /SUPPRESSMSGBOXES prevents dialogs;
                 // /NORESTART avoids an automatic reboot. Verb=runas requests the elevation
-                // Windows needs to write to Program Files.
-                var psi = new ProcessStartInfo(packagePath, "/SILENT /SUPPRESSMSGBOXES /NORESTART")
+                // Windows needs to write to Program Files. /relaunch=1 tells the installer to
+                // reopen the app once files are in place - a silent install skips the
+                // Finished-page launch, so without this the app would just close and stay
+                // closed after updating.
+                var psi = new ProcessStartInfo(packagePath, "/SILENT /SUPPRESSMSGBOXES /NORESTART /relaunch=1")
                 {
                     UseShellExecute = true,
                     Verb = "runas"

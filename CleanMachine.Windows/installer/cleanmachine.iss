@@ -69,11 +69,25 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; Silent self-update relaunch: the app launches Setup with /relaunch=1 so the
+; freshly updated app reopens automatically. The Finished-page launch above is
+; skipped in silent mode (skipifsilent), which is why the app used to just close
+; and stay closed after an in-app update. runasoriginaluser drops the elevation
+; the update installed with, so the app restarts non-elevated like a normal launch.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait runasoriginaluser; Check: RelaunchAfterSilentUpdate
 
 [Code]
 const
   AppExeName = 'CleanMachine.exe';
   AppMutexName = 'Local\CleanMachine.SingleInstance';
+
+// True when the app requested an automatic relaunch after a silent self-update.
+// The app passes /relaunch=1 when it launches Setup; a plain interactive install
+// has no such parameter, so the [Run] entry gated on this stays inert there.
+function RelaunchAfterSilentUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:relaunch|0}') = '1';
+end;
 
 // True when a CleanMachine instance is alive (via the single-instance mutex).
 // Defined above ShutdownApplication: Inno's Pascal Script resolves identifiers
