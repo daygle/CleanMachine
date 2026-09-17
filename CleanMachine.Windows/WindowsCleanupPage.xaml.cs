@@ -165,6 +165,7 @@ public sealed partial class WindowsCleanupPage : Page
         AnalyzeButton.IsEnabled = false;
         CleanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
+        Progress.IsIndeterminate = true;
         ReportPanel.Children.Clear();
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
@@ -460,6 +461,7 @@ public sealed partial class WindowsCleanupPage : Page
         CleanButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         Progress.Visibility = Visibility.Visible;
+        Progress.IsIndeterminate = true;
         ReportPanel.Children.Clear();
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
@@ -470,8 +472,11 @@ public sealed partial class WindowsCleanupPage : Page
         {
             var progress = new Progress<CleanupProgress>(p =>
             {
+                Progress.IsIndeterminate = p.Total == 0;
                 Progress.Value = p.Total == 0 ? 0 : (double)p.Completed / p.Total;
-                StatusText.Text = $"Cleaning {p.Phase}: {p.Completed}/{p.Total}";
+                StatusText.Text = p.Total == 0
+                    ? $"{p.Phase}..."
+                    : $"Cleaning {p.Phase}: {p.Completed}/{p.Total}";
             });
             var useSecureDelete = SecureDeleteCheck.IsChecked == true;
             var secureDeleteOpts = useSecureDelete ? new SecureDeleteOptions(_settings.SecureDeleteMethod, _settings.CustomWipePasses) : null;
@@ -483,6 +488,7 @@ public sealed partial class WindowsCleanupPage : Page
 
             DetailHeadline.Text = "Cleaning complete";
             DetailSubHeadline.Text = "The selected items were removed.";
+            await RecordManualCleanupAsync(result);
             _lastPreview = null;
             StatusText.Text =
                 $"{result.Result.ItemsRemoved:N0} items removed, {FormatBytes(result.Result.BytesRecovered)} recovered, {result.Skipped.Count:N0} skipped.";
@@ -510,7 +516,26 @@ public sealed partial class WindowsCleanupPage : Page
             CancelButton.IsEnabled = false;
             _cancel?.Dispose();
             _cancel = null;
+            Progress.IsIndeterminate = false;
             Progress.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static async Task RecordManualCleanupAsync(CleanupReport report)
+    {
+        await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered);
+        try
+        {
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Windows Cleanup",
+                $"Manual clean - removed {report.Result.ItemsRemoved:N0} item(s), {FormatBytes(report.Result.BytesRecovered)} recovered, {report.Skipped.Count:N0} skipped.",
+                ActivityStore.BreakdownLines(report.Breakdown)));
+        }
+        catch
+        {
+            // Activity history is diagnostic; a completed cleanup must not be
+            // reported as failed if the history file cannot be written.
         }
     }
 

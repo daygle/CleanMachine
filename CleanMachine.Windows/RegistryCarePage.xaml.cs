@@ -33,6 +33,7 @@ public sealed partial class RegistryCarePage : Page
         DetailHeadline.Text = "Analyzing...";
         DetailSubHeadline.Text = "Scanning the registry read-only.";
         StatusText.Text = "Scanning the registry read-only.";
+        Progress.IsIndeterminate = true;
         Progress.Visibility = Visibility.Visible;
         try
         {
@@ -375,6 +376,7 @@ public sealed partial class RegistryCarePage : Page
         CleanButton.IsEnabled = false;
         ScanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
+        Progress.IsIndeterminate = true;
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
         DetailPanel.Children.Clear();
@@ -393,7 +395,14 @@ public sealed partial class RegistryCarePage : Page
                 return;
             }
 
-            var clean = await _service.CleanAsync(result);
+            var progress = new Progress<CleanupProgress>(p =>
+            {
+                Progress.IsIndeterminate = false;
+                Progress.Value = p.Total == 0 ? 0 : (double)p.Completed / p.Total;
+                StatusText.Text = $"Cleaning {p.Phase}: {p.Completed}/{p.Total}";
+            });
+            var clean = await _service.CleanAsync(result, progress: progress);
+            await RecordManualCleanupAsync(result, clean);
             var backupNote = $"{result.Backups.Count} backup file(s) saved under " +
                              Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Backups");
 
@@ -436,7 +445,31 @@ public sealed partial class RegistryCarePage : Page
         {
             ScanButton.IsEnabled = true;
             CleanButton.IsEnabled = _findings.Count > 0;
+            Progress.IsIndeterminate = false;
             Progress.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static async Task RecordManualCleanupAsync(RegistryReview review, RegistryCleanResult result)
+    {
+        await new CleanupStatsStore().RecordAsync(result.Removed, 0);
+        try
+        {
+            var byCategory = review.Findings
+                .Where(f => !result.Skipped.Any(s => s.Path.Equals(f.Path, StringComparison.OrdinalIgnoreCase)))
+                .GroupBy(f => f.Category)
+                .Select(g => new CleanupCategoryResult(g.Key, g.Count(), 0))
+                .ToArray();
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Registry Care",
+                $"Manual clean - removed {result.Removed:N0} registry item(s), {result.Skipped.Count:N0} skipped.",
+                ActivityStore.BreakdownLines(byCategory)));
+        }
+        catch
+        {
+            // Activity history is diagnostic; cleanup completion must not be
+            // reported as failed when the history file is unavailable.
         }
     }
 

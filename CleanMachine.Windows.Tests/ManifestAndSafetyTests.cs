@@ -160,6 +160,23 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void ActivityBreakdownLinesHandleEmptyAndRegistryResults()
+    {
+        Assert.Null(ActivityStore.BreakdownLines([]));
+
+        var lines = ActivityStore.BreakdownLines(
+        [
+            new CleanupCategoryResult("Registry Care", 3, 0),
+            new CleanupCategoryResult("Temporary Files", 2, 2048)
+        ]);
+
+        Assert.NotNull(lines);
+        Assert.Equal(2, lines!.Count);
+        Assert.Contains("Temporary Files", lines[0]);
+        Assert.Contains("Registry Care", lines[1]);
+    }
+
+    [Fact]
     public void CleanupCatalogIsGroupedWithUniqueIds()
     {
         var all = WindowsCleanupService.Catalog;

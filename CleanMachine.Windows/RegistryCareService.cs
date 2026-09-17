@@ -145,7 +145,10 @@ public sealed class RegistryCareService
     /// <summary>Deletes the key each cleanable finding points at. Every deletion is
     /// gated by IsCleanable and requires the key to still exist; anything else is
     /// reported in Skipped rather than acted on.</summary>
-    public async Task<RegistryCleanResult> CleanAsync(RegistryReview review, CancellationToken token = default)
+    public async Task<RegistryCleanResult> CleanAsync(
+        RegistryReview review,
+        CancellationToken token = default,
+        IProgress<CleanupProgress>? progress = null)
     {
         await CleanupCoordinator.Gate.WaitAsync(token);
         try
@@ -176,9 +179,11 @@ public sealed class RegistryCareService
         // Registry edits are disk-bound work the page awaits on the UI thread.
         return await Task.Run(() =>
         {
-            foreach (var finding in review.Findings)
+            for (var index = 0; index < review.Findings.Count; index++)
             {
                 token.ThrowIfCancellationRequested();
+                var finding = review.Findings[index];
+                progress?.Report(new CleanupProgress("Registry values", index + 1, review.Findings.Count, 0));
                 if (!IsCleanable(finding)) { skipped.Add(new(finding.Path, "Not eligible (safety gate)")); continue; }
                 try
                 {

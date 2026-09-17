@@ -177,6 +177,10 @@ public sealed class WindowsCleanupService
         foreach (var category in selected.Where(c => c.Kind == CleanupKind.Files))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // File discovery can itself take noticeable time in large temp/cache
+            // trees. Report the phase before materializing the list so the UI does
+            // not appear frozen at the generic "Cleaning..." message.
+            progress?.Report(new CleanupProgress($"Preparing {category.Name}", 0, 0, recovered));
             var files = GetCleanableFiles(category, options.ExcludedPaths);
             var categoryRemoved = 0;
             long categoryBytes = 0;
