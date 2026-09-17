@@ -117,7 +117,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Architecture-specific package selection (x64, ARM64)
 - SHA-256 hash verification
 - Authenticode publisher verification
-- Atomic update state transitions (staged → installing → installed)
+- Atomic update state transitions (staged -> installing -> installed)
 - Rollback copy staging and executable restoration after failed installation
 - Pending-update recovery across sessions
 
@@ -176,7 +176,7 @@ the MSIX; without them the installer is published unsigned and SmartScreen will 
 everyone who downloads it. Note that SmartScreen reputation is earned by downloads over
 time, so newly signed releases can still show the warning at first; EV certificates get
 immediate reputation. To install an unsigned or unreputable build anyway, click
-"More info" → "Run anyway" on the SmartScreen dialog.
+"More info" -> "Run anyway" on the SmartScreen dialog.
 
 The release workflow always produces a **signed** MSIX. If no production certificate is
 configured it mints a throwaway **self-signed** code-signing certificate whose subject matches

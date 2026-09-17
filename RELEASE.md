@@ -5,10 +5,10 @@ Releases are built and published by the [`Release Windows app`](.github/workflow
 ## Release checklist
 
 1. **Bump the in-repo version defaults** to `X.Y.Z`:
-   - `CleanMachine.Windows/Package.appxmanifest` → `Version="X.Y.Z.0"`
-   - `CleanMachine.Windows/app.manifest` → `version="X.Y.Z.0"`
-   - `src/App.tsx` → the two display strings (`CleanMachine vX.Y.Z · …` and `Privacy first · vX.Y.Z`)
-   - `update-manifest.example.json` → version and package URL placeholders
+   - `CleanMachine.Windows/Package.appxmanifest` -> `Version="X.Y.Z.0"`
+   - `CleanMachine.Windows/app.manifest` -> `version="X.Y.Z.0"`
+   - `src/App.tsx` -> the two display strings (`CleanMachine vX.Y.Z - ...` and `Privacy first - vX.Y.Z`)
+   - `update-manifest.example.json` -> version and package URL placeholders
    - The installer `.iss` needs no change; its version is injected by the workflow.
 
 2. **Verify**: `dotnet test CleanMachine.Windows.Tests/CleanMachine.Windows.Tests.csproj -c Release -p:Platform=x64` (all tests must pass).
@@ -56,8 +56,8 @@ A long-lived self-signed code-signing cert is used so users trust it **once** in
 If the secrets are not configured, the workflow mints a **throwaway self-signed cert per build**. The packages still sign, but the thumbprint changes every release, so users must re-trust the cert on each update. Avoid this; keep the secrets set.
 
 ### Trusting on a user machine
-1. Double-click `CleanMachine-signing.cer` → Certificate Import Wizard → **Trusted Root Certification Authorities** → tick **"Trust for certificate authentication"** → Finish.
-2. Enable sideloading: Settings → Apps → Advanced app settings → **"Install apps from unknown sources"**.
+1. Double-click `CleanMachine-signing.cer` -> Certificate Import Wizard -> **Trusted Root Certification Authorities** -> tick **"Trust for certificate authentication"** -> Finish.
+2. Enable sideloading: Settings -> Apps -> Advanced app settings -> **"Install apps from unknown sources"**.
 
 ### Verifying a release signature
 ```powershell
