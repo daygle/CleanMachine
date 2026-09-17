@@ -242,6 +242,18 @@ public sealed class UpdateService
             return assemblyVersion is null ? new(0, 0, 0, 0) : new(assemblyVersion.Major, assemblyVersion.Minor, assemblyVersion.Build, 0);
         }
     }
-    private static bool HasExpectedPublisher(string path, string? publisher) { if (string.IsNullOrWhiteSpace(publisher)) return false; try { using var cert = X509Certificate.CreateFromSignedFile(path); return cert.Subject.Contains(publisher, StringComparison.OrdinalIgnoreCase); } catch { return false; } }
+    private static bool HasExpectedPublisher(string path, string? publisher)
+    {
+        if (string.IsNullOrWhiteSpace(publisher)) return false;
+        // CreateFromSignedFile extracts the Authenticode signer certificate from a
+        // signed package (exe/msix). SYSLIB0057 suggests X509CertificateLoader, but
+        // that loads standalone certificate files and cannot read a signed package,
+        // so switching would reject every valid MSIX update. The API remains
+        // functional in .NET 10; revisit if it is ever removed.
+#pragma warning disable SYSLIB0057
+        try { using var cert = X509Certificate.CreateFromSignedFile(path); return cert.Subject.Contains(publisher, StringComparison.OrdinalIgnoreCase); }
+        catch { return false; }
+#pragma warning restore SYSLIB0057
+    }
     private static void TryDelete(string path) { try { File.Delete(path); } catch { } }
 }

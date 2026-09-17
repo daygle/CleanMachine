@@ -1,6 +1,6 @@
 # CleanMachine
 
-CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/.NET 8 and WinUI 3**.
+CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/.NET 10 and WinUI 3**.
 
 ## Project
 
@@ -147,7 +147,7 @@ Secure Delete operates only on explicitly selected ordinary files after review. 
 
 ## Build and test on Windows
 
-Install the .NET 8 SDK (e.g. `winget install Microsoft.DotNet.SDK.8`) and the Windows App
+Install the .NET 10 SDK (e.g. `winget install Microsoft.DotNet.SDK.10`) and the Windows App
 Runtime 1.6+ (installed automatically on first run if missing). Then run:
 
 ```powershell

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -11,10 +11,10 @@
     <!-- WindowsAppSDK's buildTransitive targets flow in through the project reference and
          assume Visual Studio MSBuild tasks, breaking `dotnet test`. Pin the package here
          and exclude its build assets; the compiled app reference is unaffected. -->
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002"
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1"
                       ExcludeAssets="build;buildTransitive" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
   </ItemGroup>
 </Project>
