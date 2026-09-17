@@ -17,7 +17,11 @@ public sealed class CleanupService
         IEnumerable<string>? additionalProfileRoots = null,
         IReadOnlySet<string>? excludedPaths = null,
         CancellationToken cancellationToken = default)
-    {
+        // Profile and cache-directory sizing is disk-bound work that can take a
+        // while; callers await this directly (e.g. from the UI thread), so the
+        // walk itself must run on a worker thread.
+        => Task.Run<IReadOnlyList<BrowserCleanupTarget>>(() =>
+        {
         var targets = new List<BrowserCleanupTarget>();
         foreach (var browser in (browsers ?? SupportedBrowsers).Intersect(SupportedBrowsers, StringComparer.OrdinalIgnoreCase))
         {
@@ -33,15 +37,18 @@ public sealed class CleanupService
                 }
             }
         }
-        return Task.FromResult<IReadOnlyList<BrowserCleanupTarget>>(targets);
-    }
+        return targets;
+        }, cancellationToken);
 
     public async Task<CleanupReport> CleanBrowserTargetsAsync(
         IEnumerable<BrowserCleanupTarget> targets,
         IProgress<CleanupProgress>? progress = null,
         SecureDeleteOptions? secureDelete = null,
         CancellationToken cancellationToken = default)
-    {
+        // Deleting (and securely overwriting) every cache file is long-running;
+        // keep it off the caller's (UI) thread for the whole pass.
+        => await Task.Run(async () =>
+        {
         var allowed = targets
             .Where(t => t.Selected
                 && SupportedBrowsers.Contains(t.Browser, StringComparer.OrdinalIgnoreCase)
@@ -80,11 +87,14 @@ public sealed class CleanupService
             progress?.Report(new CleanupProgress("Browser cache cleanup", index + 1, files.Length, recovered));
         }
         return new CleanupReport(new CleanupResult(removed, recovered), skipped);
-    }
+        }, cancellationToken);
 
     public Task<IReadOnlyList<RegistryFinding>> ScanRegistrySafelyAsync(
         CancellationToken cancellationToken = default)
-    {
+        // Walking many registry keys is disk-bound; callers await this on the UI
+        // thread, so the scan itself must run on a worker thread.
+        => Task.Run<IReadOnlyList<RegistryFinding>>(() =>
+        {
         var findings = new List<RegistryFinding>();
         ScanUninstallEntries(RegistryHive.CurrentUser, findings);
         ScanFileAssociations(RegistryHive.CurrentUser, findings);
@@ -96,8 +106,8 @@ public sealed class CleanupService
         ScanOpenWithProgids(findings);
         ScanOpenWithList(findings);
         ScanCompatibilityAssistant(findings);
-        return Task.FromResult<IReadOnlyList<RegistryFinding>>(findings);
-    }
+        return findings;
+        }, cancellationToken);
 
     private static void ScanUninstallEntries(RegistryHive hive, ICollection<RegistryFinding> findings)
     {

@@ -318,12 +318,14 @@ public sealed partial class AppCleanupPage : Page
                 Text = WindowsCleanupPage.FormatBytes(item.Bytes),
                 FontSize = 13,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextAlignment = TextAlignment.Right,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58))
             });
             side.Children.Add(new TextBlock
             {
                 Text = $"{item.FileCount:N0} file(s)",
                 FontSize = 10,
+                TextAlignment = TextAlignment.Right,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
             Grid.SetColumn(side, 2);

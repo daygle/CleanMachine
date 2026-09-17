@@ -1,6 +1,7 @@
 <Page x:Class="CleanMachine.Windows.SecureDeletePage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Loaded="SecureDeletePage_Loaded">
   <Grid RowSpacing="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>

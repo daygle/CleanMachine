@@ -205,10 +205,26 @@ public sealed class AppSettings
     {
         var directory = Path.GetDirectoryName(FilePath)!;
         Directory.CreateDirectory(directory);
-        var temporary = FilePath + ".tmp";
-        await using (var stream = File.Create(temporary))
-            await JsonSerializer.SerializeAsync(stream, this,
-                new JsonSerializerOptions { WriteIndented = true }, cancellationToken);
-        File.Move(temporary, FilePath, true);
+        // Instant-save handlers fire concurrently (every toggle/keystroke), so writes
+        // are serialized: two simultaneous saves would otherwise collide on one temp
+        // file and throw IOException from an async-void handler (a hard crash).
+        await SaveGate.WaitAsync(cancellationToken);
+        var temporary = $"{FilePath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await using (var stream = File.Create(temporary))
+                await JsonSerializer.SerializeAsync(stream, this,
+                    new JsonSerializerOptions { WriteIndented = true }, cancellationToken);
+            File.Move(temporary, FilePath, true);
+        }
+        finally
+        {
+            SaveGate.Release();
+            try { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
+
+    private static readonly SemaphoreSlim SaveGate = new(1, 1);
 }

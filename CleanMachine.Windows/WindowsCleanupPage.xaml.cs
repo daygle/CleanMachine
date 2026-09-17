@@ -173,9 +173,10 @@ public sealed partial class WindowsCleanupPage : Page
         _cancel = new CancellationTokenSource();
         try
         {
-            // Run the (potentially slow) scan off the UI thread.
-            var scanTask = Task.Run(() => _service.Scan(_settings.ExcludedPaths), _cancel.Token);
-            var items = await scanTask.WaitAsync(_cancel.Token);
+            // Run the (potentially slow) scan and preview enumeration off the UI
+            // thread; the task already honours the cancel token, so no WaitAsync
+            // wrapper is needed.
+            var items = await Task.Run(() => _service.Scan(_settings.ExcludedPaths), _cancel.Token);
 
             var enabledItems = items
                 .Where(i => enabled.Any(c => c.Id == i.Category.Id))
@@ -187,7 +188,7 @@ public sealed partial class WindowsCleanupPage : Page
                 .Where(i => i.Category.Kind == CleanupKind.RegistryValues)
                 .Sum(i => i.Bytes);
 
-            _lastPreview = _service.BuildPreview(enabled, _settings.ExcludedPaths);
+            _lastPreview = await Task.Run(() => _service.BuildPreview(enabled, _settings.ExcludedPaths), _cancel.Token);
             _lastScan = items;
             BuildCategoryList();
 
@@ -265,12 +266,14 @@ public sealed partial class WindowsCleanupPage : Page
             Text = isHistory ? $"{item.Bytes:N0}" : FormatBytes(item.Bytes),
             FontSize = 13,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextAlignment = TextAlignment.Right,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58))
         });
         side.Children.Add(new TextBlock
         {
             Text = isHistory ? "entries" : group,
             FontSize = 10,
+            TextAlignment = TextAlignment.Right,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
         });
         Grid.SetColumn(side, 1);
@@ -445,7 +448,9 @@ public sealed partial class WindowsCleanupPage : Page
         var enabled = EnabledCategories();
         if (enabled.Length == 0) { StatusText.Text = "No items are enabled. Select at least one item to clean."; return; }
 
-        var preview = _lastPreview ?? _service.BuildPreview(enabled, _settings.ExcludedPaths);
+        // _lastPreview is normally filled by Analyze; the fallback build enumerates
+        // every category's files, so keep it off the UI thread too.
+        var preview = _lastPreview ?? await Task.Run(() => _service.BuildPreview(enabled, _settings.ExcludedPaths));
         if (preview.TotalItems == 0) { StatusText.Text = "Run Analyze first - there is nothing to clean."; return; }
 
         var review = enabled.Where(c => c.Risk != CleanupRisk.Safe).ToArray();
@@ -580,13 +585,10 @@ public sealed partial class WindowsCleanupPage : Page
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 
-    internal static string FormatBytes(long bytes)
-    {
-        if (bytes >= 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024 * 1024):0.0} GB";
-        if (bytes >= 1024L * 1024) return $"{bytes / (1024.0 * 1024):0.0} MB";
-        if (bytes >= 1024L) return $"{bytes / 1024.0:0.0} KB";
-        return $"{bytes} B";
-    }
+    /// <summary>Shared byte formatter; the canonical implementation lives in
+    /// <see cref="AppNotifications.FormatBytes"/> and this alias keeps the many
+    /// page call sites unchanged.</summary>
+    internal static string FormatBytes(long bytes) => AppNotifications.FormatBytes(bytes);
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _cancel?.Cancel();
 }

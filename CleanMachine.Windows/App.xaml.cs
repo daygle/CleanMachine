@@ -6,6 +6,7 @@ public partial class App : Application
 {
     private BackgroundAgent? _agent;
     private CancellationTokenSource? _agentCts;
+    private Task? _agentTask;
     private Mutex? _instanceMutex;
     private InstanceEvents? _instanceEvents;
     private Thread? _instanceEventsThread;
@@ -193,7 +194,9 @@ public partial class App : Application
         _agent = new BackgroundAgent(
             onBrowserExit: OnBrowserExitAsync,
             onTick: OnAgentTickAsync);
-        _ = _agent.RunAsync(_agentCts.Token);
+        // Observe the loop's lifetime: when stopped, wait for the current tick to
+        // finish (bounded) so a stop never tears down the process mid-clean.
+        _agentTask = _agent.RunAsync(_agentCts.Token);
     }
 
     /// <summary>Runs the configured after-exit action for one specific browser.
@@ -285,7 +288,7 @@ public partial class App : Application
         if (selected.Count == 0) return;
         var report = await new WindowsCleanupService().CleanSelectedAsync(
             selected,
-            new WindowsCleanupOptions(ConfirmReviewCategories: false, AllowElevation: false, ExcludedPaths: settings.ExcludedPaths),
+            new WindowsCleanupOptions(ConfirmReviewCategories: false, ExcludedPaths: settings.ExcludedPaths),
             cancellationToken: token);
         await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
         if (report.Result.ItemsRemoved > 0)
@@ -380,7 +383,7 @@ public partial class App : Application
             if (selected.Count == 0) return;
             var report = await new WindowsCleanupService().CleanSelectedAsync(
                 selected,
-                new WindowsCleanupOptions(ConfirmReviewCategories: false, AllowElevation: false, ExcludedPaths: settings.ExcludedPaths),
+                new WindowsCleanupOptions(ConfirmReviewCategories: false, ExcludedPaths: settings.ExcludedPaths),
                 cancellationToken: token);
 
             _systemMonitorLastRun = DateTimeOffset.UtcNow;
@@ -404,8 +407,13 @@ public partial class App : Application
     public void StopBackgroundAgent()
     {
         _agentCts?.Cancel();
+        var task = _agentTask;
+        _agentTask = null;
         _agent?.Dispose();
         _agent = null;
         _agentCts = null;
+        // Observe (don't block on) the loop's completion: it swallows cancellation,
+        // and blocking here would deadlock against its UI-context continuations.
+        _ = task?.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
     }
 }

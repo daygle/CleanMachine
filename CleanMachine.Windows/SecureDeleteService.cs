@@ -22,7 +22,10 @@ public sealed record SecureDeleteResult(int FilesProcessed, long BytesOverwritte
 public sealed class SecureDeleteService
 {
     public Task<IReadOnlyList<SecureDeleteSelection>> PrepareSelectionAsync(IEnumerable<string> paths, CancellationToken token = default)
-    {
+        // Existence/read-only/protected probes are disk I/O that can stall on slow
+        // or network paths; keep them off the caller's (UI) thread.
+        => Task.Run<IReadOnlyList<SecureDeleteSelection>>(() =>
+        {
         var result = paths
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(File.Exists)
@@ -32,8 +35,8 @@ public sealed class SecureDeleteService
                 return new SecureDeleteSelection(path, info.Length, !info.IsReadOnly && !NativeSafety.IsProtectedPath(path));
             })
             .ToArray();
-        return Task.FromResult<IReadOnlyList<SecureDeleteSelection>>(result);
-    }
+        return result;
+        }, token);
 
     public async Task<SecureDeleteResult> DeleteAsync(IEnumerable<SecureDeleteSelection> selection, SecureDeleteOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
     {
@@ -45,6 +48,11 @@ public sealed class SecureDeleteService
             .Select(x => x.Path)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+        // Multi-pass overwrite of arbitrarily large files is minutes-long disk work;
+        // the page awaits this on the UI thread, so run it on a worker thread.
+        return await Task.Run(async () =>
+        {
         var processed = 0;
         var skipped = 0;
         long bytes = 0;
@@ -76,6 +84,7 @@ public sealed class SecureDeleteService
             progress?.Report(new CleanupProgress("Secure Delete", index + 1, files.Length, bytes));
         }
         return new SecureDeleteResult(processed, bytes, skipped, options.Method, issues);
+        }, cancellationToken);
     }
 
     public Task<SecureDeleteResult> DeleteAsync(IEnumerable<string> files, SecureDeleteOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)

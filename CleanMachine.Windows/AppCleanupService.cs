@@ -24,7 +24,7 @@ public sealed class AppCleanupService
         }, token);
 
     /// <summary>Cleans the selected app temp items. Returns files removed and bytes recovered.</summary>
-    public Task<CleanupReport> CleanAsync(
+    public async Task<CleanupReport> CleanAsync(
         IEnumerable<(string AppId, int ItemIndex)> selection,
         SecureDeleteOptions? secureDelete = null,
         CancellationToken token = default)
@@ -38,6 +38,11 @@ public sealed class AppCleanupService
             .GroupBy(s => s.AppId)
             .ToDictionary(g => g.Key, g => g.Select(s => s.ItemIndex).ToHashSet());
 
+        // Deleting (and optionally multi-pass overwriting) every temp file is
+        // long-running disk work; keep it off the caller's (UI) thread. The page
+        // awaits this directly, so the deletion loop must not run synchronously.
+        await Task.Run(async () =>
+        {
         foreach (var (appId, indices) in byApp)
         {
             token.ThrowIfCancellationRequested();
@@ -62,7 +67,7 @@ public sealed class AppCleanupService
                                 if (info.IsReadOnly) { skipped.Add(new(file, "Read-only")); continue; }
                                 var len = info.Length;
                                 if (secureDelete is not null
-                                    && !SecureDeleteService.SecureDeleteFileAsync(file, secureDelete, token).GetAwaiter().GetResult())
+                                    && !await SecureDeleteService.SecureDeleteFileAsync(file, secureDelete, token))
                                 {
                                     skipped.Add(new(file, "Protected, locked, or empty - not securely deleted"));
                                     continue;
@@ -83,7 +88,7 @@ public sealed class AppCleanupService
                         if (info.IsReadOnly) { skipped.Add(new(item.FullPath, "Read-only")); continue; }
                         var len = info.Length;
                         if (secureDelete is not null
-                            && !SecureDeleteService.SecureDeleteFileAsync(item.FullPath, secureDelete, token).GetAwaiter().GetResult())
+                            && !await SecureDeleteService.SecureDeleteFileAsync(item.FullPath, secureDelete, token))
                         {
                             skipped.Add(new(item.FullPath, "Protected, locked, or empty - not securely deleted"));
                             continue;
@@ -97,8 +102,9 @@ public sealed class AppCleanupService
                 catch (UnauthorizedAccessException) { skipped.Add(new(item.FullPath, "Access denied")); }
             }
         }
+        });
 
-        return Task.FromResult(new CleanupReport(new CleanupResult(removed, bytes), skipped));
+        return new CleanupReport(new CleanupResult(removed, bytes), skipped);
     }
 
     private static AppScan ScanApp(AppDefinition def)

@@ -289,7 +289,7 @@ public sealed partial class InstalledAppsPage : Page
             AddPart("Store", "#4B7769");
         if (!string.IsNullOrWhiteSpace(app.Publisher)) AddPart(app.Publisher, "#53635B");
         if (app.EstimatedSize is > 0)
-            AddPart(FormatBytes(app.EstimatedSize.Value));
+            AddPart(AppNotifications.FormatBytes(app.EstimatedSize.Value));
         if (!string.IsNullOrWhiteSpace(app.InstallDate))
             AddPart($"installed {app.InstallDate}");
         if (!string.IsNullOrWhiteSpace(app.Architecture))
@@ -328,14 +328,6 @@ public sealed partial class InstalledAppsPage : Page
         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
 
         _ = await Task.Run(() => _service.LaunchUninstall(app));
-    }
-
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes >= 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024 * 1024):0.0} GB";
-        if (bytes >= 1024L * 1024) return $"{bytes / (1024.0 * 1024):0.0} MB";
-        if (bytes >= 1024L) return $"{bytes / 1024.0:0.0} KB";
-        return $"{bytes} B";
     }
 
     private static SolidColorBrush ParseColor(string hex)

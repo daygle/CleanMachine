@@ -25,7 +25,7 @@ public sealed record CleanupFileDetail(string Path, long Bytes);
 public sealed record CleanupPreviewItem(string Category, string Description, long Bytes);
 public sealed record CleanupPreview(IReadOnlyList<CleanupPreviewItem> Items, int TotalItems);
 
-public sealed record WindowsCleanupOptions(bool ConfirmReviewCategories = false, bool AllowElevation = false, IReadOnlySet<string>? ExcludedPaths = null, bool SecureDelete = false, SecureDeleteOptions? SecureDeleteOptions = null);
+public sealed record WindowsCleanupOptions(bool ConfirmReviewCategories = false, IReadOnlySet<string>? ExcludedPaths = null, bool SecureDelete = false, SecureDeleteOptions? SecureDeleteOptions = null);
 
 public sealed class WindowsCleanupService
 {
@@ -132,6 +132,12 @@ public sealed class WindowsCleanupService
     }
 
     public async Task<CleanupReport> CleanSelectedAsync(IEnumerable<CleanupCategory> categories, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
+        // Deleting thousands of files (and registry values) is long-running disk
+        // work; the UI pages await this directly, so run the whole pass on a
+        // worker thread and only the progress callbacks hop back to the UI.
+        => await Task.Run(() => CleanSelectedCoreAsync(categories, options, progress, cancellationToken), cancellationToken);
+
+    private async Task<CleanupReport> CleanSelectedCoreAsync(IEnumerable<CleanupCategory> categories, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress, CancellationToken cancellationToken)
     {
         var selected = categories.ToArray();
         var issues = new List<CleanupIssue>();

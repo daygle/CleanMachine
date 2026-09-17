@@ -88,7 +88,7 @@ public sealed class ScheduleService
             {
                 var report = await new WindowsCleanupService().CleanSelectedAsync(
                     categories,
-                    new WindowsCleanupOptions(ConfirmReviewCategories: false, AllowElevation: false, ExcludedPaths: settings.ExcludedPaths, SecureDelete: schedule.SecureDelete, SecureDeleteOptions: secureDelete),
+                    new WindowsCleanupOptions(ConfirmReviewCategories: false, ExcludedPaths: settings.ExcludedPaths, SecureDelete: schedule.SecureDelete, SecureDeleteOptions: secureDelete),
                     cancellationToken: token);
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;

@@ -10,13 +10,23 @@ public sealed class ActivityStore
 {
     private const int MaxEntries = 100;
     private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "activity.json");
+
+    // AddAsync is a read-modify-write and can be called concurrently (background
+    // agent, scheduled runs, quick cleans); serialize it so entries are not lost.
+    private static readonly SemaphoreSlim AddGate = new(1, 1);
+
     public async Task<IReadOnlyList<ActivityEntry>> LoadAsync(CancellationToken token = default)
     {
         try { if (!File.Exists(FilePath)) return []; await using var stream = File.OpenRead(FilePath); return await JsonSerializer.DeserializeAsync<List<ActivityEntry>>(stream, cancellationToken: token) ?? []; } catch (IOException) { return []; } catch (JsonException) { return []; }
     }
     public async Task AddAsync(ActivityEntry entry, CancellationToken token = default)
     {
-        var items = (await LoadAsync(token)).Prepend(entry).Take(MaxEntries).ToList(); await SaveAsync(items, token);
+        await AddGate.WaitAsync(token);
+        try
+        {
+            var items = (await LoadAsync(token)).Prepend(entry).Take(MaxEntries).ToList(); await SaveAsync(items, token);
+        }
+        finally { AddGate.Release(); }
     }
     public Task ClearAsync(CancellationToken token = default) => SaveAsync([], token);
 

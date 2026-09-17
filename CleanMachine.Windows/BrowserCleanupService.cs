@@ -32,11 +32,6 @@ public sealed class BrowserCleanupService
 
     public Task<IReadOnlyList<BrowserCleanupTarget>> ScanAsync(
         IEnumerable<string> browsers,
-        CancellationToken token = default)
-        => _cleanup.ScanBrowsersAsync(browsers, cancellationToken: token);
-
-    public Task<IReadOnlyList<BrowserCleanupTarget>> ScanAsync(
-        IEnumerable<string> browsers,
         IEnumerable<string>? additionalRoots = null,
         IReadOnlySet<string>? excludedPaths = null,
         CancellationToken token = default)
@@ -231,7 +226,7 @@ public sealed class BrowserCleanupService
     /// false - the browser-exit monitor uses that because it fires right after its
     /// browser closed, while another browser may still be open (its files belong to
     /// it and are not touched). One item failing never aborts the rest.</summary>
-    public Task<CleanupReport> CleanItemsAsync(
+    public async Task<CleanupReport> CleanItemsAsync(
         IEnumerable<(string BrowserId, string ItemId)> selection,
         SecureDeleteOptions? secureDelete = null,
         CancellationToken token = default,
@@ -242,34 +237,39 @@ public sealed class BrowserCleanupService
             throw new InvalidOperationException(
                 $"Close these browsers before cleaning: {string.Join(", ", running)}.");
 
-        var removed = 0;
-        long bytes = 0;
-        var skipped = new List<CleanupIssue>();
-
-        foreach (var (browserId, itemId) in selection.Distinct())
+        // Deleting (and optionally multi-pass overwriting) the selected items is
+        // long-running disk work; keep it off the caller's (UI) thread.
+        return await Task.Run(async () =>
         {
-            token.ThrowIfCancellationRequested();
-            var browser = BrowserCatalog.Find(browserId);
-            if (browser is null || !BrowserCatalog.IsInstalled(browser)) continue;
+            var removed = 0;
+            long bytes = 0;
+            var skipped = new List<CleanupIssue>();
 
-            var profiles = BrowserCatalog.Profiles(browser);
-            var userData = browser.UserDataRoots.Where(Directory.Exists).ToArray();
-
-            if (BrowserCatalog.IsPreferenceEdit(itemId))
+            foreach (var (browserId, itemId) in selection.Distinct())
             {
-                ApplyPreferenceEdit(browser, profiles, skipped);
-                continue;
-            }
+                token.ThrowIfCancellationRequested();
+                var browser = BrowserCatalog.Find(browserId);
+                if (browser is null || !BrowserCatalog.IsInstalled(browser)) continue;
 
-            foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
-            {
-                var result = DeletePath(path, secureDelete);
-                removed += result.Removed;
-                bytes += result.Bytes;
-                skipped.AddRange(result.Skipped);
+                var profiles = BrowserCatalog.Profiles(browser);
+                var userData = browser.UserDataRoots.Where(Directory.Exists).ToArray();
+
+                if (BrowserCatalog.IsPreferenceEdit(itemId))
+                {
+                    ApplyPreferenceEdit(browser, profiles, skipped);
+                    continue;
+                }
+
+                foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
+                {
+                    var result = await DeletePathAsync(path, secureDelete, token);
+                    removed += result.Removed;
+                    bytes += result.Bytes;
+                    skipped.AddRange(result.Skipped);
+                }
             }
-        }
-        return Task.FromResult(new CleanupReport(new CleanupResult(removed, bytes), skipped));
+            return new CleanupReport(new CleanupResult(removed, bytes), skipped);
+        }, token);
     }
 
     private static IReadOnlyList<string> ResolvePaths(
@@ -293,7 +293,11 @@ public sealed class BrowserCleanupService
         try
         {
             if (File.Exists(path)) return [path];
-            if (Directory.Exists(path)) return Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).ToArray();
+            // Deliberately lazy: callers size everything (ScanBrowser) or stop early
+            // at a UI cap (ListItemFiles), so materialising the whole tree here would
+            // walk tens of thousands of cache files even when only the first few
+            // hundred are needed.
+            if (Directory.Exists(path)) return Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories);
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
@@ -312,6 +316,12 @@ public sealed class BrowserCleanupService
         var userData = browser.UserDataRoots.Where(Directory.Exists).ToArray();
         var files = new List<CleanupFileDetail>();
         foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
+        {
+            // This is called from UI click handlers; EnumerateFiles materialises the
+            // whole subtree for a directory, so a large cache (tens of thousands of
+            // files) is walked in full just to render a few hundred rows. Stop
+            // enumerating as soon as the cap is reached.
+            if (files.Count >= max) return files;
             foreach (var file in EnumerateFiles(path))
             {
                 try { files.Add(new CleanupFileDetail(file, new FileInfo(file).Length)); }
@@ -319,10 +329,12 @@ public sealed class BrowserCleanupService
                 catch (UnauthorizedAccessException) { }
                 if (files.Count >= max) return files; // cap the UI drill-down; the scan carries the true total
             }
+        }
         return files;
     }
 
-    private static (int Removed, long Bytes, List<CleanupIssue> Skipped) DeletePath(string path, SecureDeleteOptions? secureDelete = null)
+    private static async Task<(int Removed, long Bytes, List<CleanupIssue> Skipped)> DeletePathAsync(
+        string path, SecureDeleteOptions? secureDelete = null, CancellationToken token = default)
     {
         var removed = 0;
         long bytes = 0;
@@ -333,7 +345,7 @@ public sealed class BrowserCleanupService
             {
                 var length = new FileInfo(path).Length;
                 if (secureDelete is not null
-                    && !SecureDeleteService.SecureDeleteFileAsync(path, secureDelete).GetAwaiter().GetResult())
+                    && !await SecureDeleteService.SecureDeleteFileAsync(path, secureDelete, token))
                 {
                     skipped.Add(new CleanupIssue(path, "Protected, locked, or empty - not securely deleted"));
                     return (0, 0, skipped);
@@ -349,7 +361,7 @@ public sealed class BrowserCleanupService
                 {
                     var length = new FileInfo(file).Length;
                     if (secureDelete is not null
-                        && !SecureDeleteService.SecureDeleteFileAsync(file, secureDelete).GetAwaiter().GetResult())
+                        && !await SecureDeleteService.SecureDeleteFileAsync(file, secureDelete, token))
                     {
                         skipped.Add(new CleanupIssue(file, "Protected, locked, or empty - not securely deleted"));
                         continue;

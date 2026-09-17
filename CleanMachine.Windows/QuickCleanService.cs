@@ -72,7 +72,7 @@ public static class QuickCleanService
         if (categories.Count == 0) return new QuickCleanResult(0, 0, [], "No categories selected.");
         var report = await new WindowsCleanupService().CleanSelectedAsync(
             categories,
-            new WindowsCleanupOptions(ConfirmReviewCategories: false, AllowElevation: false, ExcludedPaths: settings.ExcludedPaths),
+            new WindowsCleanupOptions(ConfirmReviewCategories: false, ExcludedPaths: settings.ExcludedPaths),
             cancellationToken: token);
         return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped),
             Details: ActivityStore.BreakdownLines(report.Breakdown));

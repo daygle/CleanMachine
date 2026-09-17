@@ -21,6 +21,11 @@ public sealed class CleanupStatsStore
 
     private static readonly CleanupStatsFile Empty = new(0, 0, DateTimeOffset.MinValue, []);
 
+    // RecordAsync is a read-modify-write of stats.json and can be called
+    // concurrently (background agent + UI runs); without this gate two overlapping
+    // records would load the same baseline and one run's totals would be lost.
+    private static readonly SemaphoreSlim RecordGate = new(1, 1);
+
     public async Task<CleanupStatsFile> LoadAsync(CancellationToken token = default)
     {
         try
@@ -40,21 +45,26 @@ public sealed class CleanupStatsStore
         if (itemsRemoved <= 0 && bytesRecovered <= 0) return;
         try
         {
-            // Cleanup changed what could be cleaned: drop the Overview availability
-            // cache so its cards never show pre-clean numbers. Best-effort, cheap.
-            OverviewScanService.InvalidateCache();
+            await RecordGate.WaitAsync(token);
+            try
+            {
+                // Cleanup changed what could be cleaned: drop the Overview availability
+                // cache so its cards never show pre-clean numbers. Best-effort, cheap.
+                OverviewScanService.InvalidateCache();
 
-            var current = await LoadAsync(token);
-            var runs = current.Runs.Append(new CleanupRun(DateTimeOffset.UtcNow, Math.Max(itemsRemoved, 0), Math.Max(bytesRecovered, 0)))
-                .OrderByDescending(r => r.Time)
-                .Take(MaxRuns)
-                .ToList();
-            var updated = new CleanupStatsFile(
-                current.ItemsRemoved + Math.Max(itemsRemoved, 0),
-                current.BytesRecovered + Math.Max(bytesRecovered, 0),
-                DateTimeOffset.UtcNow,
-                runs);
-            await SaveAsync(updated, token);
+                var current = await LoadAsync(token);
+                var runs = current.Runs.Append(new CleanupRun(DateTimeOffset.UtcNow, Math.Max(itemsRemoved, 0), Math.Max(bytesRecovered, 0)))
+                    .OrderByDescending(r => r.Time)
+                    .Take(MaxRuns)
+                    .ToList();
+                var updated = new CleanupStatsFile(
+                    current.ItemsRemoved + Math.Max(itemsRemoved, 0),
+                    current.BytesRecovered + Math.Max(bytesRecovered, 0),
+                    DateTimeOffset.UtcNow,
+                    runs);
+                await SaveAsync(updated, token);
+            }
+            finally { RecordGate.Release(); }
         }
         catch { /* stats are best-effort */ }
     }

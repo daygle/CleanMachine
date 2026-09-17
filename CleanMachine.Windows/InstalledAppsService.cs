@@ -313,13 +313,12 @@ public sealed class InstalledAppsService
                     // Prefer the longest prefix that exists as a file (handles
                     // unquoted "C:\Program Files\..." paths with spaces).
                     fileName = trimmed[..space];
-                    var searchEnd = trimmed.Length;
                     while (space > 0)
                     {
                         var candidate = trimmed[..space];
                         if (File.Exists(candidate)) { fileName = candidate; break; }
                         var next = trimmed.IndexOf(' ', space + 1);
-                        if (next < 0 || next >= searchEnd) break;
+                        if (next < 0) break;
                         space = next;
                     }
                     arguments = trimmed[fileName.Length..].Trim();

@@ -85,6 +85,11 @@ public sealed class BackgroundAgent : IDisposable
             }
         }
         catch (OperationCanceledException) when (linked.IsCancellationRequested) { }
+        catch (ObjectDisposedException)
+        {
+            // Benign shutdown race: StopBackgroundAgent disposes the timer/CTS while
+            // WaitForNextTickAsync may still be pending on them.
+        }
         finally { IsRunning = false; }
     }
 

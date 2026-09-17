@@ -123,51 +123,55 @@ public sealed class RegistryCareService
     /// <summary>Deletes the key each cleanable finding points at. Every deletion is
     /// gated by IsCleanable and requires the key to still exist; anything else is
     /// reported in Skipped rather than acted on.</summary>
-    public Task<RegistryCleanResult> CleanAsync(RegistryReview review, CancellationToken token = default)
+    public async Task<RegistryCleanResult> CleanAsync(RegistryReview review, CancellationToken token = default)
     {
         var removed = 0;
         var skipped = new List<CleanupIssue>();
-        foreach (var finding in review.Findings)
+        // Registry edits are disk-bound work the page awaits on the UI thread.
+        return await Task.Run(() =>
         {
-            token.ThrowIfCancellationRequested();
-            if (!IsCleanable(finding)) { skipped.Add(new(finding.Path, "Not eligible (safety gate)")); continue; }
-            try
+            foreach (var finding in review.Findings)
             {
-                using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
-                if (finding.ValueName is not null)
+                token.ThrowIfCancellationRequested();
+                if (!IsCleanable(finding)) { skipped.Add(new(finding.Path, "Not eligible (safety gate)")); continue; }
+                try
                 {
-                    // Value-level finding: delete a single named value under the key.
-                    using var key = root.OpenSubKey(finding.Path, writable: true);
-                    if (key is null) { skipped.Add(new(finding.Path, "Key not found")); continue; }
-                    if (key.GetValue(finding.ValueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is null)
+                    using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+                    if (finding.ValueName is not null)
                     {
-                        skipped.Add(new(finding.Path, "Value not found (already clean)"));
-                        continue;
+                        // Value-level finding: delete a single named value under the key.
+                        using var key = root.OpenSubKey(finding.Path, writable: true);
+                        if (key is null) { skipped.Add(new(finding.Path, "Key not found")); continue; }
+                        if (key.GetValue(finding.ValueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is null)
+                        {
+                            skipped.Add(new(finding.Path, "Value not found (already clean)"));
+                            continue;
+                        }
+                        key.DeleteValue(finding.ValueName, throwOnMissingValue: false);
+                        removed++;
                     }
-                    key.DeleteValue(finding.ValueName, throwOnMissingValue: false);
-                    removed++;
+                    else
+                    {
+                        using var parent = root.OpenSubKey(ParentKeyPath(finding.Path), writable: true);
+                        if (parent is null) { skipped.Add(new(finding.Path, "Parent key not found")); continue; }
+                        var leaf = LeafKeyName(finding.Path);
+                        // Probe with a scoped handle and dispose it BEFORE deleting: a key
+                        // cannot be removed while any handle to it is open.
+                        using (var existing = parent.OpenSubKey(leaf))
+                        {
+                            if (existing is null) { skipped.Add(new(finding.Path, "Key not found (already clean)")); continue; }
+                        }
+                        parent.DeleteSubKeyTree(leaf, throwOnMissingSubKey: false);
+                        removed++;
+                    }
                 }
-                else
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException or ArgumentException)
                 {
-                    using var parent = root.OpenSubKey(ParentKeyPath(finding.Path), writable: true);
-                    if (parent is null) { skipped.Add(new(finding.Path, "Parent key not found")); continue; }
-                    var leaf = LeafKeyName(finding.Path);
-                    // Probe with a scoped handle and dispose it BEFORE deleting: a key
-                    // cannot be removed while any handle to it is open.
-                    using (var existing = parent.OpenSubKey(leaf))
-                    {
-                        if (existing is null) { skipped.Add(new(finding.Path, "Key not found (already clean)")); continue; }
-                    }
-                    parent.DeleteSubKeyTree(leaf, throwOnMissingSubKey: false);
-                    removed++;
+                    skipped.Add(new(finding.Path, ex.Message));
                 }
             }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException or ArgumentException)
-            {
-                skipped.Add(new(finding.Path, ex.Message));
-            }
-        }
-        return Task.FromResult(new RegistryCleanResult(removed, skipped));
+            return new RegistryCleanResult(removed, skipped);
+        }, token);
     }
 
     private static string ParentKeyPath(string path) => path[..path.LastIndexOf('\\')];
