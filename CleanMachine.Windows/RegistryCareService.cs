@@ -30,22 +30,44 @@ public sealed class RegistryCareService
     private static readonly string[] AllowedCleanupRoots =
     [
         @"Software\Microsoft\Windows\CurrentVersion\Uninstall\",
-        @"Software\Classes\",
         @"Control Panel\Desktop\MuiCached",
         @"Software\Microsoft\Windows\CurrentVersion\Run",
         @"Software\Microsoft\Windows\CurrentVersion\RunOnce",
         @"AppEvents\Schemes\Apps\",
         @"Software\Microsoft\Windows\CurrentVersion\App Paths\",
         @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\",
-        @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\"
-        // Shell MuiCache is covered by the "Software\Classes\" root above.
+        @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\",
+        ShellMuiCacheRoot + @"\"
     ];
 
     internal static bool IsDeletablePath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Length > 500) return false;
         if (path.Contains('"') || path.Contains("..", StringComparison.Ordinal)) return false;
-        return AllowedCleanupRoots.Any(root => path.StartsWith(root, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var root in AllowedCleanupRoots)
+        {
+            if (root.EndsWith('\\'))
+            {
+                if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            else if (path.Equals(root, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        // File-association scans only ever produce the per-user extension key
+        // itself (for example Software\\Classes\\.txt). Do not let the broad
+        // Software\\Classes\\ namespace become a general-purpose delete API.
+        if (path.StartsWith(ClassesRoot + @"\\.", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = path[(ClassesRoot.Length + 2)..];
+            return !suffix.Contains('\\');
+        }
+
+        return false;
     }
 
     /// <summary>Whether a finding passes the safety gate for actual deletion.</summary>
@@ -125,8 +147,32 @@ public sealed class RegistryCareService
     /// reported in Skipped rather than acted on.</summary>
     public async Task<RegistryCleanResult> CleanAsync(RegistryReview review, CancellationToken token = default)
     {
+        await CleanupCoordinator.Gate.WaitAsync(token);
+        try
+        {
         var removed = 0;
         var skipped = new List<CleanupIssue>();
+        if (review.Findings.Count > 0)
+        {
+            var verifiedBackup = false;
+            foreach (var backup in review.Backups)
+            {
+                if (await ValidateBackupAsync(backup, token))
+                {
+                    verifiedBackup = true;
+                    break;
+                }
+            }
+
+            if (!verifiedBackup)
+            {
+                return new RegistryCleanResult(
+                    0,
+                    review.Findings.Select(f => new CleanupIssue(
+                        f.Path, "Registry cleanup requires a verified backup.")).ToArray());
+            }
+        }
+
         // Registry edits are disk-bound work the page awaits on the UI thread.
         return await Task.Run(() =>
         {
@@ -172,6 +218,11 @@ public sealed class RegistryCareService
             }
             return new RegistryCleanResult(removed, skipped);
         }, token);
+        }
+        finally
+        {
+            CleanupCoordinator.Gate.Release();
+        }
     }
 
     private static string ParentKeyPath(string path) => path[..path.LastIndexOf('\\')];
@@ -228,13 +279,16 @@ public sealed class RegistryCareService
 
     private static async Task<RegistryBackup> ExportKeyAsync(string keyPath, string filePath, CancellationToken token)
     {
-        var psi = new ProcessStartInfo("reg.exe",
-            $"export \"HKCU\\{keyPath}\" \"{filePath}\" /y")
+        var psi = new ProcessStartInfo("reg.exe")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardError = true
         };
+        psi.ArgumentList.Add("export");
+        psi.ArgumentList.Add($"HKCU\\{keyPath}");
+        psi.ArgumentList.Add(filePath);
+        psi.ArgumentList.Add("/y");
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Could not start the Windows registry export tool.");
         await process.WaitForExitAsync(token);
@@ -274,12 +328,14 @@ public sealed class RegistryCareService
         if (!backup.FilePath.EndsWith(".reg", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Only .reg file backups can be restored through the registry importer.");
 
-        var psi = new ProcessStartInfo("reg.exe", $"import \"{backup.FilePath}\"")
+        var psi = new ProcessStartInfo("reg.exe")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardError = true
         };
+        psi.ArgumentList.Add("import");
+        psi.ArgumentList.Add(backup.FilePath);
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Could not start the Windows registry restore tool.");
         await process.WaitForExitAsync(token);

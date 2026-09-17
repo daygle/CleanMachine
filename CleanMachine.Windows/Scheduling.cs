@@ -76,7 +76,11 @@ public static class ScheduledTask
     /// find (and clean up) in Task Scheduler.</summary>
     public const string Folder = "CleanMachine";
 
-    public static string TaskName(string scheduleId) => $@"{Folder}\Cleanup-{scheduleId}";
+    public static string TaskName(string scheduleId)
+    {
+        ValidateScheduleId(scheduleId);
+        return $@"{Folder}\Cleanup-{scheduleId}";
+    }
 
     /// <summary>Builds schtasks /Create arguments using the full launch command
     /// (e.g. the exe path or a shell:AppsFolder identity for MSIX).</summary>
@@ -109,6 +113,7 @@ public static class ScheduledTask
     /// the task's other settings, triggers, and principal are preserved.</summary>
     public static string BuildWakeToRunArguments(string scheduleId)
     {
+        ValidateScheduleId(scheduleId);
         var name = $"Cleanup-{scheduleId}";
         var script =
             "$ErrorActionPreference='Stop';" +
@@ -122,6 +127,14 @@ public static class ScheduledTask
     public static bool HasWork(CleanupSchedule schedule)
         => schedule.WindowsCategoryIds.Count > 0 || schedule.CleanBrowserCache
            || schedule.CleanAppTempFiles || schedule.RegistryCategories.Count > 0;
+
+    private static void ValidateScheduleId(string scheduleId)
+    {
+        if (string.IsNullOrWhiteSpace(scheduleId)
+            || scheduleId.Length > 64
+            || scheduleId.Any(c => !(char.IsLetterOrDigit(c) || c is '-' or '_')))
+            throw new ArgumentException("Schedule id contains unsupported characters.", nameof(scheduleId));
+    }
 
     private static string Clock(CleanupSchedule schedule)
         => $"{Math.Clamp(schedule.Hour, 0, 23):00}:{Math.Clamp(schedule.Minute, 0, 59):00}";

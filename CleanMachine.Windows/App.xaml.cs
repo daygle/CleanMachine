@@ -7,6 +7,8 @@ public partial class App : Application
     private BackgroundAgent? _agent;
     private CancellationTokenSource? _agentCts;
     private Task? _agentTask;
+    private int _agentGeneration;
+    private readonly object _agentLock = new();
     private Mutex? _instanceMutex;
     private InstanceEvents? _instanceEvents;
     private Thread? _instanceEventsThread;
@@ -68,13 +70,12 @@ public partial class App : Application
         StartInstanceEventsListener();
 
         var settings = await AppSettings.LoadAsync();
+        // Run startup cleanup before enabling periodic/background cleanup so the two
+        // paths cannot mutate the same files concurrently on first launch.
+        if (settings.CleanAtStartup)
+            await RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, CancellationToken.None);
         if (settings.RequiresBackgroundAgent)
             StartBackgroundAgent(settings);
-        // Automatic cleanup: run one safe clean on launch when enabled (with "Start
-        // with Windows" this cleans at every logon). Fire-and-forget so it never
-        // delays the window coming up.
-        if (settings.CleanAtStartup)
-            _ = RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, CancellationToken.None);
         // Keep the OS task store in step with whatever schedules are saved.
         _ = ScheduleService.SyncAllAsync(settings);
     }
@@ -189,13 +190,46 @@ public partial class App : Application
 
     public void StartBackgroundAgent(AppSettings? settings = null)
     {
-        StopBackgroundAgent();
+        Task? previous;
+        int generation;
+        lock (_agentLock)
+        {
+            generation = ++_agentGeneration;
+            previous = StopBackgroundAgentCore();
+        }
+        if (previous is { IsCompleted: false })
+        {
+            // Cancellation stops the timer immediately, but an in-flight cleanup may
+            // still be finishing. Do not start the replacement agent until that work
+            // has completed, otherwise settings changes can create overlapping agents.
+            _ = StartAgentAfterAsync(previous, generation);
+            return;
+        }
+
+        lock (_agentLock)
+        {
+            if (generation == _agentGeneration)
+                CreateBackgroundAgent();
+        }
+    }
+
+    private async Task StartAgentAfterAsync(Task previous, int generation)
+    {
+        try { await previous.ConfigureAwait(false); }
+        catch { /* the old agent is already being replaced */ }
+        lock (_agentLock)
+        {
+            if (generation == _agentGeneration)
+                CreateBackgroundAgent();
+        }
+    }
+
+    private void CreateBackgroundAgent()
+    {
         _agentCts = new CancellationTokenSource();
         _agent = new BackgroundAgent(
             onBrowserExit: OnBrowserExitAsync,
             onTick: OnAgentTickAsync);
-        // Observe the loop's lifetime: when stopped, wait for the current tick to
-        // finish (bounded) so a stop never tears down the process mid-clean.
         _agentTask = _agent.RunAsync(_agentCts.Token);
     }
 
@@ -236,7 +270,7 @@ public partial class App : Application
                     secureDelete: null, token, requireBrowsersClosed: false);
                 if (report.Result.ItemsRemoved > 0 || report.Skipped.Count == 0 || ++attempt >= 2) break;
             }
-            _ = new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
+            await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
 
             var displayName = char.ToUpperInvariant(browser[0]) + browser[1..];
             if (monitor.AfterExit == ExitAction.CleanAndNotify && report.Result.ItemsRemoved > 0)
@@ -323,7 +357,17 @@ public partial class App : Application
             if (!settings.RecycleBinAutoEmptyEnabled) return;
             if (_recycleBinLastRun is { } last && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(1)) return;
             _recycleBinLastRun = DateTimeOffset.UtcNow;
-            var (removed, bytes) = await Task.Run(() => RecycleBinService.EmptyOlderThan(settings.RecycleBinAutoEmptyDays, token), token);
+            await CleanupCoordinator.Gate.WaitAsync(token);
+            (int removed, long bytes) result;
+            try
+            {
+                result = await Task.Run(() => RecycleBinService.EmptyOlderThan(settings.RecycleBinAutoEmptyDays, token), token);
+            }
+            finally
+            {
+                CleanupCoordinator.Gate.Release();
+            }
+            var (removed, bytes) = result;
             if (removed > 0)
             {
                 await new CleanupStatsStore().RecordAsync(removed, bytes, token);
@@ -389,7 +433,7 @@ public partial class App : Application
 
             _systemMonitorLastRun = DateTimeOffset.UtcNow;
             _systemMonitorArmed = false; // wait for recovery before firing again
-            _ = new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
+            await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
 
             if (settings.SystemMonitorAction == ExitAction.CleanAndNotify && report.Result.ItemsRemoved > 0)
                 AppNotifications.ShowSystemCleanupComplete(report.Result);
@@ -407,14 +451,25 @@ public partial class App : Application
 
     public void StopBackgroundAgent()
     {
+        Task? task;
+        lock (_agentLock)
+        {
+            ++_agentGeneration;
+            task = StopBackgroundAgentCore();
+        }
+        // Observe (don't block on) the loop's completion: it swallows cancellation,
+        // and blocking here would deadlock against its UI-context continuations.
+        _ = task?.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+    }
+
+    private Task? StopBackgroundAgentCore()
+    {
         _agentCts?.Cancel();
         var task = _agentTask;
         _agentTask = null;
         _agent?.Dispose();
         _agent = null;
         _agentCts = null;
-        // Observe (don't block on) the loop's completion: it swallows cancellation,
-        // and blocking here would deadlock against its UI-context continuations.
-        _ = task?.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+        return task;
     }
 }

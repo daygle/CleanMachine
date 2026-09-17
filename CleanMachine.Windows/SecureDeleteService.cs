@@ -32,7 +32,8 @@ public sealed class SecureDeleteService
             .Select(path =>
             {
                 var info = new FileInfo(path);
-                return new SecureDeleteSelection(path, info.Length, !info.IsReadOnly && !NativeSafety.IsProtectedPath(path));
+                return new SecureDeleteSelection(path, info.Length,
+                    !info.IsReadOnly && !NativeSafety.IsProtectedPath(path) && !NativeSafety.IsReparsePoint(path));
             })
             .ToArray();
         return result;
@@ -40,6 +41,9 @@ public sealed class SecureDeleteService
 
     public async Task<SecureDeleteResult> DeleteAsync(IEnumerable<SecureDeleteSelection> selection, SecureDeleteOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        await CleanupCoordinator.Gate.WaitAsync(cancellationToken);
+        try
+        {
         if (!options.ConfirmSolidStateDriveWarning)
             throw new InvalidOperationException("SSD overwrite acknowledgement is required.");
 
@@ -51,7 +55,7 @@ public sealed class SecureDeleteService
 
         // Multi-pass overwrite of arbitrarily large files is minutes-long disk work;
         // the page awaits this on the UI thread, so run it on a worker thread.
-        return await Task.Run(async () =>
+        var result = await Task.Run(async () =>
         {
         var processed = 0;
         var skipped = 0;
@@ -65,7 +69,7 @@ public sealed class SecureDeleteService
             try
             {
                 var info = new FileInfo(path);
-                if (!info.Exists || info.IsReadOnly || info.Length == 0 || NativeSafety.IsProtectedPath(path))
+                if (!info.Exists || info.IsReadOnly || info.Length == 0 || NativeSafety.IsProtectedPath(path) || NativeSafety.IsReparsePoint(path))
                 {
                     skipped++;
                     issues.Add(new(path, "File is empty, read-only, protected, or missing"));
@@ -85,6 +89,12 @@ public sealed class SecureDeleteService
         }
         return new SecureDeleteResult(processed, bytes, skipped, options.Method, issues);
         }, cancellationToken);
+        return result;
+        }
+        finally
+        {
+            CleanupCoordinator.Gate.Release();
+        }
     }
 
     public Task<SecureDeleteResult> DeleteAsync(IEnumerable<string> files, SecureDeleteOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
@@ -95,10 +105,13 @@ public sealed class SecureDeleteService
     /// Returns true on success, false if the file was skipped (locked, empty, etc.).</summary>
     public static async Task<bool> SecureDeleteFileAsync(string path, SecureDeleteOptions options, CancellationToken cancellationToken = default)
     {
+        if (!options.ConfirmSolidStateDriveWarning)
+            return false;
+
         try
         {
             var info = new FileInfo(path);
-            if (!info.Exists || info.IsReadOnly || info.Length == 0 || NativeSafety.IsProtectedPath(path)) return false;
+            if (!info.Exists || info.IsReadOnly || info.Length == 0 || NativeSafety.IsProtectedPath(path) || NativeSafety.IsReparsePoint(path)) return false;
             var length = info.Length;
             await OverwriteAsync(path, length, options, cancellationToken);
             if (new FileInfo(path).Length != length) throw new IOException("File size changed during overwrite.");

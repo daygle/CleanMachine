@@ -23,6 +23,8 @@ public sealed class ScheduleService
     /// For standalone installs the direct exe path is used.</summary>
     public static string GetLaunchCommand(string scheduleId)
     {
+        // Validate before embedding the id into cmd.exe / start arguments.
+        _ = ScheduledTask.TaskName(scheduleId);
         if (IsMsix && TryGetPackageFamilyName(out var familyName))
         {
             // cmd.exe /c start with shell:AppsFolder activates the MSIX package
@@ -76,7 +78,12 @@ public sealed class ScheduleService
 
         // Build secure delete options once; null when the schedule doesn't use it.
         SecureDeleteOptions? secureDelete = schedule.SecureDelete
-            ? new SecureDeleteOptions(settings.SecureDeleteMethod, settings.CustomWipePasses)
+            // Enabling Secure Delete in a saved schedule is the unattended equivalent
+            // of the SSD acknowledgement: the user explicitly opted into the
+            // destructive schedule action in the editor. Keep the service-level guard
+            // in place for every other caller.
+            ? new SecureDeleteOptions(settings.SecureDeleteMethod, settings.CustomWipePasses,
+                ConfirmSolidStateDriveWarning: true)
             : null;
 
         try

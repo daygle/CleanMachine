@@ -203,6 +203,19 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public async Task UnknownWindowsCleanupCategoriesAreRejected()
+    {
+        var unknown = new CleanupCategory(
+            "not-a-catalog-category", "Test", "Unknown", "", CleanupRisk.Safe, true, CleanupKind.RegistryValues,
+            Path: @"Software\Microsoft\Windows\CurrentVersion\Run");
+
+        var report = await new WindowsCleanupService().CleanSelectedAsync([unknown], new WindowsCleanupOptions());
+
+        Assert.Equal(0, report.Result.ItemsRemoved);
+        Assert.Contains(report.Skipped, issue => issue.Path == unknown.Id);
+    }
+
+    [Fact]
     public void WindowsUpdateCleanupIsAnAdvancedOptInComponentStoreItem()
     {
         var item = WindowsCleanupService.Catalog.Single(c => c.Id == "advanced-component-store");
@@ -361,6 +374,14 @@ public sealed class ManifestAndSafetyTests
         Assert.False(RegistryCareService.IsCleanable(eligible with { Path = withQuote }));
         // Path traversal is rejected.
         Assert.False(RegistryCareService.IsCleanable(eligible with { Path = @"Software\Classes\..\..\Temp" }));
+        // The broad HKCU Classes namespace is not a deletion allow-list; only the
+        // scanned extension key itself is eligible.
+        Assert.False(RegistryCareService.IsCleanable(eligible with { Path = @"Software\Classes\SomeArbitraryKey" }));
+        Assert.True(RegistryCareService.IsCleanable(eligible with
+        {
+            Path = @"Software\Classes\.txt",
+            Category = "File Extensions"
+        }));
     }
 
     [Fact]
@@ -600,21 +621,29 @@ public sealed class ManifestAndSafetyTests
             key.SetValue("RemoveMe", "remove");
         }
 
-        var review = new RegistryReview(
-        [
-            new RegistryFinding("HKCU", path, "orphaned value", true, 75, "File Extensions", "RemoveMe")
-        ], []);
-        var result = await new RegistryCareService().CleanAsync(review);
+        var backupPath = Path.Combine(Path.GetTempPath(), $"cleanmachine-registry-test-{Guid.NewGuid():N}.reg");
+        await File.WriteAllTextAsync(backupPath, "Windows Registry Editor Version 5.00\n");
+        try
+        {
+            var review = new RegistryReview(
+            [
+                new RegistryFinding("HKCU", path, "orphaned value", true, 75, "File Extensions", "RemoveMe")
+            ], [new RegistryBackup(backupPath, DateTimeOffset.UtcNow)]);
+            var result = await new RegistryCareService().CleanAsync(review);
 
-        Assert.Equal(1, result.Removed);
-        Assert.Empty(result.Skipped);
+            Assert.Equal(1, result.Removed);
+            Assert.Empty(result.Skipped);
 
-        using var verify = root.OpenSubKey(path);
-        Assert.NotNull(verify);
-        Assert.Null(verify!.GetValue("RemoveMe", null, RegistryValueOptions.DoNotExpandEnvironmentNames));
-        Assert.Equal("keep", verify.GetValue("KeepMe") as string);
-
-        root.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
+            using var verify = root.OpenSubKey(path);
+            Assert.NotNull(verify);
+            Assert.Null(verify!.GetValue("RemoveMe", null, RegistryValueOptions.DoNotExpandEnvironmentNames));
+            Assert.Equal("keep", verify.GetValue("KeepMe") as string);
+        }
+        finally
+        {
+            try { File.Delete(backupPath); } catch { }
+            root.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
+        }
     }
 
     [Fact]
@@ -671,6 +700,13 @@ public sealed class ManifestAndSafetyTests
     {
         Assert.Equal(@"CleanMachine\Cleanup-xyz", ScheduledTask.TaskName("xyz"));
         Assert.Contains(@"/Delete /TN ""CleanMachine\Cleanup-xyz""", ScheduledTask.BuildDeleteArguments("xyz"));
+    }
+
+    [Fact]
+    public void ScheduleTaskIdsRejectCommandInjectionCharacters()
+    {
+        Assert.Throws<ArgumentException>(() => ScheduledTask.TaskName("safe' ; whoami"));
+        Assert.Throws<ArgumentException>(() => ScheduledTask.BuildWakeToRunArguments("safe' ; whoami"));
     }
 
     [Fact]

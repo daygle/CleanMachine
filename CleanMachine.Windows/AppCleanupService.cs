@@ -29,6 +29,9 @@ public sealed class AppCleanupService
         SecureDeleteOptions? secureDelete = null,
         CancellationToken token = default)
     {
+        await CleanupCoordinator.Gate.WaitAsync(token);
+        try
+        {
         var removed = 0;
         long bytes = 0;
         var skipped = new List<CleanupIssue>();
@@ -105,6 +108,11 @@ public sealed class AppCleanupService
         });
 
         return new CleanupReport(new CleanupResult(removed, bytes), skipped);
+        }
+        finally
+        {
+            CleanupCoordinator.Gate.Release();
+        }
     }
 
     private static AppScan ScanApp(AppDefinition def)

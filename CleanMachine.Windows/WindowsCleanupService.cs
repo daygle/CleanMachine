@@ -34,7 +34,10 @@ public sealed class WindowsCleanupService
     private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private static readonly string LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
     private static readonly string AppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-    private static readonly string Temp = Environment.GetEnvironmentVariable("TEMP") ?? Path.GetTempPath();
+    // Use the OS-resolved temp directory rather than trusting the mutable TEMP
+    // environment variable. Cleanup categories must never be redirected to an
+    // arbitrary user-selected path through process environment state.
+    private static readonly string Temp = Path.GetFullPath(Path.GetTempPath());
     private static readonly string Downloads = Path.Combine(UserProfile, "Downloads");
 
     /// <summary>Well-known, recreatable locations the app is allowed to clean.</summary>
@@ -132,15 +135,34 @@ public sealed class WindowsCleanupService
     }
 
     public async Task<CleanupReport> CleanSelectedAsync(IEnumerable<CleanupCategory> categories, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
-        // Deleting thousands of files (and registry values) is long-running disk
-        // work; the UI pages await this directly, so run the whole pass on a
-        // worker thread and only the progress callbacks hop back to the UI.
-        => await Task.Run(() => CleanSelectedCoreAsync(categories, options, progress, cancellationToken), cancellationToken);
+    {
+        await CleanupCoordinator.Gate.WaitAsync(cancellationToken);
+        try
+        {
+            // Deleting thousands of files (and registry values) is long-running disk
+            // work; the UI pages await this directly, so run the whole pass on a
+            // worker thread and only the progress callbacks hop back to the UI.
+            return await Task.Run(() => CleanSelectedCoreAsync(categories, options, progress, cancellationToken), cancellationToken);
+        }
+        finally
+        {
+            CleanupCoordinator.Gate.Release();
+        }
+    }
 
     private async Task<CleanupReport> CleanSelectedCoreAsync(IEnumerable<CleanupCategory> categories, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress, CancellationToken cancellationToken)
     {
-        var selected = categories.ToArray();
-        var issues = new List<CleanupIssue>();
+        var requested = categories.ToArray();
+        var catalogById = Catalog.ToDictionary(c => c.Id, StringComparer.OrdinalIgnoreCase);
+        var selected = requested
+            .Where(category => catalogById.ContainsKey(category.Id))
+            .Select(category => catalogById[category.Id])
+            .DistinctBy(category => category.Id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var issues = requested
+            .Where(category => !catalogById.ContainsKey(category.Id))
+            .Select(category => new CleanupIssue(category.Id, "Unknown cleanup category was rejected by the safety catalog."))
+            .ToList();
         var breakdown = new List<CleanupCategoryResult>();
         var removed = 0;
         long recovered = 0;

@@ -326,7 +326,8 @@ jobs:
             data['installer'] = {
               'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-Setup-{os.environ["version"]}.exe',
               'sha256': setup_hash,
-              'architecture': 'x64'
+              'architecture': 'x64',
+              'publisher': publisher
             }
           with open('update-manifest.json', 'w', encoding='utf-8') as handle: json.dump(data, handle, indent=2)
           PY

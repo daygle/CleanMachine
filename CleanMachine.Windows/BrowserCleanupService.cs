@@ -25,6 +25,7 @@ public sealed record BrowserScan(string Id, string Name, bool Installed, IReadOn
 
 public sealed class BrowserCleanupService
 {
+    private static readonly SemaphoreSlim StateGate = new(1, 1);
     private readonly CleanupService _cleanup = new();
     private readonly string _statePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -43,7 +44,10 @@ public sealed class BrowserCleanupService
         IProgress<CleanupProgress>? progress = null,
         CancellationToken token = default)
     {
-        options ??= new BrowserCleanupOptions();
+        await CleanupCoordinator.Gate.WaitAsync(token);
+        try
+        {
+            options ??= new BrowserCleanupOptions();
         if (options.RequireBrowsersClosed)
         {
             var running = GetRunningBrowsers();
@@ -68,6 +72,11 @@ public sealed class BrowserCleanupService
         var report = await _cleanup.CleanBrowserTargetsAsync(allowed, progress, options.SecureDelete, token);
         await ClearStateAsync(token);
         return report;
+        }
+        finally
+        {
+            CleanupCoordinator.Gate.Release();
+        }
     }
 
     public async Task<CleanupResult> CleanAsync(
@@ -90,17 +99,30 @@ public sealed class BrowserCleanupService
 
     public async Task SaveInterruptedStateAsync(BrowserCleanupState state, CancellationToken token = default)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_statePath)!);
-        var temp = _statePath + ".tmp";
-        await using (var stream = File.Create(temp))
-            await JsonSerializer.SerializeAsync(stream, state with { UpdatedAt = DateTimeOffset.UtcNow }, cancellationToken: token);
-        File.Move(temp, _statePath, true);
+        await StateGate.WaitAsync(token);
+        var temp = $"{_statePath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_statePath)!);
+            await using (var stream = File.Create(temp))
+                await JsonSerializer.SerializeAsync(stream, state with { UpdatedAt = DateTimeOffset.UtcNow }, cancellationToken: token);
+            File.Move(temp, _statePath, true);
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            StateGate.Release();
+        }
     }
 
     public async Task ClearStateAsync(CancellationToken token = default)
     {
-        await Task.CompletedTask;
-        try { if (File.Exists(_statePath)) File.Delete(_statePath); } catch (IOException) { }
+        await StateGate.WaitAsync(token);
+        try { if (File.Exists(_statePath)) File.Delete(_statePath); }
+        catch (IOException) { }
+        finally { StateGate.Release(); }
     }
 
     public static IReadOnlyList<string> GetRunningBrowsers()
@@ -232,6 +254,9 @@ public sealed class BrowserCleanupService
         CancellationToken token = default,
         bool requireBrowsersClosed = true)
     {
+        await CleanupCoordinator.Gate.WaitAsync(token);
+        try
+        {
         var running = GetRunningBrowsers();
         if (requireBrowsersClosed && running.Count > 0)
             throw new InvalidOperationException(
@@ -270,6 +295,11 @@ public sealed class BrowserCleanupService
             }
             return new CleanupReport(new CleanupResult(removed, bytes), skipped);
         }, token);
+        }
+        finally
+        {
+            CleanupCoordinator.Gate.Release();
+        }
     }
 
     private static IReadOnlyList<string> ResolvePaths(

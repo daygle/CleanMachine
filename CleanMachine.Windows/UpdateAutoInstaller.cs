@@ -28,7 +28,12 @@ public sealed class UpdateAutoInstaller
 
     /// <summary>Set while Secure Delete or Drive Wiper is running; an update
     /// never restarts the app mid-wipe.</summary>
-    public static bool IsDestructiveOperationRunning { get; set; }
+    private static int _destructiveOperationRunning;
+    public static bool IsDestructiveOperationRunning
+    {
+        get => Volatile.Read(ref _destructiveOperationRunning) != 0;
+        set => Volatile.Write(ref _destructiveOperationRunning, value ? 1 : 0);
+    }
 
     private static int _running;
     private static readonly HashSet<string> _attemptedPackages = new(StringComparer.OrdinalIgnoreCase);

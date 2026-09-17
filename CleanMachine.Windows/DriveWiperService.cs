@@ -112,6 +112,9 @@ public sealed class DriveWiperService
         bool wipeMftFreeSpace = false,
         bool wipeFatFreeSpace = false)
     {
+        await CleanupCoordinator.Gate.WaitAsync(token);
+        try
+        {
         var clampedPasses = Math.Clamp(passes, 1, 8);
         var wiperPath = WiperPathFor(target);
         // 1 MiB chunks keep memory tiny while avoiding per-call overhead.
@@ -178,6 +181,11 @@ public sealed class DriveWiperService
 
         watch.Stop();
         return new DriveWipeResult(clampedPasses, totalWritten, watch.Elapsed);
+        }
+        finally
+        {
+            CleanupCoordinator.Gate.Release();
+        }
     }
 
     // Where the metadata-churn temp files live (a sub-folder next to the wiper file).

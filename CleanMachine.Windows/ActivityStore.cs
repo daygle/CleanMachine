@@ -24,11 +24,16 @@ public sealed class ActivityStore
         await AddGate.WaitAsync(token);
         try
         {
-            var items = (await LoadAsync(token)).Prepend(entry).Take(MaxEntries).ToList(); await SaveAsync(items, token);
+            var items = (await LoadAsync(token)).Prepend(entry).Take(MaxEntries).ToList(); await SaveCoreAsync(items, token);
         }
         finally { AddGate.Release(); }
     }
-    public Task ClearAsync(CancellationToken token = default) => SaveAsync([], token);
+    public async Task ClearAsync(CancellationToken token = default)
+    {
+        await AddGate.WaitAsync(token);
+        try { await SaveCoreAsync([], token); }
+        finally { AddGate.Release(); }
+    }
 
     /// <summary>Turns a clean's per-category breakdown into human-readable drill-down
     /// lines for an <see cref="ActivityEntry"/>, largest first. Returns null when there
@@ -42,7 +47,7 @@ public sealed class ActivityStore
                     : $"{b.Category} - {b.Removed:N0} item(s)")
                 .ToList()
             : null;
-    private static async Task SaveAsync(IReadOnlyList<ActivityEntry> items, CancellationToken token)
+    private static async Task SaveCoreAsync(IReadOnlyList<ActivityEntry> items, CancellationToken token)
     {
         var directory = Path.GetDirectoryName(FilePath)!; Directory.CreateDirectory(directory); var temp = FilePath + ".tmp";
         await using (var stream = File.Create(temp)) await JsonSerializer.SerializeAsync(stream, items, new JsonSerializerOptions { WriteIndented = true }, token);

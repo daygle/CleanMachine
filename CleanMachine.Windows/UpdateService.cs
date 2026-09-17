@@ -100,8 +100,11 @@ public sealed class UpdateService
             await using var verify = File.OpenRead(path);
             var hash = Convert.ToHexString(await SHA256.HashDataAsync(verify, cancellationToken));
             if (!hash.Equals(package.Sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The downloaded package failed hash verification.");
-            if (isMsix && !HasExpectedPublisher(path, package.Publisher)) throw new InvalidDataException("The downloaded MSIX failed publisher verification.");
-            await _stateStore.MarkAsync("staged", path, null, cancellationToken);
+            if (!HasExpectedPublisher(path, package.Publisher)) throw new InvalidDataException("The downloaded update failed publisher verification.");
+            await _stateStore.MarkAsync(
+                "staged", path, null, cancellationToken,
+                expectedSha256: package.Sha256,
+                expectedPublisher: package.Publisher);
             return path;
         }
         catch { TryDelete(path); throw; }
@@ -110,9 +113,26 @@ public sealed class UpdateService
     public async Task InstallVerifiedPackageAsync(string packagePath, string currentExecutable, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(packagePath)) throw new FileNotFoundException("Staged package not found.", packagePath);
+        var stagedState = await _stateStore.LoadAsync(cancellationToken);
+        var expectedHash = stagedState?.ExpectedSha256;
+        if (stagedState is not { Status: "staged" or "installing" }
+            || !string.Equals(stagedState.PackagePath, packagePath, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(expectedHash)
+            || expectedHash.Length != 64)
+            throw new InvalidDataException("The staged update could not be authenticated.");
+
+        await using (var verifyStream = File.OpenRead(packagePath))
+        {
+            var actualHash = Convert.ToHexString(await SHA256.HashDataAsync(verifyStream, cancellationToken));
+            if (!actualHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The staged update changed after verification.");
+        }
+
         var isMsix = packagePath.EndsWith(".msix", StringComparison.OrdinalIgnoreCase);
         var isExe = packagePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
         if (!isMsix && !isExe) throw new InvalidDataException("A verified MSIX or EXE package is required.");
+        if (!HasExpectedPublisher(packagePath, stagedState.ExpectedPublisher))
+            throw new InvalidDataException("The staged update failed publisher verification.");
 
         var rollback = await StageRollbackCopyAsync(currentExecutable, cancellationToken);
         await _stateStore.MarkAsync("installing", packagePath, rollback, cancellationToken);
@@ -142,7 +162,11 @@ public sealed class UpdateService
                 };
                 try
                 {
-                    Process.Start(psi);
+                    using var installer = Process.Start(psi)
+                        ?? throw new InvalidOperationException("Could not start the update installer.");
+                    await installer.WaitForExitAsync(cancellationToken);
+                    if (installer.ExitCode != 0)
+                        throw new InvalidOperationException($"The update installer returned exit code {installer.ExitCode}.");
                 }
                 catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
                 {
@@ -238,16 +262,25 @@ public sealed class UpdateService
         if (manifest.Packages is not null && manifest.Packages.TryGetValue(arch, out var package)) return package;
         return manifest.Architecture == arch && !string.IsNullOrWhiteSpace(manifest.PackageUrl) ? new UpdatePackage(manifest.PackageUrl, manifest.Sha256, manifest.Architecture, manifest.Publisher) : null;
     }
-    private static bool IsValidPackage(UpdatePackage package)
+    private static bool IsValidPackage(UpdatePackage? package)
     {
-        if (!Uri.TryCreate(package.PackageUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) return false;
+        // JSON is external input; nullable/missing fields must be rejected rather
+        // than reaching string members and turning a malformed manifest into an
+        // unhandled exception in the update-check path.
+        if (package is null
+            || string.IsNullOrWhiteSpace(package.PackageUrl)
+            || string.IsNullOrWhiteSpace(package.Sha256)
+            || !Uri.TryCreate(package.PackageUrl, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps) return false;
         if (package.Sha256.Length != 64 || !package.Sha256.All(Uri.IsHexDigit)) return false;
         if (package.Architecture != CurrentArchitecture()) return false;
         var isMsix = package.PackageUrl.EndsWith(".msix", StringComparison.OrdinalIgnoreCase);
         var isExe = package.PackageUrl.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
         if (!isMsix && !isExe) return false;
-        // Publisher is required for MSIX (sideload verification); not needed for .exe installs.
-        if (isMsix && string.IsNullOrWhiteSpace(package.Publisher)) return false;
+        // Both package types must identify the expected release publisher. Hashes
+        // provide integrity, while the publisher check prevents a validly hashed
+        // but unsigned/re-signed package from entering the install path.
+        if (string.IsNullOrWhiteSpace(package.Publisher)) return false;
         return true;
     }
     private static string CurrentArchitecture() => RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "ARM64" : RuntimeInformation.OSArchitecture == Architecture.X64 ? "x64" : "x86";
