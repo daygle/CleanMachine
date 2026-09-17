@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-CleanMachine is currently a prototype. Security fixes are applied to the latest state of the `main` branch. Older builds and unreleased artifacts are not guaranteed to receive security updates.
+Security fixes are applied to the latest state of the `main` branch and shipped through signed releases. Only the latest release receives security updates; older builds are not guaranteed to receive them. Keep the app current using the in-app updater or the releases page.
 
-Do not use the prototype on systems where cleanup, registry export/restore, secure deletion, or update behavior has not been independently validated for your environment.
+Only use CleanMachine on systems where its cleanup, registry export/restore, secure deletion, and update behavior have been validated for your environment.
 
 ## Reporting a vulnerability
 
@@ -37,6 +37,6 @@ Reports are especially important for:
 
 ## Current limitations
 
-CleanMachine currently has Windows-specific functionality that requires validation on supported Windows versions. Registry mutation is intentionally disabled, and secure-delete overwrite methods cannot guarantee sanitization of SSDs or modern storage. Do not interpret the presence of a UI option or prototype service as proof of production-grade protection.
+CleanMachine is Windows-specific and requires validation on each supported Windows version. Registry Care only cleans findings that pass its low-risk confidence gate (always after a backup), and secure-delete overwrite methods cannot guarantee sanitization of SSDs or modern storage - use device encryption for sensitive data. Do not interpret the presence of a UI option as proof of production-grade protection.
 
 The project does not request vulnerability reports containing secrets. Remove API keys, certificates, passwords, browser data, registry exports, and other private information before sharing diagnostics.
