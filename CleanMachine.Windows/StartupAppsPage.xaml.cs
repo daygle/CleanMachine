@@ -113,7 +113,7 @@ public sealed partial class StartupAppsPage : Page
             RenderEntries();
     }
 
-    /// <summary>Renders a flat, ungrouped entry list. 1 = Name (A–Z),
+    /// <summary>Renders a flat, ungrouped entry list. 1 = Name (A-Z),
     /// 2 = Status (enabled first, then name).</summary>
     private void RenderSortedFlat(int sortIndex)
     {

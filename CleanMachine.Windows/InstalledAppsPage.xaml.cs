@@ -120,7 +120,7 @@ public sealed partial class InstalledAppsPage : Page
 
     private void RenderSortedFlat(IReadOnlyList<InstalledApp> apps, int sortIndex)
     {
-        // 1 = Name (A–Z), 2 = Size (largest first), 3 = Recently installed.
+        // 1 = Name (A-Z), 2 = Size (largest first), 3 = Recently installed.
         var sorted = sortIndex switch
         {
             2 => apps.OrderByDescending(a => a.EstimatedSize ?? -1)

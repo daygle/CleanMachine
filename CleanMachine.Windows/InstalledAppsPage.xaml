@@ -41,7 +41,7 @@
                     SelectionChanged="SortBox_SelectionChanged"
                     ToolTipService.ToolTip="Choose how the application list is ordered">
             <ComboBoxItem Content="Publisher" IsSelected="True"/>
-            <ComboBoxItem Content="Name (A–Z)"/>
+            <ComboBoxItem Content="Name (A-Z)"/>
             <ComboBoxItem Content="Size (largest first)"/>
             <ComboBoxItem Content="Recently installed"/>
           </ComboBox>

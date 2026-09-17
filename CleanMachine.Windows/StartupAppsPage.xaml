@@ -52,7 +52,7 @@
                     SelectionChanged="SortBox_SelectionChanged"
                     ToolTipService.ToolTip="Choose how the startup entries are ordered">
             <ComboBoxItem Content="Location" IsSelected="True"/>
-            <ComboBoxItem Content="Name (A–Z)"/>
+            <ComboBoxItem Content="Name (A-Z)"/>
             <ComboBoxItem Content="Status (enabled first)"/>
           </ComboBox>
         </StackPanel>
