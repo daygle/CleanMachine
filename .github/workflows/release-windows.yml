@@ -219,8 +219,14 @@ jobs:
             Where-Object { $_.Directory.Name -eq 'x64' } |
             Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
           if (-not $signtool) { throw "signtool.exe was not found on the runner." }
-          $exe = "CleanMachine.Windows/bin/x64/Release/net8.0-windows10.0.26100.0/win-x64/publish/CleanMachine.exe"
-          if (-not (Test-Path $exe)) { throw "App executable not found: $exe" }
+          # Resolve via glob so a future TFM bump cannot silently break signing again
+          # (the hardcoded net8.0 path did exactly that).
+          $exe = Get-ChildItem "CleanMachine.Windows/bin/x64/Release" -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName "win-x64/publish/CleanMachine.exe") } |
+            Sort-Object Name -Descending | Select-Object -First 1
+          if ($null -eq $exe) { throw "Published app executable was not found under CleanMachine.Windows/bin/x64/Release." }
+          $exe = Join-Path $exe.FullName "win-x64/publish/CleanMachine.exe"
+          Write-Host "Signing $exe"
           & $signtool sign /fd sha256 /td sha256 /tr http://timestamp.digicert.com $exe
           if ($LASTEXITCODE -ne 0) { throw "signtool failed for the app exe (exit $LASTEXITCODE)." }
           $signature = Get-AuthenticodeSignature $exe
