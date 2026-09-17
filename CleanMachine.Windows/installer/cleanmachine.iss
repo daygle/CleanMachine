@@ -151,15 +151,20 @@ begin
   // when nothing is running.
   ShutdownApplication;
   // The app registers "Run at startup" when a background service is enabled;
-  // remove it so a removed copy is not launched at the next logon. reg.exe runs
-  // under the original user's token, so this deletes that user's HKCU value even
-  // when the uninstaller itself was elevated.
-  ExecAsOriginalUser(ExpandConstant('{sys}\reg.exe'),
+  // remove it so a removed copy is not launched at the next logon.
+  // NOTE: ExecAsOriginalUser is prohibited during uninstall (Inno raises
+  // "Internal error: Cannot call 'ExecAsOriginalUser' function during Uninstall"
+  // and aborts the whole uninstall), so these run via Exec: in the default
+  // per-user install the uninstaller is not elevated and reg.exe deletes the
+  // installing user's HKCU value. Only when Setup was told to install for all
+  // users and the uninstaller runs elevated does the delete target the
+  // elevating user's hive instead - acceptable for this best-effort cleanup.
+  Exec(ExpandConstant('{sys}\reg.exe'),
     'delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v CleanMachine /f',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   // Remove scheduled cleanup tasks (folder \CleanMachine\). PowerShell because
   // schtasks cannot enumerate/delete by task folder.
-  ExecAsOriginalUser(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     '-NoProfile -ExecutionPolicy Bypass -Command "Get-ScheduledTask -TaskPath ''\CleanMachine\'' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false"',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
