@@ -101,10 +101,10 @@ public sealed partial class AutomaticCleanupPage : Page
 
     private void UpdateExitItemsButton(Button button, string browser)
     {
-        // Match the "Choose items…" buttons in the other sections; the current
+        // Match the "Choose items..." buttons in the other sections; the current
         // selection shows on hover instead of in the label.
         var monitor = _settings.FindBrowserMonitor(browser);
-        button.Content = "Choose items…";
+        button.Content = "Choose items...";
         ToolTipService.SetToolTip(button, monitor?.Items is { } chosen
             ? $"{chosen.Count} item(s) selected"
             : "Caches (default)");

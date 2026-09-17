@@ -43,9 +43,9 @@ public static class QuickCleanService
             await new CleanupStatsStore().RecordAsync(result.Items, result.Bytes, CancellationToken.None);
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
-                $"Quick Clean · {Title(area)}",
+                $"Quick Clean - {Title(area)}",
                 $"Cleaned {result.Items:N0} item(s), {AppNotifications.FormatBytes(result.Bytes)} recovered"
-                + (result.Issues.Count > 0 ? $" · {result.Issues.Count} skipped" : string.Empty),
+                + (result.Issues.Count > 0 ? $" - {result.Issues.Count} skipped" : string.Empty),
                 result.Details));
         }
         return result;

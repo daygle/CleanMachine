@@ -263,7 +263,7 @@ public sealed class StartupAppsService
     }
 
     /// <summary>Strips the GUID suffix that Windows appends to UWP / packaged app
-    /// auto-start names (e.g. "MicrosoftCopilotAutoLaunch_3BE43B7D…").</summary>
+    /// auto-start names (e.g. "MicrosoftCopilotAutoLaunch_3BE43B7D...").</summary>
     private static string FriendlyName(string raw)
     {
         // Pattern: DisplayName_GuidHex

@@ -21,7 +21,7 @@ public sealed partial class StartupAppsPage : Page
         ScanButton.IsEnabled = false;
         EmptyState.Visibility = Visibility.Collapsed;
         EntryPanel.Children.Clear();
-        ListLabel.Text = "SCANNING…";
+        ListLabel.Text = "SCANNING...";
 
         try
         {
@@ -246,7 +246,7 @@ public sealed partial class StartupAppsPage : Page
     private static string TruncateCommand(string command)
     {
         var trimmed = command.Trim();
-        return trimmed.Length > 80 ? trimmed[..77] + "…" : trimmed;
+        return trimmed.Length > 80 ? trimmed[..77] + "..." : trimmed;
     }
 
     private async void OnToggle(object sender, RoutedEventArgs e)

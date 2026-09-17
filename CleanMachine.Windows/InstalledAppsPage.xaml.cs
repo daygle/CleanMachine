@@ -22,7 +22,7 @@ public sealed partial class InstalledAppsPage : Page
         ScanButton.IsEnabled = false;
         EmptyState.Visibility = Visibility.Collapsed;
         AppListPanel.Children.Clear();
-        ListLabel.Text = "SCANNING…";
+        ListLabel.Text = "SCANNING...";
 
         try
         {
@@ -185,7 +185,7 @@ public sealed partial class InstalledAppsPage : Page
         };
         info.Children.Add(nameBlock);
 
-        // Metadata line: version · size · install date · arch
+        // Metadata line: version - size - install date - arch
         var meta = BuildMetadataLine(app);
         info.Children.Add(meta);
         Grid.SetColumn(info, 1);
@@ -266,7 +266,7 @@ public sealed partial class InstalledAppsPage : Page
             {
                 meta.Children.Add(new TextBlock
                 {
-                    Text = "·",
+                    Text = "-",
                     FontSize = 11,
                     Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xD0, 0xDB, 0xD5)),
                     VerticalAlignment = VerticalAlignment.Center

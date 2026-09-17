@@ -23,7 +23,7 @@ public sealed partial class SecureDeletePage : Page
     {
         if (SsdAcknowledged.IsChecked != true) { StatusText.Text = "Acknowledge the SSD limitation first."; return; }
         var picker = new FileOpenPicker(); picker.FileTypeFilter.Add("*"); InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.MainWindow)); var files = await picker.PickMultipleFilesAsync(); if (files is null || files.Count == 0) return;
-        _selection = await _service.PrepareSelectionAsync(files.Select(x => x.Path)); FileList.ItemsSource = _selection.Select(x => $"{(x.Selected ? "Eligible" : "Protected/read-only")} · {x.Path} · {x.Bytes:N0} bytes"); ChooseButton.Content = "Secure Delete Selected"; ChooseButton.Click -= Choose_Click; ChooseButton.Click += Delete_Click; StatusText.Text = $"Review {_selection.Count} selected files, then confirm deletion.";
+        _selection = await _service.PrepareSelectionAsync(files.Select(x => x.Path)); FileList.ItemsSource = _selection.Select(x => $"{(x.Selected ? "Eligible" : "Protected/read-only")} - {x.Path} - {x.Bytes:N0} bytes"); ChooseButton.Content = "Secure Delete Selected"; ChooseButton.Click -= Choose_Click; ChooseButton.Click += Delete_Click; StatusText.Text = $"Review {_selection.Count} selected files, then confirm deletion.";
     }
 
     /// <summary>The wipe method picked in the combo. "Custom (1-35 passes)" uses the

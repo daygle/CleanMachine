@@ -93,7 +93,7 @@
             </ComboBox>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
-            <Button Content="Choose items…" Click="ChooseMonitorItems_Click" Padding="14,8"/>
+            <Button Content="Choose items..." Click="ChooseMonitorItems_Click" Padding="14,8"/>
             <TextBlock x:Name="MonitorItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
           </StackPanel>
           <TextBlock Text="Runs at most once per hour and waits until space recovers before triggering again."
@@ -108,7 +108,7 @@
           <CheckBox x:Name="StartupCleanToggle" Content="Clean up when CleanMachine starts"
                     Checked="Setting_Changed" Unchecked="Setting_Changed"/>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
-            <Button Content="Choose items…" Click="ChooseStartupItems_Click" Padding="14,8"/>
+            <Button Content="Choose items..." Click="ChooseStartupItems_Click" Padding="14,8"/>
             <TextBlock x:Name="StartupItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
           </StackPanel>
           <TextBlock Text="With 'Start CleanMachine when I sign in to Windows' (Settings), this runs once at every logon."
@@ -128,7 +128,7 @@
             <TextBlock Text="minutes of inactivity" VerticalAlignment="Center" Foreground="#53635B"/>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
-            <Button Content="Choose items…" Click="ChooseIdleItems_Click" Padding="14,8"/>
+            <Button Content="Choose items..." Click="ChooseIdleItems_Click" Padding="14,8"/>
             <TextBlock x:Name="IdleItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
           </StackPanel>
         </StackPanel>

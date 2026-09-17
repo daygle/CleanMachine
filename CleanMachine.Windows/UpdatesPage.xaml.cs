@@ -41,7 +41,7 @@ public sealed partial class UpdatesPage : Page
         CheckButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
         Progress.IsIndeterminate = true;
-        StatusText.Text = "Checking for updates…";
+        StatusText.Text = "Checking for updates...";
         UpdateCheckResult result;
         try
         {
@@ -82,7 +82,7 @@ public sealed partial class UpdatesPage : Page
         await RunUpdateAsync(result.Package!);
     }
 
-    /// <summary>One-click flow: download (with a real progress bar) → verify → install.
+    /// <summary>One-click flow: download (with a real progress bar) -> verify -> install.
     /// Verification is automatic; a declined elevation prompt keeps the package staged
     /// for a retry.</summary>
     private async Task RunUpdateAsync(UpdatePackage package)
@@ -98,13 +98,13 @@ public sealed partial class UpdatesPage : Page
             var download = new Progress<double>(p =>
             {
                 Progress.Value = p;
-                StatusText.Text = $"Downloading update… {p:P0}";
+                StatusText.Text = $"Downloading update... {p:P0}";
             });
-            StatusText.Text = "Downloading update…";
+            StatusText.Text = "Downloading update...";
             _stagedPackagePath = await _service.DownloadAndVerifyAsync(package, download);
 
             Progress.IsIndeterminate = true;
-            StatusText.Text = "Verified. Installing…";
+            StatusText.Text = "Verified. Installing...";
             await InstallStagedAsync();
         }
         catch (OperationCanceledException ex)
@@ -143,7 +143,7 @@ public sealed partial class UpdatesPage : Page
         InstallButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
         Progress.IsIndeterminate = true;
-        StatusText.Text = "Installing…";
+        StatusText.Text = "Installing...";
         try
         {
             await InstallStagedAsync();

@@ -416,7 +416,7 @@ public sealed partial class AppCleanupPage : Page
                 {
                     DetailPanel.Children.Add(new TextBlock
                     {
-                        Text = $"…and {item.FileCount - 200:N0} more file(s)",
+                        Text = $"...and {item.FileCount - 200:N0} more file(s)",
                         FontSize = 11,
                         Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
                         Margin = new Thickness(2, 6, 0, 0)

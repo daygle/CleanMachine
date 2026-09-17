@@ -186,7 +186,7 @@ public sealed class ScheduleService
             DateTimeOffset.UtcNow,
             manual ? "Manual Cleanup" : "Scheduled Cleanup",
             $"'{schedule.Name}' cleaned {items:N0} item(s), {AppNotifications.FormatBytes(bytes)} recovered" +
-            (issues.Count > 0 ? $" · {issues.Count} skipped" : string.Empty),
+            (issues.Count > 0 ? $" - {issues.Count} skipped" : string.Empty),
             details.Count > 0 ? details : null), token);
 
         if (schedule.AfterClean == ScheduleAction.Notify && items > 0)

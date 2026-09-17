@@ -63,7 +63,7 @@
               </Border>
               <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Browser Cleaner" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
-                <TextBlock x:Name="BrowsersSummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="BrowsersSummary" Text="Checking..." Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
               </StackPanel>
             </StackPanel>
             <Button Grid.Column="1" Click="BrowsersSettings_Click" VerticalAlignment="Top" Padding="8,6"
@@ -91,7 +91,7 @@
               </Border>
               <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Windows Cleanup" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
-                <TextBlock x:Name="WindowsSummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="WindowsSummary" Text="Checking..." Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
               </StackPanel>
             </StackPanel>
             <Button Grid.Column="1" Click="WindowsSettings_Click" VerticalAlignment="Top" Padding="8,6"
@@ -119,7 +119,7 @@
               </Border>
               <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Registry Care" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
-                <TextBlock x:Name="RegistrySummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="RegistrySummary" Text="Checking..." Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
               </StackPanel>
             </StackPanel>
             <Button Grid.Column="1" Click="RegistrySettings_Click" VerticalAlignment="Top" Padding="8,6"
@@ -147,7 +147,7 @@
               </Border>
               <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Application Cleanup" Foreground="#273630" FontSize="14" FontWeight="SemiBold"/>
-                <TextBlock x:Name="AppsSummary" Text="Checking…" Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="AppsSummary" Text="Checking..." Foreground="#89958F" FontSize="11" TextTrimming="CharacterEllipsis"/>
               </StackPanel>
             </StackPanel>
             <Button Grid.Column="1" Click="AppsSettings_Click" VerticalAlignment="Top" Padding="8,6"

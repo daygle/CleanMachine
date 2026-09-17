@@ -30,7 +30,7 @@ public sealed partial class RegistryCarePage : Page
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
         DetailPanel.Children.Clear();
-        DetailHeadline.Text = "Analyzing…";
+        DetailHeadline.Text = "Analyzing...";
         DetailSubHeadline.Text = "Scanning the registry read-only.";
         StatusText.Text = "Scanning the registry read-only.";
         Progress.Visibility = Visibility.Visible;
@@ -378,7 +378,7 @@ public sealed partial class RegistryCarePage : Page
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
         DetailPanel.Children.Clear();
-        DetailHeadline.Text = "Cleaning…";
+        DetailHeadline.Text = "Cleaning...";
         DetailSubHeadline.Text = "Backing up, then removing the ticked findings.";
         try
         {

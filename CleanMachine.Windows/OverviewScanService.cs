@@ -105,7 +105,7 @@ public sealed class OverviewScanService
             if (items.Count == 0)
                 return new AreaSummary(installed.Count == 0 ? "No supported browsers detected" : "Clean");
             return new AreaSummary(
-                $"{AppNotifications.FormatBytes(items.Sum(i => i.Bytes))} could be freed · " +
+                $"{AppNotifications.FormatBytes(items.Sum(i => i.Bytes))} could be freed - " +
                 $"{items.Select(i => i.Id).Distinct().Count()} item(s) across {installed.Count(s => s.Items.Any(i => i.Bytes > 0))} browser(s)");
         }
         catch { return new AreaSummary("Scan failed"); }
@@ -177,8 +177,8 @@ public sealed class OverviewScanService
 
             var detail = $"{categoriesWithData} categories with data";
             var headline = bytes > 0 ? $"{AppNotifications.FormatBytes(bytes)} could be freed" : $"{entries:N0} history entries";
-            if (bytes > 0 && entries > 0) detail += $" · {entries:N0} history entries";
-            return new AreaSummary($"{headline} · {detail}");
+            if (bytes > 0 && entries > 0) detail += $" - {entries:N0} history entries";
+            return new AreaSummary($"{headline} - {detail}");
         }
         catch { return new AreaSummary("Scan failed"); }
     }
@@ -203,7 +203,7 @@ public sealed class OverviewScanService
             var withItems = scans.Where(s => s.Installed && s.Items.Count > 0).ToList();
             if (withItems.Count == 0) return new AreaSummary("Clean");
             return new AreaSummary(
-                $"{AppNotifications.FormatBytes(withItems.Sum(s => s.Items.Sum(i => i.Bytes)))} could be freed · " +
+                $"{AppNotifications.FormatBytes(withItems.Sum(s => s.Items.Sum(i => i.Bytes)))} could be freed - " +
                 $"{withItems.Count} app(s) with temp files");
         }
         catch { return new AreaSummary("Scan failed"); }

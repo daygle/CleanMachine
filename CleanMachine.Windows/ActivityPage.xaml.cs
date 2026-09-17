@@ -186,16 +186,16 @@ public sealed partial class ActivityPage : Page
     {
         var title = entry.Title.AsSpan();
         if (title.Contains("cache", StringComparison.OrdinalIgnoreCase) || title.Contains("clean", StringComparison.OrdinalIgnoreCase))
-            return ("\uE74D", ColorFromHex("#E4F0F3"), ColorFromHex("#286E58")); // broom → green
+            return ("\uE74D", ColorFromHex("#E4F0F3"), ColorFromHex("#286E58")); // broom -> green
         if (title.Contains("monitor", StringComparison.OrdinalIgnoreCase) || title.Contains("system", StringComparison.OrdinalIgnoreCase))
-            return ("\uE730", ColorFromHex("#E4F0F3"), ColorFromHex("#4B7769")); // heartbeat → teal (normal completed event)
+            return ("\uE730", ColorFromHex("#E4F0F3"), ColorFromHex("#4B7769")); // heartbeat -> teal (normal completed event)
         if (title.Contains("scan", StringComparison.OrdinalIgnoreCase) || title.Contains("registry", StringComparison.OrdinalIgnoreCase))
-            return ("\uEA18", ColorFromHex("#E4F0F3"), ColorFromHex("#4B7769")); // database → green
+            return ("\uEA18", ColorFromHex("#E4F0F3"), ColorFromHex("#4B7769")); // database -> green
         if (title.Contains("update", StringComparison.OrdinalIgnoreCase))
-            return ("\uE896", ColorFromHex("#E4F0F3"), ColorFromHex("#286E58")); // download → green
+            return ("\uE896", ColorFromHex("#E4F0F3"), ColorFromHex("#286E58")); // download -> green
         if (title.Contains("startup", StringComparison.OrdinalIgnoreCase) || title.Contains("launch", StringComparison.OrdinalIgnoreCase))
-            return ("\uE7E8", ColorFromHex("#E4F0F3"), ColorFromHex("#4B7769")); // power → teal (normal completed event)
-        return ("\uE81C", ColorFromHex("#E4F0F3"), ColorFromHex("#4B7769")); // clock → green (default)
+            return ("\uE7E8", ColorFromHex("#E4F0F3"), ColorFromHex("#4B7769")); // power -> teal (normal completed event)
+        return ("\uE81C", ColorFromHex("#E4F0F3"), ColorFromHex("#4B7769")); // clock -> green (default)
     }
 
     private static string RelativeDate(DateTimeOffset time)

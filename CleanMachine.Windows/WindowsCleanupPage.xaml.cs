@@ -74,7 +74,7 @@ public sealed partial class WindowsCleanupPage : Page
                         : (hasData ? FormatBytes(bytes) : "Clean");
                 var box = new CheckBox
                 {
-                    Content = $"{category.Name}  ·  {size}",
+                    Content = $"{category.Name}  -  {size}",
                     IsChecked = WindowsCleanupService.IsEnabled(category, _settings),
                     Tag = category,
                     MinHeight = 30,
@@ -168,7 +168,7 @@ public sealed partial class WindowsCleanupPage : Page
         ReportPanel.Children.Clear();
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
-        DetailHeadline.Text = "Analyzing…";
+        DetailHeadline.Text = "Analyzing...";
         DetailSubHeadline.Text = "Measuring every enabled category.";
         _cancel = new CancellationTokenSource();
         try
@@ -368,7 +368,7 @@ public sealed partial class WindowsCleanupPage : Page
             {
                 ReportPanel.Children.Add(new TextBlock
                 {
-                    Text = $"…and {files.Count - 300:N0} more file(s)",
+                    Text = $"...and {files.Count - 300:N0} more file(s)",
                     FontSize = 11,
                     Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
                     Margin = new Thickness(0, 6, 0, 0)
@@ -463,7 +463,7 @@ public sealed partial class WindowsCleanupPage : Page
         ReportPanel.Children.Clear();
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
-        DetailHeadline.Text = "Cleaning…";
+        DetailHeadline.Text = "Cleaning...";
         DetailSubHeadline.Text = "Removing the selected items.";
         _cancel = new CancellationTokenSource();
         try
@@ -525,7 +525,7 @@ public sealed partial class WindowsCleanupPage : Page
         });
         row.Children.Add(new TextBlock
         {
-            Text = $"{category.Group} · {category.Name}",
+            Text = $"{category.Group} - {category.Name}",
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
@@ -561,7 +561,7 @@ public sealed partial class WindowsCleanupPage : Page
         if (preview.Items.Count < preview.TotalItems)
             panel.Children.Add(new TextBlock
             {
-                Text = $"…and {preview.TotalItems - preview.Items.Count:N0} more items will be cleaned.",
+                Text = $"...and {preview.TotalItems - preview.Items.Count:N0} more items will be cleaned.",
                 FontSize = 12,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });

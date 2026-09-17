@@ -78,7 +78,7 @@ public sealed partial class CleanerPage : Page
         ScanButton.IsEnabled = false;
         CleanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
-        StatusText.Text = "Detecting browsers and measuring items…";
+        StatusText.Text = "Detecting browsers and measuring items...";
         BrowserPanel.Children.Clear();
         _itemBoxes.Clear();
         _detailScan = null;
@@ -174,7 +174,7 @@ public sealed partial class CleanerPage : Page
                     : global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
             });
             var detail = item.Bytes > 0
-                ? $"{AppNotifications.FormatBytes(item.Bytes)} · {item.FileCount:N0} files"
+                ? $"{AppNotifications.FormatBytes(item.Bytes)} - {item.FileCount:N0} files"
                 : "nothing to clean";
             text.Children.Add(new TextBlock
             {
@@ -499,7 +499,7 @@ public sealed partial class CleanerPage : Page
                 }
 
                 Progress.Visibility = Visibility.Visible;
-                StatusText.Text = $"Closing {names}…";
+                StatusText.Text = $"Closing {names}...";
                 var stillRunning = await BrowserCleanupService.CloseRunningBrowsersAsync(running);
                 if (stillRunning.Count > 0)
                 {
@@ -513,7 +513,7 @@ public sealed partial class CleanerPage : Page
         CleanButton.IsEnabled = false;
         ScanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
-        StatusText.Text = "Cleaning…";
+        StatusText.Text = "Cleaning...";
         try
         {
             var secureDelete = SecureDeleteCheck.IsChecked == true

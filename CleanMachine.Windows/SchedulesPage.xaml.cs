@@ -89,7 +89,7 @@ public sealed partial class SchedulesPage : Page
             });
             infoPanel.Children.Add(new TextBlock
             {
-                Text = $"{schedule.TriggerSummary()} · {DescribeAction(schedule.AfterClean)}",
+                Text = $"{schedule.TriggerSummary()} - {DescribeAction(schedule.AfterClean)}",
                 FontSize = 10,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
@@ -212,7 +212,7 @@ public sealed partial class SchedulesPage : Page
     {
         button.IsEnabled = false;
         var originalContent = button.Content;
-        button.Content = "Running…";
+        button.Content = "Running...";
         try
         {
             var result = await ScheduleService.RunAsync(schedule, _settings, manual: true);

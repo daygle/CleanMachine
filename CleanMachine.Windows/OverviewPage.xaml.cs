@@ -10,7 +10,7 @@ public sealed partial class OverviewPage : Page
     private static DateTimeOffset? _autoCheckLastRun;
 
     // The last update-check result, so re-opening the page shows the outcome
-    // immediately instead of a stuck "Checking for updates…" line.
+    // immediately instead of a stuck "Checking for updates..." line.
     private static UpdateCheckResult? _lastAutoCheck;
     private static string _lastAutoCheckInstalled = "";
 
@@ -77,7 +77,7 @@ public sealed partial class OverviewPage : Page
     {
         var installed = FormatVersion(UpdateService.CurrentVersion());
 
-        // Show the previous result immediately; never a stuck "Checking…" line.
+        // Show the previous result immediately; never a stuck "Checking..." line.
         if (_lastAutoCheck is { } last)
         {
             RenderUpdateResult(last, _lastAutoCheckInstalled);
@@ -188,13 +188,13 @@ public sealed partial class OverviewPage : Page
             var download = new Progress<double>(p =>
             {
                 UpdateProgress.Value = p;
-                UpdateStatusText.Text = $"Downloading update… {p:P0}";
+                UpdateStatusText.Text = $"Downloading update... {p:P0}";
             });
-            UpdateStatusText.Text = "Downloading update…";
+            UpdateStatusText.Text = "Downloading update...";
             var path = await _updateService.DownloadAndVerifyAsync(package, download);
 
             UpdateProgress.IsIndeterminate = true;
-            UpdateStatusText.Text = "Verified. Installing…";
+            UpdateStatusText.Text = "Verified. Installing...";
             var executable = Environment.ProcessPath ?? throw new InvalidOperationException("Application path not found.");
             var isExe = path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
             await _updateService.InstallVerifiedPackageAsync(path, executable);
@@ -258,7 +258,7 @@ public sealed partial class OverviewPage : Page
             result.Text = outcome.Items == 0 && outcome.Bytes == 0 && outcome.Note is not null
                 ? outcome.Note
                 : $"{outcome.Items:N0} item(s) removed, {AppNotifications.FormatBytes(outcome.Bytes)} recovered"
-                  + (outcome.Issues.Count > 0 ? $" · {outcome.Issues.Count} skipped." : ".");
+                  + (outcome.Issues.Count > 0 ? $" - {outcome.Issues.Count} skipped." : ".");
             await LoadStatsAsync();
             _ = LoadAvailabilityAsync(forceRefresh: true); // refresh the summaries in the background
         }
