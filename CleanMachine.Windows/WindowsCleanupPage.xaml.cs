@@ -169,8 +169,8 @@ public sealed partial class WindowsCleanupPage : Page
         ReportPanel.Children.Clear();
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
-        DetailHeadline.Text = "Analyzing...";
-        DetailSubHeadline.Text = "Measuring every enabled category.";
+        DetailHeadline.Text = "Scanning...";
+        DetailSubHeadline.Text = "Step 1 of 2: Measuring the selected cleanup categories. Nothing is being removed.";
         _cancel = new CancellationTokenSource();
         try
         {
@@ -195,8 +195,8 @@ public sealed partial class WindowsCleanupPage : Page
 
             RenderSummary(enabledItems, totalBytes, registryEntries);
         }
-        catch (OperationCanceledException) { DetailHeadline.Text = "Analysis cancelled."; DetailSubHeadline.Text = ""; StatusText.Text = ""; }
-        catch (Exception ex) { DetailHeadline.Text = "Analysis failed."; DetailSubHeadline.Text = ""; StatusText.Text = ex.Message; }
+        catch (OperationCanceledException) { DetailHeadline.Text = "Scan cancelled"; DetailSubHeadline.Text = "No cleanup was performed."; StatusText.Text = "Scan cancelled."; }
+        catch (Exception ex) { DetailHeadline.Text = "Scan failed"; DetailSubHeadline.Text = "No cleanup was performed."; StatusText.Text = ex.Message; }
         finally
         {
             AnalyzeButton.IsEnabled = true;
@@ -466,7 +466,8 @@ public sealed partial class WindowsCleanupPage : Page
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
         DetailHeadline.Text = "Cleaning...";
-        DetailSubHeadline.Text = "Removing the selected items.";
+        DetailSubHeadline.Text = "Step 2 of 2: Removing the selected items. This can take a while for large folders or DISM.";
+        StatusText.Text = "Cleaning in progress: preparing the selected items...";
         _cancel = new CancellationTokenSource();
         try
         {
@@ -487,7 +488,7 @@ public sealed partial class WindowsCleanupPage : Page
                 _cancel.Token);
 
             DetailHeadline.Text = "Cleaning complete";
-            DetailSubHeadline.Text = "The selected items were removed.";
+            DetailSubHeadline.Text = "The cleanup finished. Review the removed and skipped totals below.";
             await RecordManualCleanupAsync(result);
             _lastPreview = null;
             StatusText.Text =
@@ -507,8 +508,8 @@ public sealed partial class WindowsCleanupPage : Page
             }
             catch { /* refresh is best-effort; the completion report still stands */ }
         }
-        catch (OperationCanceledException) { DetailHeadline.Text = "Cleaning cancelled."; }
-        catch (Exception ex) { DetailHeadline.Text = "Cleaning failed."; StatusText.Text = ex.Message; }
+        catch (OperationCanceledException) { DetailHeadline.Text = "Cleaning cancelled"; DetailSubHeadline.Text = "Some items may not have been changed."; StatusText.Text = "Cleaning cancelled."; }
+        catch (Exception ex) { DetailHeadline.Text = "Cleaning failed"; DetailSubHeadline.Text = "No further cleanup is running."; StatusText.Text = ex.Message; }
         finally
         {
             AnalyzeButton.IsEnabled = true;

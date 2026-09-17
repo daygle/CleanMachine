@@ -40,11 +40,13 @@ public sealed partial class RegistryCarePage : Page
             var review = await _service.ScanAsync();
             _findings = review.Findings;
             RenderFindings();
+            if (_findings.Count > 0)
+                DetailSubHeadline.Text = "Scan complete. Review the findings, select items, then clean.";
         }
         catch (Exception ex)
         {
-            DetailHeadline.Text = "Analysis failed.";
-            DetailSubHeadline.Text = "";
+            DetailHeadline.Text = "Scan failed";
+            DetailSubHeadline.Text = "No cleanup was performed.";
             StatusText.Text = ex.Message;
         }
         finally
@@ -381,7 +383,8 @@ public sealed partial class RegistryCarePage : Page
         DetailGroupBadge.Visibility = Visibility.Collapsed;
         DetailPanel.Children.Clear();
         DetailHeadline.Text = "Cleaning...";
-        DetailSubHeadline.Text = "Backing up, then removing the ticked findings.";
+        DetailSubHeadline.Text = "Step 1 of 2: Creating a verified registry backup.";
+        StatusText.Text = "Cleaning in progress: creating a verified backup before making changes...";
         try
         {
             var result = await _service.PrepareReviewAsync(selected);
@@ -395,11 +398,13 @@ public sealed partial class RegistryCarePage : Page
                 return;
             }
 
+            DetailSubHeadline.Text = "Step 2 of 2: Removing the selected findings.";
+            StatusText.Text = "Cleaning in progress: removing selected registry findings...";
             var progress = new Progress<CleanupProgress>(p =>
             {
                 Progress.IsIndeterminate = false;
                 Progress.Value = p.Total == 0 ? 0 : (double)p.Completed / p.Total;
-                StatusText.Text = $"Cleaning {p.Phase}: {p.Completed}/{p.Total}";
+                StatusText.Text = $"Cleaning in progress: {p.Phase} ({p.Completed:N0}/{p.Total:N0})";
             });
             var clean = await _service.CleanAsync(result, progress: progress);
             await RecordManualCleanupAsync(result, clean);
@@ -415,6 +420,21 @@ public sealed partial class RegistryCarePage : Page
                 ? $"No registry values were changed. {backupNote}."
                 : $"Cleaned {clean.Removed} registry item(s); {clean.Skipped.Count} skipped. {backupNote}.";
 
+            RestoreButton.Visibility = Visibility.Visible;
+
+            // Re-scan so the left list reflects what was cleaned, then restore the
+            // completion report because RenderFindings repopulates the detail card.
+            try
+            {
+                var review = await _service.ScanAsync();
+                _findings = review.Findings;
+                RenderFindings();
+            }
+            catch { /* refresh is best-effort; the completion report still stands */ }
+
+            DetailBackButton.Visibility = Visibility.Collapsed;
+            DetailGroupBadge.Visibility = Visibility.Collapsed;
+            DetailPanel.Children.Clear();
             foreach (var finding in result.Findings)
             {
                 var issue = clean.Skipped.FirstOrDefault(s =>
@@ -422,23 +442,19 @@ public sealed partial class RegistryCarePage : Page
                     s.Path.Contains(finding.Path, StringComparison.OrdinalIgnoreCase));
                 DetailPanel.Children.Add(BuildResultRow(finding, issue is not null, issue?.Reason));
             }
-            RestoreButton.Visibility = Visibility.Visible;
-
-            // Re-scan so the left list reflects what was cleaned.
-            try
-            {
-                var review = await _service.ScanAsync();
-                _findings = review.Findings;
-                RenderFindings();
-                DetailHeadline.Text = "Cleaning complete";
-                DetailSubHeadline.Text = backupNote + ".";
-            }
-            catch { /* refresh is best-effort; the completion report still stands */ }
+            DetailHeadline.Text = clean.Removed == 0 && clean.Skipped.Count == 0
+                ? "Cleaning complete - nothing changed"
+                : "Cleaning complete";
+            DetailSubHeadline.Text = $"{clean.Removed:N0} removed, {clean.Skipped.Count:N0} skipped. {backupNote}.";
+            SetChips("REMOVED", clean.Removed.ToString(), "SKIPPED", clean.Skipped.Count.ToString(), "BACKUPS", result.Backups.Count.ToString());
+            StatusText.Text = clean.Removed == 0 && clean.Skipped.Count == 0
+                ? $"Complete: no registry values were changed. {backupNote}."
+                : $"Complete: cleaned {clean.Removed:N0} registry item(s); {clean.Skipped.Count:N0} skipped. {backupNote}.";
         }
         catch (Exception ex)
         {
             DetailHeadline.Text = "Cleaning failed";
-            DetailSubHeadline.Text = "";
+            DetailSubHeadline.Text = "No further cleanup is running.";
             StatusText.Text = ex.Message;
         }
         finally

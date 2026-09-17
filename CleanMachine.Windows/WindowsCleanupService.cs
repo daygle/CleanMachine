@@ -30,6 +30,9 @@ public sealed record WindowsCleanupOptions(bool ConfirmReviewCategories = false,
 public sealed class WindowsCleanupService
 {
     private const int MaxFiles = 10_000;
+    // DISM can legitimately take several minutes, but an elevated process must not
+    // leave the UI waiting forever when servicing is blocked or Windows Update is busy.
+    internal static readonly TimeSpan ComponentStoreTimeout = TimeSpan.FromMinutes(15);
 
     private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private static readonly string LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -251,6 +254,7 @@ public sealed class WindowsCleanupService
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
+                progress?.Report(new CleanupProgress("Windows Update Cleanup: elevated DISM is running", 0, 0, recovered));
                 var reclaimed = await RunComponentStoreCleanupAsync(cancellationToken);
                 removed++;
                 recovered += reclaimed;
@@ -261,6 +265,14 @@ public sealed class WindowsCleanupService
             {
                 // ERROR_CANCELLED: the user declined the UAC prompt. Nothing was changed.
                 issues.Add(new(category.Name, "Administrator permission was declined - Windows Update Cleanup was skipped."));
+            }
+            catch (TimeoutException ex)
+            {
+                issues.Add(new(category.Name, $"Windows Update Cleanup timed out: {ex.Message}"));
+            }
+            catch (Win32Exception ex)
+            {
+                issues.Add(new(category.Name, $"Windows Update Cleanup could not start or was declined: {ex.Message}"));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
             {
@@ -474,6 +486,7 @@ public sealed class WindowsCleanupService
             "exit /b %CM_RC%\r\n";
         await File.WriteAllTextAsync(scriptPath, script, cancellationToken);
 
+        Process? process = null;
         try
         {
             var psi = new ProcessStartInfo(scriptPath)
@@ -483,13 +496,31 @@ public sealed class WindowsCleanupService
                 WindowStyle = ProcessWindowStyle.Hidden,
                 CreateNoWindow = true
             };
-            using (var process = Process.Start(psi) ?? throw new IOException("Could not start DISM."))
+            process = Process.Start(psi) ?? throw new IOException("Could not start DISM.");
+
+            using var waitTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            waitTimeout.CancelAfter(ComponentStoreTimeout);
+            try
             {
-                await process.WaitForExitAsync(cancellationToken);
-                // 0 = success; 3010/3011 = success but a reboot is recommended.
-                if (process.ExitCode is not (0 or 3010 or 3011))
-                    throw new IOException($"DISM returned exit code {process.ExitCode}.");
+                await process.WaitForExitAsync(waitTimeout.Token);
             }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                StopProcess(process);
+                throw new TimeoutException($"Windows Update Cleanup exceeded the {ComponentStoreTimeout.TotalMinutes:0}-minute limit.");
+            }
+            catch (OperationCanceledException)
+            {
+                // WaitForExitAsync cancellation does not terminate the elevated child.
+                // Stop it before deleting the script/log in finally; otherwise DISM can
+                // continue servicing the image after the UI reports cancellation.
+                StopProcess(process);
+                throw;
+            }
+
+            // 0 = success; 3010/3011 = success but a reboot is recommended.
+            if (process.ExitCode is not (0 or 3010 or 3011))
+                throw new IOException($"DISM returned exit code {process.ExitCode}.");
 
             try
             {
@@ -500,9 +531,24 @@ public sealed class WindowsCleanupService
         }
         finally
         {
+            if (process is not null)
+                StopProcess(process);
+            process?.Dispose();
             try { File.Delete(scriptPath); } catch { /* temp cleanup is best-effort */ }
             try { File.Delete(logPath); } catch { /* temp cleanup is best-effort */ }
         }
+    }
+
+    private static void StopProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+            process.WaitForExit(5_000);
+        }
+        catch (InvalidOperationException) { }
+        catch (System.ComponentModel.Win32Exception) { }
     }
 
     /// <summary>Best-effort reclaimed-space parse from DISM's before/after component-store

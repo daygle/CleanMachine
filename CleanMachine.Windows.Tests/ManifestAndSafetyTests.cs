@@ -233,6 +233,13 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void WindowsUpdateCleanupHasABoundedWait()
+    {
+        Assert.True(WindowsCleanupService.ComponentStoreTimeout >= TimeSpan.FromMinutes(5));
+        Assert.True(WindowsCleanupService.ComponentStoreTimeout <= TimeSpan.FromMinutes(20));
+    }
+
+    [Fact]
     public void WindowsUpdateCleanupIsAnAdvancedOptInComponentStoreItem()
     {
         var item = WindowsCleanupService.Catalog.Single(c => c.Id == "advanced-component-store");

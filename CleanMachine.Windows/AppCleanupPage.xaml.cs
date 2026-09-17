@@ -33,7 +33,11 @@ public sealed partial class AppCleanupPage : Page
         ScanButton.IsEnabled = false;
         CleanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
-        StatusText.Text = "Detecting installed applications and measuring temp files...";
+        Progress.IsIndeterminate = true;
+        SetChipLabels("TO CLEAN", "FILES", "ITEMS");
+        DetailHeadline.Text = "Scanning...";
+        DetailSubHeadline.Text = "Step 1 of 2: Detecting applications and measuring temporary files.";
+        StatusText.Text = "Scanning installed applications and measuring temporary files...";
         AppListPanel.Children.Clear();
         _itemBoxes.Clear();
         try
@@ -43,7 +47,11 @@ public sealed partial class AppCleanupPage : Page
 
             if (installed.Count == 0)
             {
-                StatusText.Text = statusOverride ?? "No supported applications were detected.";
+                DetailHeadline.Text = statusOverride is null ? "Scan complete" : "Cleaning complete";
+                DetailSubHeadline.Text = statusOverride is null
+                    ? "No supported applications were detected."
+                    : "The cleanup finished. No supported application data remains to show.";
+                StatusText.Text = statusOverride ?? "Scan complete: no supported applications were detected.";
                 return;
             }
 
@@ -51,17 +59,24 @@ public sealed partial class AppCleanupPage : Page
 
             var totalItems = installed.Sum(s => s.Items.Count);
             var totalBytes = installed.Sum(s => s.Items.Sum(i => i.Bytes));
+            DetailHeadline.Text = statusOverride is null ? "Scan complete" : "Cleaning complete";
+            DetailSubHeadline.Text = statusOverride is null
+                ? $"Found {totalItems:N0} cleanable item(s) across {installed.Count:N0} application(s)."
+                : "The cleanup finished. Review the summary below.";
             StatusText.Text = statusOverride
-                ?? $"{installed.Count} app(s) detected with {totalItems} cleanable item(s) ({WindowsCleanupPage.FormatBytes(totalBytes)}).";
+                ?? $"Scan complete: {installed.Count} app(s) detected with {totalItems} cleanable item(s) ({WindowsCleanupPage.FormatBytes(totalBytes)}).";
             CleanButton.IsEnabled = totalItems > 0;
         }
         catch (Exception ex)
         {
+            DetailHeadline.Text = "Scan failed";
+            DetailSubHeadline.Text = "The application scan could not be completed.";
             StatusText.Text = ex.Message;
         }
         finally
         {
             ScanButton.IsEnabled = true;
+            Progress.IsIndeterminate = false;
             Progress.Visibility = Visibility.Collapsed;
         }
     }
@@ -247,6 +262,7 @@ public sealed partial class AppCleanupPage : Page
             return;
         }
 
+        SetChipLabels("TO CLEAN", "FILES", "ITEMS");
         SetChips(WindowsCleanupPage.FormatBytes(scan.Items.Sum(i => i.Bytes)),
             scan.Items.Sum(i => i.FileCount).ToString("N0"),
             scan.Items.Count.ToString());
@@ -471,6 +487,13 @@ public sealed partial class AppCleanupPage : Page
 
     /// <summary>Updates the summary chips (to-clean size, file count, item count).
     /// A null value collapses that chip back to its empty dash.</summary>
+    private void SetChipLabels(string size, string files, string items)
+    {
+        ChipSizeLabel.Text = size;
+        ChipFilesLabel.Text = files;
+        ChipItemsLabel.Text = items;
+    }
+
     private void SetChips(string? bytes, string? files, string? items)
     {
         ChipSizeValue.Text = bytes ?? "\u2014";
@@ -539,28 +562,51 @@ public sealed partial class AppCleanupPage : Page
         CleanButton.IsEnabled = false;
         ScanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
-        StatusText.Text = "Cleaning...";
+        Progress.IsIndeterminate = true;
+        DetailHeadline.Text = "Cleaning...";
+        DetailSubHeadline.Text = "Step 2 of 2: Removing selected temporary files.";
+        StatusText.Text = $"Cleaning in progress: preparing {selected.Length:N0} selected item(s)...";
         try
         {
             var secureDelete = SecureDeleteCheck.IsChecked == true
                 ? new SecureDeleteOptions(_settings.SecureDeleteMethod, _settings.CustomWipePasses)
                 : null;
-            var report = await _service.CleanAsync(selected, secureDelete);
+            var progress = new Progress<CleanupProgress>(p =>
+            {
+                Progress.IsIndeterminate = p.Total == 0;
+                Progress.Value = p.Total == 0 ? 0 : (double)p.Completed / p.Total;
+                StatusText.Text = p.Total == 0
+                    ? $"{p.Phase}..."
+                    : $"Cleaning in progress: {p.Phase} ({p.Completed:N0}/{p.Total:N0})";
+            });
+            var report = await _service.CleanAsync(selected, secureDelete, progress: progress, token: default);
             var completion = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
                              $"{WindowsCleanupPage.FormatBytes(report.Result.BytesRecovered)} recovered, " +
                              $"{report.Skipped.Count:N0} skipped.";
+            DetailHeadline.Text = "Cleaning complete";
+            DetailSubHeadline.Text = "The cleanup finished. Refreshing the application list...";
+            StatusText.Text = completion;
             // Re-scan so the list and sizes reflect what was just cleaned, keeping the
             // completion message as the status.
             await ScanAsync(completion);
+            SetChipLabels("RECOVERED", "REMOVED", "SKIPPED");
+            SetChips(WindowsCleanupPage.FormatBytes(report.Result.BytesRecovered),
+                report.Result.ItemsRemoved.ToString("N0"), report.Skipped.Count.ToString("N0"));
+            DetailHeadline.Text = "Cleaning complete";
+            DetailSubHeadline.Text = "The cleanup finished. Review the recovered, removed, and skipped totals.";
+            StatusText.Text = completion;
         }
         catch (Exception ex)
         {
+            DetailHeadline.Text = "Cleaning failed";
+            DetailSubHeadline.Text = "No further cleanup is running.";
             StatusText.Text = ex.Message;
         }
         finally
         {
             CleanButton.IsEnabled = true;
             ScanButton.IsEnabled = true;
+            Progress.IsIndeterminate = false;
             Progress.Visibility = Visibility.Collapsed;
         }
     }

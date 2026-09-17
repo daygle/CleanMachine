@@ -27,7 +27,8 @@ public sealed class AppCleanupService
     public async Task<CleanupReport> CleanAsync(
         IEnumerable<(string AppId, int ItemIndex)> selection,
         SecureDeleteOptions? secureDelete = null,
-        CancellationToken token = default)
+        CancellationToken token = default,
+        IProgress<CleanupProgress>? progress = null)
     {
         await CleanupCoordinator.Gate.WaitAsync(token);
         try
@@ -53,14 +54,19 @@ public sealed class AppCleanupService
             if (def is null) continue;
 
             var scan = ScanApp(def);
+            var totalFiles = indices
+                .Where(index => index >= 0 && index < scan.Items.Count)
+                .Sum(index => scan.Items[index].FileCount);
+            var completedFiles = 0;
             for (var i = 0; i < scan.Items.Count; i++)
             {
                 if (!indices.Contains(i)) continue;
                 token.ThrowIfCancellationRequested();
                 var item = scan.Items[i];
+                var isDirectory = Directory.Exists(item.FullPath);
                 try
                 {
-                    if (Directory.Exists(item.FullPath))
+                    if (isDirectory)
                     {
                         foreach (var file in FileEnumeration.Files(item.FullPath))
                         {
@@ -81,6 +87,11 @@ public sealed class AppCleanupService
                             }
                             catch (IOException) { skipped.Add(new(file, "Locked")); }
                             catch (UnauthorizedAccessException) { skipped.Add(new(file, "Access denied")); }
+                            finally
+                            {
+                                completedFiles++;
+                                progress?.Report(new CleanupProgress($"{def.Name}: removing temporary files", completedFiles, totalFiles, bytes));
+                            }
                         }
                         // Remove empty subdirectories bottom-up.
                         RemoveEmptyDirs(item.FullPath);
@@ -103,6 +114,14 @@ public sealed class AppCleanupService
                 }
                 catch (IOException) { skipped.Add(new(item.FullPath, "Locked")); }
                 catch (UnauthorizedAccessException) { skipped.Add(new(item.FullPath, "Access denied")); }
+                finally
+                {
+                    if (!isDirectory)
+                    {
+                        completedFiles++;
+                        progress?.Report(new CleanupProgress($"{def.Name}: removing temporary files", completedFiles, totalFiles, bytes));
+                    }
+                }
             }
         }
         });
