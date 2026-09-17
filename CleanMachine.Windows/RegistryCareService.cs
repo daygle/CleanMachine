@@ -40,7 +40,7 @@ public sealed class RegistryCareService
         ShellMuiCacheRoot + @"\"
     ];
 
-    internal static bool IsDeletablePath(string? path)
+    internal static bool IsDeletablePath(string? path, bool allowNamedClassesValue = false)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Length > 500) return false;
         if (path.Contains('"') || path.Contains("..", StringComparison.Ordinal)) return false;
@@ -61,10 +61,21 @@ public sealed class RegistryCareService
         // File-association scans only ever produce the per-user extension key
         // itself (for example Software\\Classes\\.txt). Do not let the broad
         // Software\\Classes\\ namespace become a general-purpose delete API.
-        if (path.StartsWith(ClassesRoot + @"\\.", StringComparison.OrdinalIgnoreCase))
+        if (path.StartsWith(ClassesRoot + @"\.", StringComparison.OrdinalIgnoreCase))
         {
             var suffix = path[(ClassesRoot.Length + 2)..];
             return !suffix.Contains('\\');
+        }
+
+        // File Extensions may also report a value on a ProgID key.  A named-value
+        // deletion is safe here because it cannot remove the key or its children;
+        // keep this opt-in so the broad Classes namespace is not a key-deletion
+        // allow-list.
+        if (allowNamedClassesValue
+            && path.StartsWith(ClassesRoot + @"\", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = path[(ClassesRoot.Length + 1)..];
+            return suffix.Length > 0 && !suffix.Contains('\\');
         }
 
         return false;
@@ -73,7 +84,12 @@ public sealed class RegistryCareService
     /// <summary>Whether a finding passes the safety gate for actual deletion.</summary>
     public static bool IsCleanable(RegistryFinding finding)
         => finding.LowRisk && finding.Confidence >= 70
-           && finding.Hive == "HKCU" && IsDeletablePath(finding.Path);
+           && finding.Hive == "HKCU"
+           && IsDeletablePath(
+               finding.Path,
+               finding.ValueName is not null
+                   && !string.IsNullOrWhiteSpace(finding.ValueName)
+                   && finding.Category.Equals("File Extensions", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>A short, human-readable label for a finding, for list UIs.</summary>
     public static string DisplayName(RegistryFinding finding)
