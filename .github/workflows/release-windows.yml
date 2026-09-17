@@ -326,11 +326,30 @@ jobs:
           PY
           python3 -m json.tool update-manifest.json >/dev/null
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            release/**/*.msix
-            release/**/*.sha256
+        # The maintainer typically creates the release from the GitHub UI with a
+        # hand-written description (which already contains the auto-generated
+        # "Full Changelog" line). softprops/action-gh-release with
+        # generate_release_notes: true regenerated notes on update and appended a
+        # second Full Changelog to that body. With the gh CLI the semantics are
+        # explicit: if the release exists, upload assets only and never touch the
+        # body; if not, create it once with generated notes.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          files=(
+            release/CleanMachine-x64/*.msix
+            release/CleanMachine-x64/*.sha256
+            release/CleanMachine-ARM64/*.msix
+            release/CleanMachine-ARM64/*.sha256
             release/CleanMachine-Setup/*.exe
             update-manifest.json
-          generate_release_notes: true
+          )
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $tag already exists; uploading assets without touching the description."
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          else
+            echo "Release $tag does not exist; creating it with auto-generated notes."
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes "${files[@]}"
+          fi
