@@ -1,6 +1,6 @@
 # CleanMachine
 
-CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/.NET 10 and WinUI 3**.
+CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 10 and WinUI 3** (Windows App SDK 2.5).
 
 ## Project
 
@@ -10,6 +10,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Read-only Registry Care with `.reg` backup/restore helpers
 - Explicit-file Secure Delete with selectable wipe methods
 - CCleaner-style free-space Drive Wiper
+- Architecture-aware update manifest, signed package validation, and silent in-app updates (with an optional idle-time auto-install)
 - Startup program management and an installed-apps viewer/uninstaller launcher
 - One-click "Clean All Safe Items" with a single confirmation
 - Persistent cleanup statistics and a live per-area availability dashboard
@@ -20,7 +21,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 ### Overview
 - Lifetime and 30-day cleanup stats: items cleaned, space recovered, last cleanup time
 - Live availability cards per area (Browser Cleaner, Windows Cleanup, Registry Care, Application Cleanup) showing what could be cleaned right now; results are cached for a few minutes so revisiting is instant, and any cleanup invalidates the cache
-- Update status card: installed version, automatic check (debounced), manual check, and update details when a new version exists
+- Update status card: installed version, automatic check (debounced), manual check, and update details when a new version exists; with the idle auto-install setting on, a background check's update is downloaded, verified, and installed silently once the PC has been idle 30 minutes (never for installs that would pop an administrator prompt, and never while Secure Delete or a drive wipe is running)
 - "Clean All Safe Items" runs every area's safe cleanables in sequence behind one confirmation, with per-area figures, progress, and cancellation
 
 ### Browser Cleaner
@@ -61,7 +62,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Categories with nothing to clean are hidden from the selection list (shared, cached scan with the Overview card); if a scan fails the full catalog is shown so nothing becomes unreachable
 - Per-category enable/disable persisted in settings, honoring per-user overrides; the list re-measures after a clean
 - Recycle Bin cleanup through native `SHEmptyRecycleBin` (requires explicit confirmation)
-- Windows Update cleanup disabled until safe API/service implementation is validated
+- Windows Update Cleanup (WinSxS component store, via an elevated DISM run) as an off-by-default Advanced category
 - Reparse-point and junction protection
 - Category-specific exclusion support
 - Progress and cancellation handling
@@ -113,18 +114,21 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 - Every automated run records into the same stats store and activity log as manual cleans
 
 ### Updates and Releases
-- HTTPS-only MSIX package validation
+- Both update channels, chosen by install type: MSIX packages via the deployment manager (sideloaded per-user, no elevation) or the signed .exe installer for standalone installs (silent, with elevation only when the install directory is not user-writable)
+- HTTPS-only package validation
 - Architecture-specific package selection (x64, ARM64)
 - SHA-256 hash verification
 - Authenticode publisher verification
 - Atomic update state transitions (staged -> installing -> installed)
 - Rollback copy staging and executable restoration after failed installation
+- Clear handling of Smart App Control and antivirus blocks, including the specific reason and next steps
 - Pending-update recovery across sessions
+- Optional idle-time auto-install for fully hands-off updates on per-user installs
 
 ### Settings
 - Settings save instantly on change - there is no Save button (Restore Defaults applies immediately too)
 - System monitoring threshold (entered in MB or GB), action, and a picker for exactly which safe categories the monitor cleans
-- Automatic update check toggle, and an option to install updates without CleanMachine's own confirmation step (Windows still shows its administrator-permission prompt)
+- Automatic update check toggle, an option to install updates without CleanMachine's own confirmation step, and an opt-in setting to install updates automatically while the PC is idle
 - "Start CleanMachine when I sign in to Windows" toggle, independent of the background services; a logon start opens straight to the tray
 - Minimize to tray options (start minimized, on close, on minimize; taskbar visibility)
 - Tray icon: left-click restores the window; right-click opens a menu to Open or Exit CleanMachine
@@ -135,7 +139,7 @@ CleanMachine is a native Windows 10/11 desktop application scaffolded with **C#/
 
 ## Safety model
 
-All destructive workflows are review-first. Browser cleaning requires supported browsers to be closed; safe items (caches, sessions, crash reports) are selected by default, while destructive items (cookies, history, saved passwords) are opt-in behind a confirmation. Registry Care deletes only after a verified `.reg` backup and only from an allow-listed set of per-user paths. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. Windows Update cleanup remains disabled until a safe Windows service/API implementation is validated.
+All destructive workflows are review-first. Browser cleaning requires supported browsers to be closed; safe items (caches, sessions, crash reports) are selected by default, while destructive items (cookies, history, saved passwords) are opt-in behind a confirmation. Registry Care deletes only after a verified `.reg` backup and only from an allow-listed set of per-user paths. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. Windows Update Cleanup (component store) runs only when explicitly selected and elevated, via DISM.
 
 "Clean All Safe Items" is bounded the same way: only non-destructive browser cache items, enabled Safe-risk Windows categories, application temp files, and registry findings passing the safety gate (with a mandatory backup) are included. Downloads, documents, Review/Advanced categories, and destructive browser items are never touched by it.
 
@@ -163,7 +167,7 @@ on a machine with an older SDK installed.
 
 ## Updates and signed releases
 
-`UpdateService.cs` accepts only HTTPS `.msix` packages for the current architecture. It validates semantic versions, SHA-256 hashes, required publisher metadata, and the embedded package certificate before installation. It uses the Windows App SDK deployment manager for MSIX installation, persists staged/installing state atomically, stages a rollback copy, and can restore the previous executable after a failed installation.
+`UpdateService.cs` accepts signed `.msix` packages (via the Windows App SDK deployment manager) or the signed `.exe` installer (via a silent Inno Setup run), selected by install type. It validates semantic versions, SHA-256 hashes, required publisher metadata, and the embedded package certificate before installation. It persists staged/installing state atomically, stages a rollback copy, and can restore the previous executable after a failed installation. Elevation is requested only when the install directory is not user-writable, so per-user installs update with no prompt.
 
 The release workflow builds architecture-specific MSIX packages and hashes, validates Authenticode signatures and the configured publisher, and publishes a multi-architecture `update-manifest.json`.
 
