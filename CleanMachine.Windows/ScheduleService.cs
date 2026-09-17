@@ -88,7 +88,15 @@ public sealed class ScheduleService
             {
                 var report = await new WindowsCleanupService().CleanSelectedAsync(
                     categories,
-                    new WindowsCleanupOptions(ConfirmReviewCategories: false, ExcludedPaths: settings.ExcludedPaths, SecureDelete: schedule.SecureDelete, SecureDeleteOptions: secureDelete),
+                    new WindowsCleanupOptions(
+                        // A schedule runs headless with no one to click a confirmation
+                        // dialog - choosing the category in the schedule editor is the
+                        // confirmation. Without this, Review/Advanced categories
+                        // (Recycle Bin, Downloads, Prefetch...) silently clean nothing.
+                        ConfirmReviewCategories: true,
+                        ExcludedPaths: settings.ExcludedPaths,
+                        SecureDelete: schedule.SecureDelete,
+                        SecureDeleteOptions: secureDelete),
                     cancellationToken: token);
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;
