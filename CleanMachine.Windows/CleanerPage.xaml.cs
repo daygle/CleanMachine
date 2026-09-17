@@ -440,9 +440,9 @@ public sealed partial class CleanerPage : Page
 
     private void SetChips(string? size, string? files, string? items)
     {
-        ChipSizeValue.Text = size ?? "—";
-        ChipFilesValue.Text = files ?? "—";
-        ChipItemsValue.Text = items ?? "—";
+        ChipSizeValue.Text = size ?? "-";
+        ChipFilesValue.Text = files ?? "-";
+        ChipItemsValue.Text = items ?? "-";
     }
 
     private void DetailBack_Click(object sender, RoutedEventArgs e)

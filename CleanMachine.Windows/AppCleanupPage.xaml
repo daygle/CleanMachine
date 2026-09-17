@@ -97,7 +97,7 @@
                   <Ellipse Width="6" Height="6" Fill="#6ABD97" VerticalAlignment="Center"/>
                   <TextBlock Text="TO CLEAN" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
                 </StackPanel>
-                <TextBlock x:Name="ChipSizeValue" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+                <TextBlock x:Name="ChipSizeValue" Text="-" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
               </StackPanel>
             </Border>
             <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
@@ -106,7 +106,7 @@
                   <Ellipse Width="6" Height="6" Fill="#5B99AD" VerticalAlignment="Center"/>
                   <TextBlock Text="FILES" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
                 </StackPanel>
-                <TextBlock x:Name="ChipFilesValue" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+                <TextBlock x:Name="ChipFilesValue" Text="-" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
               </StackPanel>
             </Border>
             <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
@@ -115,7 +115,7 @@
                   <Ellipse Width="6" Height="6" Fill="#C7775D" VerticalAlignment="Center"/>
                   <TextBlock Text="ITEMS" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
                 </StackPanel>
-                <TextBlock x:Name="ChipItemsValue" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+                <TextBlock x:Name="ChipItemsValue" Text="-" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
               </StackPanel>
             </Border>
           </StackPanel>

@@ -429,9 +429,9 @@ public sealed partial class WindowsCleanupPage : Page
     /// <summary>Updates the summary chip values; a null value shows an em dash.</summary>
     private void SetChips(string? size, string? mid, string? right)
     {
-        ChipSizeValue.Text = size ?? "—";
-        ChipFilesValue.Text = mid ?? "—";
-        ChipItemsValue.Text = right ?? "—";
+        ChipSizeValue.Text = size ?? "-";
+        ChipFilesValue.Text = mid ?? "-";
+        ChipItemsValue.Text = right ?? "-";
     }
 
     /// <summary>Relabels the middle and right chips; the size chip is always "TO CLEAN".</summary>

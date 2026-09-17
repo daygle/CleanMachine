@@ -95,7 +95,7 @@
                   <Ellipse Width="6" Height="6" Fill="#6ABD97" VerticalAlignment="Center"/>
                   <TextBlock x:Name="ChipLabel1" Text="ELIGIBLE" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
                 </StackPanel>
-                <TextBlock x:Name="ChipValue1" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+                <TextBlock x:Name="ChipValue1" Text="-" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
               </StackPanel>
             </Border>
             <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
@@ -104,7 +104,7 @@
                   <Ellipse Width="6" Height="6" Fill="#5B99AD" VerticalAlignment="Center"/>
                   <TextBlock x:Name="ChipLabel2" Text="SELECTED" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
                 </StackPanel>
-                <TextBlock x:Name="ChipValue2" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+                <TextBlock x:Name="ChipValue2" Text="-" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
               </StackPanel>
             </Border>
             <Border Background="#F2F7F4" CornerRadius="7" Padding="12,7">
@@ -113,7 +113,7 @@
                   <Ellipse Width="6" Height="6" Fill="#C7775D" VerticalAlignment="Center"/>
                   <TextBlock x:Name="ChipLabel3" Text="TOTAL" FontSize="9" Foreground="#7F9189" CharacterSpacing="60"/>
                 </StackPanel>
-                <TextBlock x:Name="ChipValue3" Text="&#x2014;" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
+                <TextBlock x:Name="ChipValue3" Text="-" FontSize="13" FontWeight="SemiBold" Foreground="#273630"/>
               </StackPanel>
             </Border>
           </StackPanel>
