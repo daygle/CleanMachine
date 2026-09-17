@@ -130,13 +130,16 @@ public sealed class AppSettings
     public HashSet<string>? SystemMonitorCategories { get; set; }
 
     // The background agent has no standalone switch: it runs whenever a service
-    // that needs it is enabled (browser-exit cleaning or the low-disk-space
-    // monitor). Windows startup registration follows the same rule, so the app
-    // is present to run those services while the window is closed. Derived, so
-    // it is never persisted.
+    // that needs it is enabled (automatic update checks or automatic cleanup).
+    // Windows startup registration follows the same rule, so the app is present
+    // while the window is closed. Derived, so it is never persisted.
     [JsonIgnore]
     public bool RequiresBackgroundAgent =>
-        CleanOnBrowserExit || SystemMonitoringEnabled || IdleCleanEnabled || RecycleBinAutoEmptyEnabled;
+        CheckForUpdatesAutomatically
+        || CleanOnBrowserExit
+        || SystemMonitoringEnabled
+        || IdleCleanEnabled
+        || RecycleBinAutoEmptyEnabled;
 
     // The app is registered to launch at logon when the user asked for it, when a
     // background service needs it running while the window is closed, or when a

@@ -269,6 +269,7 @@ public sealed class BrowserCleanupService
             var removed = 0;
             long bytes = 0;
             var skipped = new List<CleanupIssue>();
+            var cleanedItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var (browserId, itemId) in selection.Distinct())
             {
@@ -281,7 +282,11 @@ public sealed class BrowserCleanupService
 
                 if (BrowserCatalog.IsPreferenceEdit(itemId))
                 {
-                    ApplyPreferenceEdit(browser, profiles, skipped);
+                    if (ApplyPreferenceEdit(browser, profiles, skipped))
+                    {
+                        removed++;
+                        cleanedItems.Add($"{browserId}:{itemId}");
+                    }
                     continue;
                 }
 
@@ -291,9 +296,11 @@ public sealed class BrowserCleanupService
                     removed += result.Removed;
                     bytes += result.Bytes;
                     skipped.AddRange(result.Skipped);
+                    if (result.Removed > 0)
+                        cleanedItems.Add($"{browserId}:{itemId}");
                 }
             }
-            return new CleanupReport(new CleanupResult(removed, bytes), skipped);
+            return new CleanupReport(new CleanupResult(removed, bytes), skipped, CleanedPaths: cleanedItems);
         }, token);
         }
         finally
@@ -428,43 +435,49 @@ public sealed class BrowserCleanupService
 
     /// <summary>Last Download Location lives in a settings file, not a data file, so it
     /// is edited in place (with a backup) rather than deleted.</summary>
-    private static void ApplyPreferenceEdit(BrowserDefinition browser, IReadOnlyList<string> profiles, List<CleanupIssue> skipped)
+    private static bool ApplyPreferenceEdit(BrowserDefinition browser, IReadOnlyList<string> profiles, List<CleanupIssue> skipped)
     {
+        var changed = false;
         foreach (var profile in profiles)
         {
             if (browser.Family == BrowserFamily.Chromium)
             {
                 var preferences = Path.Combine(profile, "Preferences");
-                if (File.Exists(preferences)) TryRemoveJsonKeys(preferences, "download", ["default_directory", "directory_upgrade"], skipped);
+                if (File.Exists(preferences))
+                    changed |= TryRemoveJsonKeys(preferences, "download", ["default_directory", "directory_upgrade"], skipped);
             }
             else if (browser.Family == BrowserFamily.Firefox)
             {
                 var prefs = Path.Combine(profile, "prefs.js");
-                if (File.Exists(prefs)) TryRemovePrefsJsLines(prefs, skipped);
+                if (File.Exists(prefs))
+                    changed |= TryRemovePrefsJsLines(prefs, skipped);
             }
         }
+        return changed;
     }
 
-    private static void TryRemoveJsonKeys(string path, string section, string[] keys, List<CleanupIssue> skipped)
+    private static bool TryRemoveJsonKeys(string path, string section, string[] keys, List<CleanupIssue> skipped)
     {
         try
         {
             var root = JsonNode.Parse(File.ReadAllText(path)) as JsonObject;
-            if (root?[section] is not JsonObject sectionObject) return;
+            if (root?[section] is not JsonObject sectionObject) return false;
 
             var changed = keys.Aggregate(false, (current, key) => sectionObject.Remove(key) || current);
-            if (!changed) return;
+            if (!changed) return false;
 
             File.Copy(path, path + ".cleanmachine.bak", true);
             File.WriteAllText(path, root.ToJsonString());
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             skipped.Add(new CleanupIssue(path, ex.Message));
+            return false;
         }
     }
 
-    private static void TryRemovePrefsJsLines(string path, List<CleanupIssue> skipped)
+    private static bool TryRemovePrefsJsLines(string path, List<CleanupIssue> skipped)
     {
         try
         {
@@ -473,14 +486,16 @@ public sealed class BrowserCleanupService
                 .Where(line => !line.Contains("browser.download.dir", StringComparison.Ordinal)
                     && !line.Contains("browser.download.lastDir", StringComparison.Ordinal))
                 .ToArray();
-            if (filtered.Length == lines.Length) return;
+            if (filtered.Length == lines.Length) return false;
 
             File.Copy(path, path + ".cleanmachine.bak", true);
             File.WriteAllLines(path, filtered);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             skipped.Add(new CleanupIssue(path, ex.Message));
+            return false;
         }
     }
 }

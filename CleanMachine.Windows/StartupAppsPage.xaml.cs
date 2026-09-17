@@ -255,6 +255,12 @@ public sealed partial class StartupAppsPage : Page
         var newEnabled = toggle.IsOn;
 
         var success = await Task.Run(() => _service.ToggleEnabled(entry, newEnabled));
+        await new ActivityStore().AddAsync(new ActivityEntry(
+            DateTimeOffset.UtcNow,
+            "Startup Application",
+            success
+                ? $"{(newEnabled ? "Enabled" : "Disabled")} {entry.Name}."
+                : $"Could not {(newEnabled ? "enable" : "disable")} {entry.Name}."));
         if (!success)
         {
             // Revert the toggle on failure
@@ -284,6 +290,10 @@ public sealed partial class StartupAppsPage : Page
         catch (Exception ex) { error = ex.Message; }
         if (!success)
         {
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Startup Application",
+                $"Could not remove {entry.Name} from startup: {error ?? "unknown error"}."));
             var failure = new ContentDialog
             {
                 Title = "Could not remove entry",
@@ -294,6 +304,11 @@ public sealed partial class StartupAppsPage : Page
             await failure.ShowAsync();
             return;
         }
+
+        await new ActivityStore().AddAsync(new ActivityEntry(
+            DateTimeOffset.UtcNow,
+            "Startup Application",
+            $"Removed {entry.Name} from startup."));
 
         // Re-scan to refresh the list
         ScanButton.IsEnabled = false;

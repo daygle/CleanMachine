@@ -5,10 +5,6 @@ namespace CleanMachine.Windows;
 
 public sealed partial class OverviewPage : Page
 {
-    // Automatic update checks are debounced: at most one per 6 hours per app
-    // session, no matter how often the Overview page is opened.
-    private static DateTimeOffset? _autoCheckLastRun;
-
     // The last update-check result, so re-opening the page shows the outcome
     // immediately instead of a stuck "Checking for updates..." line.
     private static UpdateCheckResult? _lastAutoCheck;
@@ -91,9 +87,10 @@ public sealed partial class OverviewPage : Page
             UpdateDetailText.Text = $"CleanMachine {installed} is installed. Click 'Check for Updates' or wait for the automatic check.";
         }
 
-        // At most one automatic check per 6 hours per app session.
-        if (_autoCheckLastRun is { } runAt && DateTimeOffset.UtcNow - runAt < TimeSpan.FromHours(6)) return;
-        _autoCheckLastRun = DateTimeOffset.UtcNow;
+        // The app-wide background scheduler owns the six-hour debounce. This page
+        // also participates in that scheduler so opening Overview does not create
+        // a duplicate request when the agent is already running.
+        if (!App.TryReserveAutomaticUpdateCheck()) return;
         _ = RunUpdateCheckAsync(manual: false);
     }
 
@@ -151,7 +148,7 @@ public sealed partial class OverviewPage : Page
         // instance serves the app lifetime (Overview can be recreated on every
         // navigation).
         _autoInstaller ??= new UpdateAutoInstaller();
-        _autoInstaller.TryInstallWhenIdleAsync(result);
+        _ = _autoInstaller.TryInstallWhenIdleAsync(result);
     }
 
     private void RenderUpdateResult(UpdateCheckResult result, string installed)

@@ -64,7 +64,7 @@ public sealed partial class AppCleanupPage : Page
                 ? $"Found {totalItems:N0} cleanable item(s) across {installed.Count:N0} application(s)."
                 : "The cleanup finished. Review the summary below.";
             StatusText.Text = statusOverride
-                ?? $"Scan complete: {installed.Count} app(s) detected with {totalItems} cleanable item(s) ({WindowsCleanupPage.FormatBytes(totalBytes)}).";
+                ?? $"Scan complete: {installed.Count} application(s) detected with {totalItems} cleanable item(s) ({WindowsCleanupPage.FormatBytes(totalBytes)}).";
             CleanButton.IsEnabled = totalItems > 0;
         }
         catch (Exception ex)
@@ -93,15 +93,15 @@ public sealed partial class AppCleanupPage : Page
         DetailBackButton.Visibility = Visibility.Collapsed;
         ShowDetailPlaceholder();
         StatusText.Text = visible.Count == 0
-            ? "All apps are clean. Check 'Show All' to see them."
-            : $"{visible.Count} app(s) with cleanable files.";
+            ? "All applications are clean. Check 'Show All' to see them."
+            : $"{visible.Count} application(s) with cleanable files.";
         DetailPanel.Children.Clear();
 
         foreach (var group in visible.GroupBy(s => s.Group))
         {
             AppListPanel.Children.Add(new TextBlock
             {
-                Text = $"{group.Key.ToUpperInvariant()} ({group.Count()})",
+                Text = $"{group.Key} ({group.Count()})",
                 FontSize = 11,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69)),
                 Margin = new Thickness(0, 10, 0, 4)
@@ -245,7 +245,7 @@ public sealed partial class AppCleanupPage : Page
         _detailItemIndex = null;
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Visible;
-        DetailGroupBadgeText.Text = scan.Group.ToUpperInvariant();
+        DetailGroupBadgeText.Text = scan.Group;
         DetailHeadline.Text = scan.Name;
         DetailSubHeadline.Text = "Click an item card to preview its files.";
         DetailPanel.Children.Clear();
@@ -255,7 +255,7 @@ public sealed partial class AppCleanupPage : Page
             SetChips(null, null, null);
             DetailPanel.Children.Add(new TextBlock
             {
-                Text = "Nothing to clean for this app.",
+                Text = "Nothing to clean for this application.",
                 FontSize = 12,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
@@ -535,6 +535,122 @@ public sealed partial class AppCleanupPage : Page
             ShowAppDetail(scan);
     }
 
+    /// <summary>Shows only the selected application items for which at least one
+    /// file was actually removed. The normal app list is refreshed separately so it
+    /// continues to show what remains cleanable.</summary>
+    private void RenderCleanedResults(
+        IReadOnlyList<(string AppId, int ItemIndex)> selected,
+        IReadOnlyList<AppScan> beforeScan,
+        CleanupReport report)
+    {
+        var cleanedPaths = report.CleanedPaths
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var cleaned = selected
+            .Select(selection =>
+            {
+                var scan = beforeScan.FirstOrDefault(s => s.Id == selection.AppId);
+                var item = scan?.Items.ElementAtOrDefault(selection.ItemIndex);
+                return (Scan: scan, Item: item);
+            })
+            .Where(result => result.Scan is not null
+                && result.Item is not null
+                && cleanedPaths.Any(path => IsSameOrWithin(path, result.Item.FullPath)))
+            .ToArray();
+
+        DetailPanel.Children.Clear();
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
+        DetailHeadline.Text = "Cleaning complete";
+        DetailSubHeadline.Text = cleaned.Length == 0
+            ? "No application items were cleaned. Skipped items are not shown."
+            : "Only application items with files actually removed are shown below.";
+
+        foreach (var result in cleaned)
+        {
+            var scan = result.Scan!;
+            var item = result.Item!;
+            DetailPanel.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+                BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 7, 10, 7),
+                Child = new StackPanel
+                {
+                    Spacing = 2,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = $"{scan.Name} - {item.Description}",
+                            FontSize = 12,
+                            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+                        },
+                        new TextBlock
+                        {
+                            Text = $"{WindowsCleanupPage.FormatBytes(item.Bytes)} - {item.FileCount:N0} file(s)",
+                            FontSize = 10,
+                            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+                        }
+                    }
+                }
+            });
+        }
+
+        if (cleaned.Length == 0)
+            DetailPanel.Children.Add(BuildDetailPlaceholder("No application items were cleaned. Skipped items are not shown."));
+    }
+
+    private static bool IsSameOrWithin(string path, string root)
+    {
+        var normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.Equals(path, normalizedRoot, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(normalizedRoot + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task RecordManualCleanupAsync(
+        IReadOnlyList<(string AppId, int ItemIndex)> selected,
+        IReadOnlyList<AppScan> beforeScan,
+        CleanupReport report)
+    {
+        await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered);
+        try
+        {
+            var cleanedPaths = report.CleanedPaths
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var details = selected
+                .Select(selection =>
+                {
+                    var scan = beforeScan.FirstOrDefault(s => s.Id == selection.AppId);
+                    var item = scan?.Items.ElementAtOrDefault(selection.ItemIndex);
+                    return (Scan: scan, Item: item);
+                })
+                .Where(result => result.Scan is not null
+                    && result.Item is not null
+                    && cleanedPaths.Any(path => IsSameOrWithin(path, result.Item.FullPath)))
+                .Select(result =>
+                    $"{result.Scan!.Name} - {result.Item!.Description} - " +
+                    $"{result.Item.FileCount:N0} file(s), {WindowsCleanupPage.FormatBytes(result.Item.Bytes)}")
+                .ToList();
+
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Application Cleanup",
+                $"Manual clean - removed {report.Result.ItemsRemoved:N0} item(s), " +
+                $"{WindowsCleanupPage.FormatBytes(report.Result.BytesRecovered)} recovered, " +
+                $"{report.Skipped.Count:N0} skipped.",
+                details.Count > 0 ? details : null));
+        }
+        catch
+        {
+            // Activity history is diagnostic; a completed application cleanup must
+            // not be reported as failed if the history file cannot be written.
+        }
+    }
+
     private async void Clean_Click(object sender, RoutedEventArgs e)
     {
         // Distinct: the same item can be ticked in both the app card and the
@@ -546,8 +662,11 @@ public sealed partial class AppCleanupPage : Page
             .ToArray();
         if (selected.Length == 0) { StatusText.Text = "Nothing is ticked. Tick at least one item to clean."; return; }
 
+        // Keep the pre-clean scan because the post-clean scan no longer contains
+        // items that were successfully removed.
+        var beforeScan = _lastScans;
         var totalBytes = selected.Sum(x =>
-            _lastScans.FirstOrDefault(s => s.Id == x.AppId)?.Items.ElementAtOrDefault(x.ItemIndex)?.Bytes ?? 0);
+            beforeScan.FirstOrDefault(s => s.Id == x.AppId)?.Items.ElementAtOrDefault(x.ItemIndex)?.Bytes ?? 0);
 
         var confirm = new ContentDialog
         {
@@ -580,6 +699,7 @@ public sealed partial class AppCleanupPage : Page
                     : $"Cleaning in progress: {p.Phase} ({p.Completed:N0}/{p.Total:N0})";
             });
             var report = await _service.CleanAsync(selected, secureDelete, progress: progress, token: default);
+            await RecordManualCleanupAsync(selected, beforeScan, report);
             var completion = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
                              $"{WindowsCleanupPage.FormatBytes(report.Result.BytesRecovered)} recovered, " +
                              $"{report.Skipped.Count:N0} skipped.";
@@ -589,6 +709,7 @@ public sealed partial class AppCleanupPage : Page
             // Re-scan so the list and sizes reflect what was just cleaned, keeping the
             // completion message as the status.
             await ScanAsync(completion);
+            RenderCleanedResults(selected, beforeScan, report);
             SetChipLabels("RECOVERED", "REMOVED", "SKIPPED");
             SetChips(WindowsCleanupPage.FormatBytes(report.Result.BytesRecovered),
                 report.Result.ItemsRemoved.ToString("N0"), report.Skipped.Count.ToString("N0"));

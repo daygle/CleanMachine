@@ -308,7 +308,13 @@ public sealed partial class InstalledAppsPage : Page
     private async void OnModify(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not InstalledApp app) return;
-        _ = await Task.Run(() => _service.LaunchModify(app));
+        var started = await Task.Run(() => _service.LaunchModify(app));
+        await new ActivityStore().AddAsync(new ActivityEntry(
+            DateTimeOffset.UtcNow,
+            "Application Modify",
+            started
+                ? $"Modify installer started for {app.Name}."
+                : $"Could not start the modify installer for {app.Name}."));
     }
 
     private async void OnUninstall(object sender, RoutedEventArgs e)
@@ -327,7 +333,15 @@ public sealed partial class InstalledAppsPage : Page
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
 
-        _ = await Task.Run(() => _service.LaunchUninstall(app));
+        var started = await Task.Run(() => _service.LaunchUninstall(app));
+        await new ActivityStore().AddAsync(new ActivityEntry(
+            DateTimeOffset.UtcNow,
+            "Application Uninstall",
+            started
+                ? app.Kind == AppEntryKind.Store
+                    ? $"Uninstalled {app.Name}."
+                    : $"Uninstall started for {app.Name}; completion is handled by the vendor's installer."
+                : $"Could not start the uninstall for {app.Name}."));
     }
 
     private static SolidColorBrush ParseColor(string hex)

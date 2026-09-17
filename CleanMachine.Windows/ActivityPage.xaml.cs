@@ -168,15 +168,24 @@ public sealed partial class ActivityPage : Page
             };
             return new Border
             {
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+                BorderThickness = new Thickness(1),
                 Child = expander,
                 CornerRadius = new CornerRadius(6)
             };
         }
 
+        // Keep non-expandable events visually consistent with expandable cleanup
+        // cards. Browser Monitoring has no per-category breakdown, so it follows this
+        // path and previously appeared without the card border/padding.
         return new Border
         {
+            Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+            BorderThickness = new Thickness(1),
             Child = grid,
-            Padding = new Thickness(8, 5, 8, 5),
+            Padding = new Thickness(18, 5, 8, 5),
             CornerRadius = new CornerRadius(6),
             Margin = new Thickness(0, 1, 0, 1)
         };

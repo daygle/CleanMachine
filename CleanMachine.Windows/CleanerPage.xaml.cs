@@ -450,6 +450,73 @@ public sealed partial class CleanerPage : Page
         if (_detailScan is { } scan) ShowBrowserDetail(scan);
     }
 
+    /// <summary>Shows only browser items for which the cleanup service reported at
+    /// least one successful removal. The refreshed browser list may still contain
+    /// items that were skipped or not selected.</summary>
+    private void RenderCleanedResults(
+        IReadOnlyList<(string BrowserId, string ItemId)> selected,
+        IReadOnlyList<BrowserScan> beforeScan,
+        CleanupReport report)
+    {
+        var cleanedItems = report.CleanedPaths ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var cleaned = selected
+            .Select(selection =>
+            {
+                var scan = beforeScan.FirstOrDefault(s => s.Id.Equals(selection.BrowserId, StringComparison.OrdinalIgnoreCase));
+                var item = scan?.Items.FirstOrDefault(i => i.Id.Equals(selection.ItemId, StringComparison.OrdinalIgnoreCase));
+                return (Scan: scan, Item: item, Key: $"{selection.BrowserId}:{selection.ItemId}");
+            })
+            .Where(result => result.Scan is not null
+                && result.Item is not null
+                && cleanedItems.Contains(result.Key))
+            .ToArray();
+
+        DetailPanel.Children.Clear();
+        DetailBackButton.Visibility = Visibility.Collapsed;
+        DetailGroupBadge.Visibility = Visibility.Collapsed;
+        DetailHeadline.Text = "Cleaning complete";
+        DetailSubHeadline.Text = cleaned.Length == 0
+            ? "No browser items were cleaned. Skipped items are not shown."
+            : "Only browser items with files actually removed are shown below.";
+
+        foreach (var result in cleaned)
+        {
+            var scan = result.Scan!;
+            var item = result.Item!;
+            DetailPanel.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
+                BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 7, 10, 7),
+                Child = new StackPanel
+                {
+                    Spacing = 2,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = $"{scan.Name} - {item.Name}",
+                            FontSize = 12,
+                            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+                        },
+                        new TextBlock
+                        {
+                            Text = $"{AppNotifications.FormatBytes(item.Bytes)} - {item.FileCount:N0} file(s)",
+                            FontSize = 10,
+                            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+                        }
+                    }
+                }
+            });
+        }
+
+        if (cleaned.Length == 0)
+            DetailPanel.Children.Add(BuildDetailPlaceholder("No browser items were cleaned. Skipped items are not shown."));
+    }
+
     private async void Clean_Click(object sender, RoutedEventArgs e)
     {
         var selected = _itemBoxes
@@ -503,8 +570,13 @@ public sealed partial class CleanerPage : Page
                 var stillRunning = await BrowserCleanupService.CloseRunningBrowsersAsync(running);
                 if (stillRunning.Count > 0)
                 {
+                    var remaining = string.Join(", ", stillRunning.Select(BrowserCleanupService.DisplayNameForProcess));
+                    await new ActivityStore().AddAsync(new ActivityEntry(
+                        DateTimeOffset.UtcNow,
+                        "Browser Cleanup",
+                        $"Manual clean could not start because these browsers remained open: {remaining}."));
                     Progress.Visibility = Visibility.Collapsed;
-                    StatusText.Text = $"Could not close: {string.Join(", ", stillRunning.Select(BrowserCleanupService.DisplayNameForProcess))}. Close them manually and try again.";
+                    StatusText.Text = $"Could not close: {remaining}. Close them manually and try again.";
                     return;
                 }
             }
@@ -514,6 +586,9 @@ public sealed partial class CleanerPage : Page
         ScanButton.IsEnabled = false;
         Progress.Visibility = Visibility.Visible;
         StatusText.Text = "Cleaning...";
+        // Preserve the pre-clean scan because successfully removed items disappear
+        // from the refreshed scan.
+        var beforeScan = _scans;
         try
         {
             var secureDelete = SecureDeleteCheck.IsChecked == true
@@ -521,15 +596,29 @@ public sealed partial class CleanerPage : Page
                 : null;
             var report = await _service.CleanItemsAsync(selected, secureDelete);
             _ = new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered);
+            var details = selected
+                .Where(selection => report.CleanedPaths?.Contains($"{selection.BrowserId}:{selection.ItemId}") == true)
+                .Select(selection => $"{selection.BrowserId} - {selection.ItemId}")
+                .ToList();
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Browser Cleanup",
+                $"Manual clean - removed {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered, {report.Skipped.Count:N0} skipped.",
+                details.Count > 0 ? details : null));
             var completion = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
                              $"{AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered, " +
                              $"{report.Skipped.Count:N0} skipped.";
             // Re-scan so the list and sizes reflect what was just cleaned, keeping the
             // completion message as the status.
             await ScanAsync(completion);
+            RenderCleanedResults(selected, beforeScan, report);
         }
         catch (Exception ex)
         {
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Browser Cleanup",
+                $"Manual clean failed: {ex.Message}"));
             // Includes the InvalidOperationException thrown when browsers are open.
             StatusText.Text = ex.Message;
         }

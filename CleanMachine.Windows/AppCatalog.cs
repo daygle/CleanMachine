@@ -39,540 +39,540 @@ public static class AppCatalog
 {
     public static IReadOnlyList<AppDefinition> Definitions { get; } =
     [
-        // ---- Desktop Apps ----
-        new("7zip", "7-Zip", "Desktop App", false,
+        // ---- Desktop Applications ----
+        new("7zip", "7-Zip", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("7-Zip\\Temp", "Extraction temp files"),
-                new("7-Zip\\History", "File history")
+                new("7-Zip\\Temp", "Extraction Temp Files"),
+                new("7-Zip\\History", "File History")
             ])
         ]),
 
-        new("github-desktop", "GitHub Desktop", "Desktop App", false,
+        new("github-desktop", "GitHub Desktop", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("GitHub Desktop\\Cache", "App cache"),
-                new("GitHub Desktop\\Code Cache", "Code cache"),
-                new("GitHub Desktop\\GPUCache", "GPU cache"),
-                new("GitHub Desktop\\logs", "Log files"),
-                new("GitHub Desktop\\Service Worker\\CacheStorage", "Service worker cache")
+                new("GitHub Desktop\\Cache", "Application Cache"),
+                new("GitHub Desktop\\Code Cache", "Code Cache"),
+                new("GitHub Desktop\\GPUCache", "GPU Cache"),
+                new("GitHub Desktop\\logs", "Log Files"),
+                new("GitHub Desktop\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 
-        new("notepadpp", "Notepad++", "Desktop App", false,
+        new("notepadpp", "Notepad++", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Notepad++\\backup", "Backup files"),
-                new("Notepad++\\cache", "Cache files"),
-                new("Notepad++\\session.xml", "Old session data")
+                new("Notepad++\\backup", "Backup Files"),
+                new("Notepad++\\cache", "Cache Files"),
+                new("Notepad++\\session.xml", "Old Session Data")
             ])
         ]),
 
-        new("nodejs", "Node.js", "Desktop App", false,
+        new("nodejs", "Node.js", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("npm-cache", "npm cache"),
-                new("pnpm-store", "pnpm store"),
-                new("yarn\\Cache", "yarn cache")
+                new("npm-cache", "NPM Cache"),
+                new("pnpm-store", "PNPM Store"),
+                new("yarn\\Cache", "Yarn Cache")
             ])
         ]),
 
-        new("steam", "Steam", "Desktop App", false,
+        new("steam", "Steam", "Desktop Application", false,
         [
             (AppDataRoot.ProgramFilesX86, [
-                new("Steam\\appcache", "App cache"),
-                new("Steam\\logs", "Log files"),
-                new("Steam\\config\\htmlcache", "HTML cache"),
-                new("Steam\\dumps", "Crash dumps")
+                new("Steam\\appcache", "Application Cache"),
+                new("Steam\\logs", "Log Files"),
+                new("Steam\\config\\htmlcache", "HTML Cache"),
+                new("Steam\\dumps", "Crash Dumps")
             ]),
             (AppDataRoot.LocalAppData, [
-                new("Steam\\htmlcache", "HTML cache")
+                new("Steam\\htmlcache", "HTML Cache")
             ])
         ]),
 
-        new("vlc", "VLC Media Player", "Desktop App", false,
+        new("vlc", "VLC Media Player", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("vlc\\cache", "Cache files"),
-                new("vlc\\logs", "Log files")
+                new("vlc\\cache", "Cache Files"),
+                new("vlc\\logs", "Log Files")
             ])
         ]),
 
-        new("zoom", "Zoom", "Desktop App", false,
+        new("zoom", "Zoom", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Zoom\\logs", "Log files"),
-                new("Zoom\\data", "Cache data"),
-                new("Zoom\\Updates", "Old update files")
+                new("Zoom\\logs", "Log Files"),
+                new("Zoom\\data", "Cache Data"),
+                new("Zoom\\Updates", "Old Update Files")
             ])
         ]),
 
-        new("microsoft-office", "Microsoft Office", "Desktop App", false,
+        new("microsoft-office", "Microsoft Office", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Microsoft\\Office\\16.0\\OfficeFileCache", "Office file cache"),
-                new("Microsoft\\Office\\16.0\\Wef\\Cache", "Workflow cache"),
-                new("Microsoft\\Office\\16.0\\OfficeNotification", "Notification cache")
+                new("Microsoft\\Office\\16.0\\OfficeFileCache", "Office File Cache"),
+                new("Microsoft\\Office\\16.0\\Wef\\Cache", "Workflow Cache"),
+                new("Microsoft\\Office\\16.0\\OfficeNotification", "Notification Cache")
             ]),
             (AppDataRoot.RoamingAppData, [
-                new("Microsoft\\Office\\Recent", "Recent documents")
+                new("Microsoft\\Office\\Recent", "Recent Documents")
             ])
         ]),
 
-        new("onedrive", "Microsoft OneDrive", "Desktop App", false,
+        new("onedrive", "Microsoft OneDrive", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("OneDrive\\logs", "Log files"),
-                new("OneDrive\\cache", "Cache files"),
-                new("OneDrive\\Updates", "Old update files")
+                new("OneDrive\\logs", "Log Files"),
+                new("OneDrive\\cache", "Cache Files"),
+                new("OneDrive\\Updates", "Old Update Files")
             ])
         ]),
 
-        new("microsoft-edge", "Microsoft Edge", "Desktop App", false,
+        new("microsoft-edge", "Microsoft Edge", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Microsoft\\Edge\\User Data\\Default\\Cache", "Browser cache"),
-                new("Microsoft\\Edge\\User Data\\Default\\Code Cache", "Code cache"),
-                new("Microsoft\\Edge\\User Data\\Default\\GPUCache", "GPU cache"),
-                new("Microsoft\\Edge\\User Data\\Default\\Service Worker\\CacheStorage", "Service worker cache")
+                new("Microsoft\\Edge\\User Data\\Default\\Cache", "Browser Cache"),
+                new("Microsoft\\Edge\\User Data\\Default\\Code Cache", "Code Cache"),
+                new("Microsoft\\Edge\\User Data\\Default\\GPUCache", "GPU Cache"),
+                new("Microsoft\\Edge\\User Data\\Default\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 
-        new("activity-history", "Activity History", "Desktop App", false,
+        new("activity-history", "Activity History", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("ConnectedDevicesPlatform", "Activity history"),
-                new("Microsoft\\Windows\\ActivityCache", "Activity cache")
+                new("ConnectedDevicesPlatform", "Activity History"),
+                new("Microsoft\\Windows\\ActivityCache", "Activity Cache")
             ])
         ]),
 
-        new("defender", "Windows Defender", "Desktop App", false,
+        new("defender", "Windows Defender", "Desktop Application", false,
         [
             (AppDataRoot.WindowsTemp, [
-                new("MpCmdRun.log", "Defender scan log"),
-                new("MpScanResults-*.log", "Old scan results")
+                new("MpCmdRun.log", "Defender Scan Log"),
+                new("MpScanResults-*.log", "Old Scan Results")
             ])
         ]),
 
-        new("mediaplayer", "Windows Media Player", "Desktop App", false,
+        new("mediaplayer", "Windows Media Player", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("Microsoft\\Media Player\\CurrentDatabase_*.wmdb", "Old database"),
-                new("Microsoft\\Media Player\\Cache", "Cache files")
+                new("Microsoft\\Media Player\\CurrentDatabase_*.wmdb", "Old Database"),
+                new("Microsoft\\Media Player\\Cache", "Cache Files")
             ])
         ]),
 
-        new("autoplay", "Windows AutoPlay Devices", "Desktop App", false,
+        new("autoplay", "Windows AutoPlay Devices", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Microsoft\\Windows\\Autoplay", "AutoPlay cache")
+                new("Microsoft\\Windows\\Autoplay", "AutoPlay Cache")
             ])
         ]),
 
-        new("search", "Microsoft Search", "Desktop App", false,
+        new("search", "Microsoft Search", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Microsoft\\Search\\Data\\Applications\\Windows\\Windows.edb", "Search index (will rebuild)"),
-                new("Microsoft\\Search\\Data\\Temp", "Search temp files")
+                new("Microsoft\\Search\\Data\\Applications\\Windows\\Windows.edb", "Search Index (Will Rebuild)"),
+                new("Microsoft\\Search\\Data\\Temp", "Search Temp Files")
             ])
         ]),
 
-        new("discord", "Discord", "Desktop App", false,
+        new("discord", "Discord", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("discord\\Cache", "App cache"),
-                new("discord\\Code Cache", "Code cache"),
-                new("discord\\GPUCache", "GPU cache"),
-                new("discord\\Service Worker\\CacheStorage", "Service worker cache")
+                new("discord\\Cache", "Application Cache"),
+                new("discord\\Code Cache", "Code Cache"),
+                new("discord\\GPUCache", "GPU Cache"),
+                new("discord\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 
-        new("slack", "Slack", "Desktop App", false,
+        new("slack", "Slack", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("Slack\\Cache", "App cache"),
-                new("Slack\\Code Cache", "Code cache"),
-                new("Slack\\GPUCache", "GPU cache"),
-                new("Slack\\Service Worker\\CacheStorage", "Service worker cache"),
-                new("Slack\\logs", "Log files")
+                new("Slack\\Cache", "Application Cache"),
+                new("Slack\\Code Cache", "Code Cache"),
+                new("Slack\\GPUCache", "GPU Cache"),
+                new("Slack\\Service Worker\\CacheStorage", "Service Worker Cache"),
+                new("Slack\\logs", "Log Files")
             ])
         ]),
 
-        new("spotify", "Spotify", "Desktop App", false,
+        new("spotify", "Spotify", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Spotify\\Storage", "Streaming cache"),
-                new("Spotify\\Browser", "Browser cache")
+                new("Spotify\\Storage", "Streaming Cache"),
+                new("Spotify\\Browser", "Browser Cache")
             ])
         ]),
 
-        new("teams-classic", "Microsoft Teams (classic)", "Desktop App", false,
+        new("teams-classic", "Microsoft Teams (Classic)", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("Microsoft\\Teams\\Cache", "App cache"),
-                new("Microsoft\\Teams\\Code Cache", "Code cache"),
-                new("Microsoft\\Teams\\GPUCache", "GPU cache"),
-                new("Microsoft\\Teams\\Service Worker\\CacheStorage", "Service worker cache")
+                new("Microsoft\\Teams\\Cache", "Application Cache"),
+                new("Microsoft\\Teams\\Code Cache", "Code Cache"),
+                new("Microsoft\\Teams\\GPUCache", "GPU Cache"),
+                new("Microsoft\\Teams\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 
-        new("vscode", "Visual Studio Code", "Desktop App", false,
+        new("vscode", "Visual Studio Code", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("Code\\Cache", "App cache"),
-                new("Code\\CachedData", "Cached data"),
-                new("Code\\Code Cache", "Code cache"),
-                new("Code\\GPUCache", "GPU cache"),
-                new("Code\\Service Worker\\CacheStorage", "Service worker cache"),
-                new("Code\\logs", "Log files")
+                new("Code\\Cache", "Application Cache"),
+                new("Code\\CachedData", "Cached Data"),
+                new("Code\\Code Cache", "Code Cache"),
+                new("Code\\GPUCache", "GPU Cache"),
+                new("Code\\Service Worker\\CacheStorage", "Service Worker Cache"),
+                new("Code\\logs", "Log Files")
             ])
         ]),
 
-        new("chrome", "Google Chrome", "Desktop App", false,
+        new("chrome", "Google Chrome", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Google\\Chrome\\User Data\\Default\\Cache", "Browser cache"),
-                new("Google\\Chrome\\User Data\\Default\\Code Cache", "Code cache"),
-                new("Google\\Chrome\\User Data\\Default\\GPUCache", "GPU cache"),
-                new("Google\\Chrome\\User Data\\Default\\Service Worker\\CacheStorage", "Service worker cache")
+                new("Google\\Chrome\\User Data\\Default\\Cache", "Browser Cache"),
+                new("Google\\Chrome\\User Data\\Default\\Code Cache", "Code Cache"),
+                new("Google\\Chrome\\User Data\\Default\\GPUCache", "GPU Cache"),
+                new("Google\\Chrome\\User Data\\Default\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 
-        new("brave", "Brave", "Desktop App", false,
+        new("brave", "Brave", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Cache", "Browser cache"),
-                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Code Cache", "Code cache"),
-                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\GPUCache", "GPU cache"),
-                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Service Worker\\CacheStorage", "Service worker cache")
+                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Cache", "Browser Cache"),
+                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Code Cache", "Code Cache"),
+                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\GPUCache", "GPU Cache"),
+                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 
-        new("adobe-acrobat", "Adobe Acrobat", "Desktop App", false,
+        new("adobe-acrobat", "Adobe Acrobat", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Adobe\\Acrobat\\DC\\Cache", "Document cache"),
-                new("Adobe\\Acrobat\\DC\\Temp", "Temp files")
+                new("Adobe\\Acrobat\\DC\\Cache", "Document Cache"),
+                new("Adobe\\Acrobat\\DC\\Temp", "Temp Files")
             ])
         ]),
 
-        new("adobe-media-cache", "Adobe Media Cache", "Desktop App", false,
+        new("adobe-media-cache", "Adobe Media Cache", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("Adobe\\Common\\Media Cache Files", "Media cache files (Premiere/After Effects)"),
-                new("Adobe\\Common\\Media Cache", "Media cache database")
+                new("Adobe\\Common\\Media Cache Files", "Media Cache Files (Premiere/After Effects)"),
+                new("Adobe\\Common\\Media Cache", "Media Cache Database")
             ])
         ]),
 
-        new("signal", "Signal", "Desktop App", false,
+        new("signal", "Signal", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("Signal\\Cache", "App cache"),
-                new("Signal\\Code Cache", "Code cache"),
-                new("Signal\\GPUCache", "GPU cache"),
-                new("Signal\\Service Worker\\CacheStorage", "Service worker cache"),
-                new("Signal\\logs", "Log files")
+                new("Signal\\Cache", "Application Cache"),
+                new("Signal\\Code Cache", "Code Cache"),
+                new("Signal\\GPUCache", "GPU Cache"),
+                new("Signal\\Service Worker\\CacheStorage", "Service Worker Cache"),
+                new("Signal\\logs", "Log Files")
             ])
         ]),
 
-        new("postman", "Postman", "Desktop App", false,
+        new("postman", "Postman", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("Postman\\Cache", "App cache"),
-                new("Postman\\Code Cache", "Code cache"),
-                new("Postman\\GPUCache", "GPU cache"),
-                new("Postman\\Service Worker\\CacheStorage", "Service worker cache")
+                new("Postman\\Cache", "Application Cache"),
+                new("Postman\\Code Cache", "Code Cache"),
+                new("Postman\\GPUCache", "GPU Cache"),
+                new("Postman\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 
-        new("vivaldi", "Vivaldi", "Desktop App", false,
+        new("vivaldi", "Vivaldi", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Vivaldi\\User Data\\Default\\Cache", "Browser cache"),
-                new("Vivaldi\\User Data\\Default\\Code Cache", "Code cache"),
-                new("Vivaldi\\User Data\\Default\\GPUCache", "GPU cache"),
-                new("Vivaldi\\User Data\\Default\\Service Worker\\CacheStorage", "Service worker cache")
+                new("Vivaldi\\User Data\\Default\\Cache", "Browser Cache"),
+                new("Vivaldi\\User Data\\Default\\Code Cache", "Code Cache"),
+                new("Vivaldi\\User Data\\Default\\GPUCache", "GPU Cache"),
+                new("Vivaldi\\User Data\\Default\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 
-        new("opera", "Opera", "Desktop App", false,
+        new("opera", "Opera", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Opera Software\\Opera Stable\\Cache", "Browser cache"),
-                new("Opera Software\\Opera Stable\\Code Cache", "Code cache"),
-                new("Opera Software\\Opera Stable\\GPUCache", "GPU cache"),
-                new("Opera Software\\Opera Stable\\Service Worker\\CacheStorage", "Service worker cache")
+                new("Opera Software\\Opera Stable\\Cache", "Browser Cache"),
+                new("Opera Software\\Opera Stable\\Code Cache", "Code Cache"),
+                new("Opera Software\\Opera Stable\\GPUCache", "GPU Cache"),
+                new("Opera Software\\Opera Stable\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 
-        new("epic-games", "Epic Games Launcher", "Desktop App", false,
+        new("epic-games", "Epic Games Launcher", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("EpicGamesLauncher\\Saved\\webcache", "Web cache"),
-                new("EpicGamesLauncher\\Saved\\Logs", "Log files")
+                new("EpicGamesLauncher\\Saved\\webcache", "Web Cache"),
+                new("EpicGamesLauncher\\Saved\\Logs", "Log Files")
             ])
         ]),
 
-        new("thunderbird", "Mozilla Thunderbird", "Desktop App", false,
+        new("thunderbird", "Mozilla Thunderbird", "Desktop Application", false,
         [
             // Each profile lives in a randomly-named folder, so the profile segment is a
             // wildcard. Only the disk cache is cleaned; mail and settings are untouched.
             (AppDataRoot.LocalAppData, [
-                new("Thunderbird\\Profiles\\*\\cache2", "Disk cache")
+                new("Thunderbird\\Profiles\\*\\cache2", "Disk Cache")
             ])
         ]),
 
-        new("jetbrains", "JetBrains IDEs", "Desktop App", false,
+        new("jetbrains", "JetBrains IDEs", "Desktop Application", false,
         [
             // One folder per product+version (e.g. IntelliJIdea2024.1), matched by wildcard.
             (AppDataRoot.LocalAppData, [
-                new("JetBrains\\*\\caches", "IDE caches"),
-                new("JetBrains\\*\\log", "Log files"),
-                new("JetBrains\\*\\tmp", "Temp files")
+                new("JetBrains\\*\\caches", "IDE Caches"),
+                new("JetBrains\\*\\log", "Log Files"),
+                new("JetBrains\\*\\tmp", "Temp Files")
             ])
         ]),
 
-        // ---- Microsoft Store Apps ----
-        new("store-bing-news", "Bing News", "Microsoft Store App", true,
+        // ---- Microsoft Store Applications ----
+        new("store-bing-news", "Bing News", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.BingNews_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.BingNews_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.BingNews_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.BingNews_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.BingNews_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.BingNews_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-bing-weather", "Bing Weather", "Microsoft Store App", true,
+        new("store-bing-weather", "Bing Weather", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.BingWeather_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.BingWeather_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.BingWeather_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.BingWeather_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.BingWeather_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.BingWeather_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-clipchamp", "Clipchamp - Video Editor", "Microsoft Store App", true,
+        new("store-clipchamp", "Clipchamp - Video Editor", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Clipchamp.Clipchamp_yxz26nhyzhsrt\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Clipchamp.Clipchamp_yxz26nhyzhsrt\\AC\\Temp", "Temp files"),
-                new("Packages\\Clipchamp.Clipchamp_yxz26nhyzhsrt\\TempState", "Temp state")
+                new("Packages\\Clipchamp.Clipchamp_yxz26nhyzhsrt\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Clipchamp.Clipchamp_yxz26nhyzhsrt\\AC\\Temp", "Temp Files"),
+                new("Packages\\Clipchamp.Clipchamp_yxz26nhyzhsrt\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-media-player", "Media Player", "Microsoft Store App", true,
+        new("store-media-player", "Media Player", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.WindowsMediaPlayer_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.WindowsMediaPlayer_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.WindowsMediaPlayer_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.WindowsMediaPlayer_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.WindowsMediaPlayer_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.WindowsMediaPlayer_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-photos", "Microsoft Photos", "Microsoft Store App", true,
+        new("store-photos", "Microsoft Photos", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.Windows.Photos_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.Windows.Photos_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.Windows.Photos_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.Windows.Photos_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.Windows.Photos_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.Windows.Photos_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-sticky-notes", "Microsoft Sticky Notes", "Microsoft Store App", true,
+        new("store-sticky-notes", "Microsoft Sticky Notes", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-todo", "Microsoft To Do", "Microsoft Store App", true,
+        new("store-todo", "Microsoft To Do", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.Todo_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.Todo_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.Todo_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.Todo_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.Todo_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.Todo_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-snip-sketch", "Snip & Sketch", "Microsoft Store App", true,
+        new("store-snip-sketch", "Snip & Sketch", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.ScreenSketch_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.ScreenSketch_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.ScreenSketch_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.ScreenSketch_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.ScreenSketch_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.ScreenSketch_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-client-temp", "Windows Client Temp Files", "Microsoft Store App", true,
+        new("store-client-temp", "Windows Client Temp Files", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\TempState", "Temp state")
+                new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-xbox", "Xbox", "Microsoft Store App", true,
+        new("store-xbox", "Xbox", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-xbox-gamebar", "Xbox Game Bar", "Microsoft Store App", true,
+        new("store-xbox-gamebar", "Xbox Game Bar", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-whatsapp", "WhatsApp", "Microsoft Store App", true,
+        new("store-whatsapp", "WhatsApp", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\AC\\INetCache", "Internet cache"),
-                new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\AC\\Temp", "Temp files"),
-                new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\TempState", "Temp state")
+                new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\AC\\Temp", "Temp Files"),
+                new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-spotify", "Spotify (Store)", "Microsoft Store App", true,
+        new("store-spotify", "Spotify (Store)", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\AC\\INetCache", "Internet cache"),
-                new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\AC\\Temp", "Temp files"),
-                new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\TempState", "Temp state")
+                new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\AC\\Temp", "Temp Files"),
+                new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-netflix", "Netflix", "Microsoft Store App", true,
+        new("store-netflix", "Netflix", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\AC\\INetCache", "Internet cache"),
-                new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\AC\\Temp", "Temp files"),
-                new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\TempState", "Temp state")
+                new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\AC\\Temp", "Temp Files"),
+                new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-paint", "Paint", "Microsoft Store App", true,
+        new("store-paint", "Paint", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-notepad", "Windows Notepad", "Microsoft Store App", true,
+        new("store-notepad", "Windows Notepad", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-terminal", "Windows Terminal", "Microsoft Store App", true,
+        new("store-terminal", "Windows Terminal", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-teams", "Microsoft Teams", "Microsoft Store App", true,
+        new("store-teams", "Microsoft Teams", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\MSTeams_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-outlook", "Outlook (new)", "Microsoft Store App", true,
+        new("store-outlook", "Outlook (New)", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-phone-link", "Phone Link", "Microsoft Store App", true,
+        new("store-phone-link", "Phone Link", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-mail-calendar", "Mail and Calendar", "Microsoft Store App", true,
+        new("store-mail-calendar", "Mail and Calendar", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-maps", "Windows Maps", "Microsoft Store App", true,
+        new("store-maps", "Windows Maps", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-camera", "Windows Camera", "Microsoft Store App", true,
+        new("store-camera", "Windows Camera", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-solitaire", "Microsoft Solitaire Collection", "Microsoft Store App", true,
+        new("store-solitaire", "Microsoft Solitaire Collection", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-get-help", "Get Help", "Microsoft Store App", true,
+        new("store-get-help", "Get Help", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-feedback-hub", "Feedback Hub", "Microsoft Store App", true,
+        new("store-feedback-hub", "Feedback Hub", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ]),
 
-        new("store-microsoft-store", "Microsoft Store", "Microsoft Store App", true,
+        new("store-microsoft-store", "Microsoft Store", "Microsoft Store Application", true,
         [
             (AppDataRoot.LocalAppData, [
-                new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\AC\\INetCache", "Internet cache"),
-                new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\AC\\Temp", "Temp files"),
-                new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\TempState", "Temp state")
+                new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
+                new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\TempState", "Temp State")
             ])
         ])
     ];

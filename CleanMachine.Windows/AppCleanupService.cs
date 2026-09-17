@@ -36,6 +36,7 @@ public sealed class AppCleanupService
         var removed = 0;
         long bytes = 0;
         var skipped = new List<CleanupIssue>();
+        var cleanedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // Group by app to avoid rescanning.
         var byApp = selection
@@ -84,6 +85,7 @@ public sealed class AppCleanupService
                                 if (secureDelete is null) File.Delete(file);
                                 removed++;
                                 bytes += len;
+                                cleanedPaths.Add(file);
                             }
                             catch (IOException) { skipped.Add(new(file, "Locked")); }
                             catch (UnauthorizedAccessException) { skipped.Add(new(file, "Access denied")); }
@@ -110,6 +112,7 @@ public sealed class AppCleanupService
                         if (secureDelete is null) File.Delete(item.FullPath);
                         removed++;
                         bytes += len;
+                        cleanedPaths.Add(item.FullPath);
                     }
                 }
                 catch (IOException) { skipped.Add(new(item.FullPath, "Locked")); }
@@ -126,7 +129,7 @@ public sealed class AppCleanupService
         }
         });
 
-        return new CleanupReport(new CleanupResult(removed, bytes), skipped);
+        return new CleanupReport(new CleanupResult(removed, bytes), skipped, CleanedPaths: cleanedPaths);
         }
         finally
         {

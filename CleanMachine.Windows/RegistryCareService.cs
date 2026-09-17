@@ -6,7 +6,10 @@ namespace CleanMachine.Windows;
 public sealed record RegistryReview(IReadOnlyList<RegistryFinding> Findings, IReadOnlyList<RegistryBackup> Backups);
 
 /// <summary>Outcome of cleaning selected registry findings.</summary>
-public sealed record RegistryCleanResult(int Removed, IReadOnlyList<CleanupIssue> Skipped);
+public sealed record RegistryCleanResult(
+    int Removed,
+    IReadOnlyList<CleanupIssue> Skipped,
+    IReadOnlyList<RegistryFinding>? Cleaned = null);
 
 public sealed class RegistryCareService
 {
@@ -171,6 +174,7 @@ public sealed class RegistryCareService
         {
         var removed = 0;
         var skipped = new List<CleanupIssue>();
+        var cleaned = new List<RegistryFinding>();
         if (review.Findings.Count > 0)
         {
             var verifiedBackup = false;
@@ -188,7 +192,8 @@ public sealed class RegistryCareService
                 return new RegistryCleanResult(
                     0,
                     review.Findings.Select(f => new CleanupIssue(
-                        f.Path, "Registry cleanup requires a verified backup.")).ToArray());
+                        f.Path, "Registry cleanup requires a verified backup.")).ToArray(),
+                    []);
             }
         }
 
@@ -216,6 +221,7 @@ public sealed class RegistryCareService
                         }
                         key.DeleteValue(finding.ValueName, throwOnMissingValue: false);
                         removed++;
+                        cleaned.Add(finding);
                     }
                     else
                     {
@@ -230,6 +236,7 @@ public sealed class RegistryCareService
                         }
                         parent.DeleteSubKeyTree(leaf, throwOnMissingSubKey: false);
                         removed++;
+                        cleaned.Add(finding);
                     }
                 }
                 catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException or ArgumentException)
@@ -237,7 +244,7 @@ public sealed class RegistryCareService
                     skipped.Add(new(finding.Path, ex.Message));
                 }
             }
-            return new RegistryCleanResult(removed, skipped);
+            return new RegistryCleanResult(removed, skipped, cleaned);
         }, token);
         }
         finally

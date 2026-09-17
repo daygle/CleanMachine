@@ -92,14 +92,26 @@ public sealed partial class DriveWiperPage : Page
             var result = await _service.WipeFreeSpaceAsync(target, passes, progress, _cancel.Token,
                 wipeMftFreeSpace: WipeMftCheck.IsChecked == true && target.IsNtfs,
                 wipeFatFreeSpace: WipeFatCheck.IsChecked == true && target.IsFat);
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Drive Wiper",
+                $"Wiped free space on {target.DisplayName} - {result.Passes} pass(es), {WindowsCleanupPage.FormatBytes(result.BytesOverwritten)} overwritten."));
             StatusText.Text = $"Done: {result.Passes} pass(es), {WindowsCleanupPage.FormatBytes(result.BytesOverwritten)} overwritten in {result.Duration:hh\\:mm\\:ss}.";
         }
         catch (OperationCanceledException)
         {
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Drive Wiper",
+                $"Wipe cancelled on {target.DisplayName}. Some free space may already have been overwritten."));
             StatusText.Text = "Wipe cancelled. Space already overwritten stays overwritten; run the wipe again to finish the job.";
         }
         catch (Exception ex)
         {
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Drive Wiper",
+                $"Wipe failed on {target.DisplayName}: {ex.Message}"));
             StatusText.Text = ex.Message;
         }
         finally

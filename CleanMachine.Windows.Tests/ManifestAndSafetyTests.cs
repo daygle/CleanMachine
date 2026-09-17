@@ -142,6 +142,32 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void AutomaticUpdateChecksKeepTheBackgroundAgentRunning()
+    {
+        var settings = new AppSettings
+        {
+            CleanOnBrowserExit = false,
+            SystemMonitoringEnabled = false,
+            IdleCleanEnabled = false,
+            RecycleBinAutoEmptyEnabled = false,
+            CheckForUpdatesAutomatically = true,
+            AutoInstallUpdates = false
+        };
+
+        Assert.True(settings.RequiresBackgroundAgent);
+        Assert.True(settings.ShouldStartWithWindows);
+
+        settings.CheckForUpdatesAutomatically = false;
+        Assert.False(settings.RequiresBackgroundAgent);
+        Assert.False(settings.ShouldStartWithWindows);
+
+        // Auto-install cannot run without automatic checks, so it does not start
+        // the agent by itself.
+        settings.AutoInstallUpdates = true;
+        Assert.False(settings.RequiresBackgroundAgent);
+    }
+
+    [Fact]
     public void CleanupProgressReportsCorrectly()
     {
         var progress = new CleanupProgress("test", 5, 10, 1024);
@@ -979,8 +1005,8 @@ public sealed class ManifestAndSafetyTests
     public void AppCatalogGroupsAreDistinct()
     {
         var groups = AppCatalog.Groups();
-        Assert.Contains("Desktop App", groups);
-        Assert.Contains("Microsoft Store App", groups);
+        Assert.Contains("Desktop Application", groups);
+        Assert.Contains("Microsoft Store Application", groups);
         Assert.Equal(groups.Count, groups.Distinct().Count());
     }
 

@@ -496,8 +496,30 @@ public sealed partial class WindowsCleanupPage : Page
             SetChipLabels("REMOVED", "SKIPPED");
             SetChips(FormatBytes(result.Result.BytesRecovered), result.Result.ItemsRemoved.ToString("N0"), result.Skipped.Count.ToString("N0"));
 
-            foreach (var category in enabled)
+            // The cleanup report includes only categories where at least one item was
+            // actually removed. Do not show selected categories that were already empty
+            // or whose items were all skipped.
+            var cleanedCategoryNames = result.Breakdown is { Count: > 0 }
+                ? result.Breakdown
+                    .Where(item => item.Removed > 0)
+                    .Select(item => item.Category)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : [];
+            var cleanedCategories = enabled
+                .Where(category => cleanedCategoryNames.Contains(category.Name))
+                .ToArray();
+
+            foreach (var category in cleanedCategories)
                 ReportPanel.Children.Add(BuildResultRow(category, result));
+
+            if (cleanedCategories.Length == 0)
+                ReportPanel.Children.Add(new TextBlock
+                {
+                    Text = "No items were cleaned. Skipped or already-empty categories are not shown.",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+                    Margin = new Thickness(0, 8, 0, 0)
+                });
 
             // Re-measure so the left list and cached sizes reflect what was cleaned
             // (cleaned categories drop to zero and leave the list unless Show All is on).

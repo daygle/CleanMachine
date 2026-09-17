@@ -41,9 +41,10 @@ public sealed class UpdateAutoInstaller
     private readonly UpdateService _service = new();
 
     /// <summary>Attempts the full silent update for the given automatic-check
-    /// result. Fire-and-forget: never throws, and every outcome is reflected in
-    /// the Activity log. Call from the UI thread (toasts require it).</summary>
-    public async void TryInstallWhenIdleAsync(UpdateCheckResult result)
+    /// result. The returned task never throws; every failure is reflected in the
+    /// Activity log. A cancellation token stops the wait when the background agent
+    /// is disabled or the app exits.</summary>
+    public async Task TryInstallWhenIdleAsync(UpdateCheckResult result, CancellationToken cancellationToken = default)
     {
         if (System.Threading.Interlocked.Exchange(ref _running, 1) == 1) return;
         try
@@ -63,22 +64,22 @@ public sealed class UpdateAutoInstaller
             // loop re-checks every minute and gives up after a day (the next
             // automatic check, 6h after this one, starts fresh).
             var deadline = DateTimeOffset.UtcNow + TimeSpan.FromDays(1);
-            await Task.Delay(MinimumIdle);
+            await Task.Delay(MinimumIdle, cancellationToken);
             while (App.IdleTime() < MinimumIdle || IsDestructiveOperationRunning)
             {
                 if (DateTimeOffset.UtcNow > deadline) return;
-                await Task.Delay(TimeSpan.FromMinutes(1));
+                await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
             }
 
             // Download and verify only now, so a cancelled/failed idle wait never
             // left a large temp download sitting around for hours.
-            var path = await _service.DownloadAndVerifyAsync(package, new Progress<double>());
+            var path = await _service.DownloadAndVerifyAsync(package, new Progress<double>(), cancellationToken);
             // The user may have returned during the download; the package stays
             // staged either way, so the manual flow can install without a
             // re-download.
             if (App.IdleTime() < MinimumIdle || IsDestructiveOperationRunning) return;
 
-            await _service.InstallVerifiedPackageAsync(path, executable);
+            await _service.InstallVerifiedPackageAsync(path, executable, cancellationToken, automatic: true);
         }
         catch (OperationCanceledException)
         {

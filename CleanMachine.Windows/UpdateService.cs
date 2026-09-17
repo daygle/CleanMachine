@@ -105,12 +105,19 @@ public sealed class UpdateService
                 "staged", path, null, cancellationToken,
                 expectedSha256: package.Sha256,
                 expectedPublisher: package.Publisher);
+            await RecordUpdateActivityAsync(
+                "Update Staged",
+                $"A verified update package was staged and is ready to install: {Path.GetFileName(path)}.");
             return path;
         }
         catch { TryDelete(path); throw; }
     }
 
-    public async Task InstallVerifiedPackageAsync(string packagePath, string currentExecutable, CancellationToken cancellationToken = default)
+    public async Task InstallVerifiedPackageAsync(
+        string packagePath,
+        string currentExecutable,
+        CancellationToken cancellationToken = default,
+        bool automatic = false)
     {
         if (!File.Exists(packagePath)) throw new FileNotFoundException("Staged package not found.", packagePath);
         var stagedState = await _stateStore.LoadAsync(cancellationToken);
@@ -194,6 +201,9 @@ public sealed class UpdateService
                 }
             }
             await _stateStore.MarkAsync("installed", packagePath, rollback, cancellationToken);
+            await RecordUpdateActivityAsync(
+                automatic ? "Automatic Update" : "Manual Update",
+                $"{(automatic ? "Automatic" : "Manual")} update installed successfully: {Path.GetFileName(packagePath)}.");
             CleanupRollbackCopy();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -311,5 +321,18 @@ public sealed class UpdateService
         catch { return false; }
 #pragma warning restore SYSLIB0057
     }
+    private static async Task RecordUpdateActivityAsync(string title, string detail)
+    {
+        try
+        {
+            await new ActivityStore().AddAsync(new ActivityEntry(DateTimeOffset.UtcNow, title, detail));
+        }
+        catch
+        {
+            // Activity history is diagnostic; update completion must not be reported
+            // as failed when the history file cannot be written.
+        }
+    }
+
     private static void TryDelete(string path) { try { File.Delete(path); } catch { } }
 }

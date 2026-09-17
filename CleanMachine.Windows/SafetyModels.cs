@@ -13,7 +13,11 @@ internal static class CleanupCoordinator
 /// <summary>Per-category (or per-item) contribution to a clean, used to build the
 /// Activity page's drill-down breakdown.</summary>
 public sealed record CleanupCategoryResult(string Category, int Removed, long Bytes);
-public sealed record CleanupReport(CleanupResult Result, IReadOnlyList<CleanupIssue> Skipped, IReadOnlyList<CleanupCategoryResult>? Breakdown = null);
+public sealed record CleanupReport(
+    CleanupResult Result,
+    IReadOnlyList<CleanupIssue> Skipped,
+    IReadOnlyList<CleanupCategoryResult>? Breakdown = null,
+    IReadOnlySet<string>? CleanedPaths = null);
 public sealed record UpdateState(
     string Status,
     string? PackagePath,

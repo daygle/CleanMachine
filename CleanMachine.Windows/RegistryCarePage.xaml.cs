@@ -435,13 +435,18 @@ public sealed partial class RegistryCarePage : Page
             DetailBackButton.Visibility = Visibility.Collapsed;
             DetailGroupBadge.Visibility = Visibility.Collapsed;
             DetailPanel.Children.Clear();
-            foreach (var finding in result.Findings)
-            {
-                var issue = clean.Skipped.FirstOrDefault(s =>
-                    finding.Path.Contains(s.Path, StringComparison.OrdinalIgnoreCase) ||
-                    s.Path.Contains(finding.Path, StringComparison.OrdinalIgnoreCase));
-                DetailPanel.Children.Add(BuildResultRow(finding, issue is not null, issue?.Reason));
-            }
+            foreach (var finding in clean.Cleaned ?? [])
+                DetailPanel.Children.Add(BuildResultRow(finding, skipped: false, reason: null));
+
+            if ((clean.Cleaned?.Count ?? 0) == 0)
+                DetailPanel.Children.Add(new TextBlock
+                {
+                    Text = "No registry findings were cleaned. Skipped findings are not shown.",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
+                    Margin = new Thickness(0, 8, 0, 0)
+                });
+
             DetailHeadline.Text = clean.Removed == 0 && clean.Skipped.Count == 0
                 ? "Cleaning complete - nothing changed"
                 : "Cleaning complete";
@@ -471,8 +476,7 @@ public sealed partial class RegistryCarePage : Page
         await new CleanupStatsStore().RecordAsync(result.Removed, 0);
         try
         {
-            var byCategory = review.Findings
-                .Where(f => !result.Skipped.Any(s => s.Path.Equals(f.Path, StringComparison.OrdinalIgnoreCase)))
+            var byCategory = (result.Cleaned ?? [])
                 .GroupBy(f => f.Category)
                 .Select(g => new CleanupCategoryResult(g.Key, g.Count(), 0))
                 .ToArray();

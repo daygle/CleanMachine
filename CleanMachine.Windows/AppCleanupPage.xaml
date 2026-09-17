@@ -13,7 +13,7 @@
         <FontIcon Glyph="&#xE7B8;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
         <TextBlock Text="Application Cleanup" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
       </StackPanel>
-      <TextBlock Text="Remove temporary files from installed applications. Detected apps are shown with their cache sizes. Close apps before cleaning."
+      <TextBlock Text="Remove temporary files from installed applications. Detected applications are shown with their cache sizes. Close applications before cleaning."
                  Foreground="#89958F" TextWrapping="Wrap"/>
     </StackPanel>
 
@@ -30,7 +30,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
-          <TextBlock Grid.Row="0" Text="APPLICATIONS" FontSize="10" Foreground="#7F9189" Margin="0,0,0,8"/>
+          <TextBlock Grid.Row="0" Text="Applications" FontSize="10" Foreground="#7F9189" Margin="0,0,0,8"/>
           <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="AppListPanel" Spacing="2"/>
           </ScrollViewer>
@@ -72,7 +72,7 @@
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                 <Border x:Name="DetailGroupBadge" Grid.Column="1" Background="#EAF4EE" CornerRadius="5" Padding="7,3"
                         VerticalAlignment="Center" Visibility="Collapsed">
-                  <TextBlock x:Name="DetailGroupBadgeText" Text="DESKTOP APP" FontSize="9"
+                  <TextBlock x:Name="DetailGroupBadgeText" Text="Desktop Application" FontSize="9"
                              FontWeight="SemiBold" Foreground="#4B7769" CharacterSpacing="40"/>
                 </Border>
               </Grid>

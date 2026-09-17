@@ -9,6 +9,9 @@ public partial class App : Application
     private Task? _agentTask;
     private int _agentGeneration;
     private readonly object _agentLock = new();
+    private static readonly object AutomaticUpdateLock = new();
+    private static DateTimeOffset? _automaticUpdateLastRun;
+    private static readonly UpdateAutoInstaller AutomaticUpdateInstaller = new();
     private Mutex? _instanceMutex;
     private InstanceEvents? _instanceEvents;
     private Thread? _instanceEventsThread;
@@ -236,6 +239,38 @@ public partial class App : Application
     /// <summary>Runs the configured after-exit action for one specific browser.
     /// Only that browser's targets are cleaned, and only if monitoring for it
     /// is enabled and an action is selected.</summary>
+    internal static bool TryReserveAutomaticUpdateCheck()
+    {
+        lock (AutomaticUpdateLock)
+        {
+            if (_automaticUpdateLastRun is { } last
+                && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(6))
+                return false;
+            _automaticUpdateLastRun = DateTimeOffset.UtcNow;
+            return true;
+        }
+    }
+
+    private static async Task AutomaticUpdateTickAsync(AppSettings settings, CancellationToken token)
+    {
+        if (!settings.CheckForUpdatesAutomatically || !TryReserveAutomaticUpdateCheck()) return;
+
+        try
+        {
+            var result = await new UpdateService().CheckAsync(token);
+            if (settings.AutoInstallUpdates && result.Available)
+                _ = AutomaticUpdateInstaller.TryInstallWhenIdleAsync(result, token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // A transient update-check failure must not terminate the cleanup agent.
+        }
+    }
+
     private static async Task OnBrowserExitAsync(string browser, CancellationToken token)
     {
         try
@@ -296,6 +331,7 @@ public partial class App : Application
         AppSettings settings;
         try { settings = await AppSettings.LoadAsync(token); }
         catch { return; }
+        await AutomaticUpdateTickAsync(settings, token);
         await SystemMonitorTickAsync(settings, token);
         await IdleCleanTickAsync(settings, token);
         await RecycleBinTickAsync(settings, token);
