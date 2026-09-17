@@ -337,14 +337,15 @@ public partial class App : Application
         catch { /* best-effort */ }
     }
 
-    // Idle time since the last keyboard/mouse input, for the idle-clean trigger.
+    // Idle time since the last keyboard/mouse input. Internal so the update
+    // auto-installer can wait for a silent-install idle window too.
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct LastInputInfo { public uint Size; public uint Time; }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool GetLastInputInfo(ref LastInputInfo info);
 
-    private static TimeSpan IdleTime()
+    internal static TimeSpan IdleTime()
     {
         var info = new LastInputInfo { Size = (uint)System.Runtime.InteropServices.Marshal.SizeOf<LastInputInfo>() };
         if (!GetLastInputInfo(ref info)) return TimeSpan.Zero;

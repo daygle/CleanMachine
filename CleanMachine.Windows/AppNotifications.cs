@@ -37,6 +37,21 @@ public static class AppNotifications
         catch { /* notifications are best-effort */ }
     }
 
+    /// <summary>Heads-up for the idle auto-install: an update will be installed
+    /// silently once the PC is idle. Best-effort like every toast here.</summary>
+    public static void ShowUpdateScheduled(string version)
+    {
+        try
+        {
+            var notification = new AppNotificationBuilder()
+                .AddText("CleanMachine")
+                .AddText($"Version {version} will be installed automatically the next time your PC is idle. Save your work regularly.")
+                .BuildNotification();
+            AppNotificationManager.Default.Show(notification);
+        }
+        catch { /* notifications are best-effort */ }
+    }
+
     public static string FormatBytes(long bytes)
     {
         if (bytes >= 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024 * 1024):0.0} GB";

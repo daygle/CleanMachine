@@ -26,6 +26,7 @@ public sealed partial class SettingsPage : Page
 
         UpdateCheckToggle.IsChecked = _settings.CheckForUpdatesAutomatically;
         SkipUpdateConfirmToggle.IsChecked = _settings.SkipUpdateConfirmation;
+        AutoInstallUpdatesToggle.IsChecked = _settings.AutoInstallUpdates;
         StartWithWindowsToggle.IsChecked = _settings.StartWithWindows;
         ShowInTaskbarToggle.IsChecked = _settings.ShowInTaskbar;
         StartMinimizedToTrayToggle.IsChecked = _settings.StartMinimizedToTray;
@@ -56,6 +57,7 @@ public sealed partial class SettingsPage : Page
     {
         _settings.CheckForUpdatesAutomatically = UpdateCheckToggle.IsChecked == true;
         _settings.SkipUpdateConfirmation = SkipUpdateConfirmToggle.IsChecked == true;
+        _settings.AutoInstallUpdates = AutoInstallUpdatesToggle.IsChecked == true;
         _settings.StartWithWindows = StartWithWindowsToggle.IsChecked == true;
         _settings.ShowInTaskbar = ShowInTaskbarToggle.IsChecked == true;
         _settings.StartMinimizedToTray = StartMinimizedToTrayToggle.IsChecked == true;
@@ -96,6 +98,7 @@ public sealed partial class SettingsPage : Page
         _loading = true;
         UpdateCheckToggle.IsChecked = defaults.CheckForUpdatesAutomatically;
         SkipUpdateConfirmToggle.IsChecked = defaults.SkipUpdateConfirmation;
+        AutoInstallUpdatesToggle.IsChecked = defaults.AutoInstallUpdates;
         StartWithWindowsToggle.IsChecked = defaults.StartWithWindows;
         ShowInTaskbarToggle.IsChecked = defaults.ShowInTaskbar;
         StartMinimizedToTrayToggle.IsChecked = defaults.StartMinimizedToTray;

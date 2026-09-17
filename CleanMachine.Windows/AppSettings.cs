@@ -42,6 +42,12 @@ public sealed class AppSettings
     // When true, the Updates flow installs without CleanMachine's own confirmation
     // dialog. Windows still shows its UAC elevation prompt for each install.
     public bool SkipUpdateConfirmation { get; set; }
+    // When true, an update found by an automatic background check is downloaded,
+    // verified, and installed silently once the machine is idle (no user input
+    // for a while, nothing being cleaned). Requires CheckForUpdatesAutomatically;
+    // manual checks never auto-install, and a per-machine install still shows its
+    // UAC prompt because Windows requires it.
+    public bool AutoInstallUpdates { get; set; }
     // Explicit "start with Windows" preference, independent of background services.
     // The app is registered for logon startup when this is set OR a background
     // service (browser-exit cleaning / low-disk monitoring) needs it.

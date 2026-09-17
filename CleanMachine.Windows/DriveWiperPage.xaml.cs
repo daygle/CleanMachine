@@ -80,6 +80,8 @@ public sealed partial class DriveWiperPage : Page
         CancelButton.IsEnabled = true;
         Progress.Visibility = Visibility.Visible;
         _cancel = new CancellationTokenSource();
+        // Block the idle auto-updater: an update restart must never interrupt a wipe.
+        UpdateAutoInstaller.IsDestructiveOperationRunning = true;
         try
         {
             var progress = new Progress<CleanupProgress>(p =>
@@ -102,6 +104,7 @@ public sealed partial class DriveWiperPage : Page
         }
         finally
         {
+            UpdateAutoInstaller.IsDestructiveOperationRunning = false;
             WipeButton.IsEnabled = true;
             DriveCombo.IsEnabled = true;
             PassesCombo.IsEnabled = true;

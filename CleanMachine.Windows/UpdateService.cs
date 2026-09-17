@@ -128,15 +128,17 @@ public sealed class UpdateService
             {
                 // .exe installer: launch silently and exit so the installer can replace files.
                 // Inno Setup /SILENT shows a progress bar; /SUPPRESSMSGBOXES prevents dialogs;
-                // /NORESTART avoids an automatic reboot. Verb=runas requests the elevation
-                // Windows needs to write to Program Files. /relaunch=1 tells the installer to
+                // /NORESTART avoids an automatic reboot. /relaunch=1 tells the installer to
                 // reopen the app once files are in place - a silent install skips the
                 // Finished-page launch, so without this the app would just close and stay
                 // closed after updating.
+                // Elevation is requested only for per-machine installs (Program Files);
+                // a per-user install lives under %LOCALAPPDATA%\Programs, which the
+                // user can already write, so it updates with no UAC prompt at all.
                 var psi = new ProcessStartInfo(packagePath, "/SILENT /SUPPRESSMSGBOXES /NORESTART /relaunch=1")
                 {
                     UseShellExecute = true,
-                    Verb = "runas"
+                    Verb = InstallNeedsElevation(currentExecutable) ? "runas" : "open"
                 };
                 try
                 {
@@ -175,6 +177,27 @@ public sealed class UpdateService
             await _stateStore.MarkAsync("rollback-required", packagePath, rollback, cancellationToken);
             throw;
         }
+    }
+
+    /// <summary>True when replacing the running executable needs an administrator,
+    /// i.e. the install lives in a directory a standard user cannot write (a
+    /// per-machine install under Program Files). A per-user install under
+    /// %LOCALAPPDATA%\Programs is writable by its owner, so the silent installer
+    /// (PrivilegesRequired=lowest) needs no elevation and no UAC prompt appears.
+    /// Probing real writability with a self-deleting file also makes an
+    /// already-elevated process report false. Any unexpected probe failure
+    /// defaults to true: an unnecessary UAC prompt is better than an installer
+    /// that silently cannot write its files.</summary>
+    internal static bool InstallNeedsElevation(string currentExecutable)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(currentExecutable));
+        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return true;
+        try
+        {
+            using (File.Create(Path.Combine(directory, ".update-write-probe"), 1, FileOptions.DeleteOnClose)) { }
+            return false;
+        }
+        catch { return true; }
     }
 
     public async Task<bool> RollbackAsync(string currentExecutable, CancellationToken cancellationToken = default)

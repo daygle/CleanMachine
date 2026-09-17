@@ -15,6 +15,9 @@ public sealed partial class OverviewPage : Page
     private static string _lastAutoCheckInstalled = "";
 
     private readonly UpdateService _updateService = new();
+    // One instance for the app lifetime (Overview can be recreated on every
+    // navigation); the installer itself serializes attempts and dedupes packages.
+    private static UpdateAutoInstaller? _autoInstaller;
 
     public OverviewPage()
     {
@@ -119,6 +122,9 @@ public sealed partial class OverviewPage : Page
             _lastAutoCheck = result;
             _lastAutoCheckInstalled = installed;
             RenderUpdateResult(result, installed);
+            // Idle auto-install only for background checks: a manual check means
+            // the user is present and gets the click-to-install flow.
+            if (!manual) await MaybeAutoInstallAsync(result);
         }
         catch (Exception ex)
         {
@@ -131,6 +137,21 @@ public sealed partial class OverviewPage : Page
             UpdateCheckButton.IsEnabled = true;
             UpdateProgress.Visibility = Visibility.Collapsed;
         }
+    }
+
+    /// <summary>When the idle auto-install setting is on, hands an available
+    /// update found by an automatic check (never a manual one) to the
+    /// UpdateAutoInstaller, which waits for an idle window and installs it
+    /// silently. Manual checks always stay click-to-install.</summary>
+    private async Task MaybeAutoInstallAsync(UpdateCheckResult result)
+    {
+        var settings = await AppSettings.LoadAsync();
+        if (!settings.AutoInstallUpdates || !result.Available) return;
+        // The installer is stateless apart from its session guard, so one
+        // instance serves the app lifetime (Overview can be recreated on every
+        // navigation).
+        _autoInstaller ??= new UpdateAutoInstaller();
+        _autoInstaller.TryInstallWhenIdleAsync(result);
     }
 
     private void RenderUpdateResult(UpdateCheckResult result, string installed)

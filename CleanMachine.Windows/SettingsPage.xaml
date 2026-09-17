@@ -18,6 +18,10 @@
                 Checked="Setting_Changed" Unchecked="Setting_Changed"/>
       <TextBlock Text="Windows still shows its administrator-permission prompt for each update; this only skips CleanMachine's own confirmation step."
                  FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
+      <CheckBox x:Name="AutoInstallUpdatesToggle" Content="Install updates automatically while my PC is idle"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
+      <TextBlock Text="After an automatic check finds an update, CleanMachine waits until you have been away for 30 minutes, then downloads and installs it silently. Never used for installs that would pop an administrator prompt (a per-machine install in Program Files), while a Secure Delete or drive wipe is running, or for manual checks; you get a notification the first time."
+                 FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
 
       <TextBlock Text="WINDOW" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
       <CheckBox x:Name="StartWithWindowsToggle" Content="Start CleanMachine when I sign in to Windows"

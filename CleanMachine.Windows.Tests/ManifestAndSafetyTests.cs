@@ -316,6 +316,31 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void InstallNeedsElevationFollowsDirectoryWritability()
+    {
+        // A writable directory (a per-user install under %LOCALAPPDATA%) needs no
+        // elevation; a nonexistent directory defaults to elevation (fail safe).
+        using var writable = new TempDirectory();
+        Assert.False(UpdateService.InstallNeedsElevation(Path.Combine(writable.Path, "CleanMachine.exe")));
+        Assert.True(UpdateService.InstallNeedsElevation(
+            Path.Combine(Path.GetTempPath(), "cleanmachine-missing-dir-test", "CleanMachine.exe")));
+    }
+
+    /// <summary>A self-cleaning temp directory so a failed test never leaves litter.</summary>
+    private sealed class TempDirectory : IDisposable
+    {
+        public string Path { get; } = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "cleanmachine-tests-" + Guid.NewGuid().ToString("N"));
+
+        public TempDirectory() => Directory.CreateDirectory(Path);
+
+        public void Dispose()
+        {
+            try { Directory.Delete(Path, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void RegistryCleanableGateRequiresLowRiskConfidenceHiveAndKnownRoot()
     {
         var eligible = new RegistryFinding("HKCU",
