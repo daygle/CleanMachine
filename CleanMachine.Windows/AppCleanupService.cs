@@ -59,7 +59,7 @@ public sealed class AppCleanupService
                 {
                     if (Directory.Exists(item.FullPath))
                     {
-                        foreach (var file in Directory.EnumerateFiles(item.FullPath, "*", SearchOption.AllDirectories))
+                        foreach (var file in FileEnumeration.Files(item.FullPath))
                         {
                             try
                             {
@@ -130,7 +130,7 @@ public sealed class AppCleanupService
                     {
                         if (Directory.Exists(fullPath))
                         {
-                            var files = Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories).ToArray();
+                            var files = FileEnumeration.Files(fullPath).ToArray();
                             var totalBytes = files.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0; } });
                             if (files.Length > 0)
                                 items.Add(new AppTempItem(entry.Description, totalBytes, files.Length, fullPath));
@@ -287,7 +287,7 @@ public sealed class AppCleanupService
     {
         try
         {
-            foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
+            foreach (var dir in FileEnumeration.Directories(root).OrderByDescending(d => d.Length))
             {
                 try
                 {

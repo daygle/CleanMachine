@@ -74,7 +74,7 @@ public static class RecycleBinService
     {
         try
         {
-            return Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
+            return FileEnumeration.Files(path)
                 .Sum(f => { try { return new FileInfo(f).Length; } catch { return 0L; } });
         }
         catch { return 0; }

@@ -58,7 +58,7 @@ public sealed class BrowserCleanupService
 
         var operationId = Guid.NewGuid().ToString("N");
         var files = allowed
-            .SelectMany(t => { try { return Directory.EnumerateFiles(t.Path, "*", SearchOption.AllDirectories); } catch { return []; } })
+            .SelectMany(t => FileEnumeration.Files(t.Path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -297,7 +297,7 @@ public sealed class BrowserCleanupService
             // at a UI cap (ListItemFiles), so materialising the whole tree here would
             // walk tens of thousands of cache files even when only the first few
             // hundred are needed.
-            if (Directory.Exists(path)) return Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories);
+            return FileEnumeration.Files(path);
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
@@ -355,7 +355,7 @@ public sealed class BrowserCleanupService
             }
             if (!Directory.Exists(path)) return (0, 0, skipped);
 
-            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            foreach (var file in FileEnumeration.Files(path))
             {
                 try
                 {
@@ -384,7 +384,7 @@ public sealed class BrowserCleanupService
     {
         try
         {
-            foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
+            foreach (var directory in FileEnumeration.Directories(root).OrderByDescending(d => d.Length))
             {
                 try { if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory); }
                 catch (IOException) { }

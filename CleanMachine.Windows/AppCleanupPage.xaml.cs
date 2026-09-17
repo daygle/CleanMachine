@@ -367,7 +367,7 @@ public sealed partial class AppCleanupPage : Page
         {
             if (Directory.Exists(item.FullPath))
             {
-                var files = Directory.EnumerateFiles(item.FullPath, "*", SearchOption.AllDirectories)
+                var files = FileEnumeration.Files(item.FullPath)
                     .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                     .Take(200)
                     .ToList();

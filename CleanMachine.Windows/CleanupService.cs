@@ -456,7 +456,8 @@ public sealed class CleanupService
 
     private static IEnumerable<string> EnumerateFiles(string path)
     {
-        try { return Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).ToArray() : []; }
+        // IgnoreInaccessible keeps one access-denied subfolder from killing the walk.
+        try { return FileEnumeration.Files(path).ToArray(); }
         catch { return []; }
     }
 
