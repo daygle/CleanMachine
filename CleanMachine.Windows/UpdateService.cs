@@ -19,6 +19,23 @@ public sealed class UpdateService
     /// <summary>True when running inside an MSIX package; false for standalone .exe installs.</summary>
     public static bool IsInstalledAsMsix { get; } = TryGetIsMsix();
 
+    /// <summary>True when Windows Smart App Control is in enforcement mode (HKLM
+    /// CI policy state 1). SAC blocks executables without cloud-verified reputation
+    /// from starting - including freshly downloaded, correctly signed installers -
+    /// and offers no "Run anyway" override, which surfaces as a Win32Exception at
+    /// Process.Start with a message the user cannot act on.</summary>
+    public static bool IsSmartAppControlEnforcing { get; } = QuerySmartAppControlEnforcing();
+
+    private static bool QuerySmartAppControlEnforcing()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\CI\Policy");
+            return key?.GetValue("VerifiedAndReputablePolicyState") is int state && state == 1;
+        }
+        catch { return false; }
+    }
+
     private static bool TryGetIsMsix()
     {
         try { _ = Package.Current.Id.FullName; return true; }
@@ -132,6 +149,22 @@ public sealed class UpdateService
                     // clean cancellation instead of a failure needing rollback.
                     await _stateStore.MarkAsync("staged", packagePath, null, cancellationToken);
                     throw new OperationCanceledException("Administrator permission is required to install the update.");
+                }
+                catch (System.ComponentModel.Win32Exception ex)
+                {
+                    // Windows refused to start the downloaded installer. The dominant
+                    // cause is Smart App Control enforcement: SAC blocks any download
+                    // without cloud reputation (valid signature or not) and, unlike
+                    // SmartScreen, offers no "Run anyway" button. Give the user the
+                    // actual reason and an actionable next step instead of the raw
+                    // Win32 error text. Nothing was installed, so - like a declined
+                    // UAC prompt - keep the package staged (no rollback) and report a
+                    // cancellation so the retry path stays available.
+                    await _stateStore.MarkAsync("staged", packagePath, null, cancellationToken);
+                    var reason = IsSmartAppControlEnforcing
+                        ? "Smart App Control is ON in Windows Security and has not built a trust reputation for this download yet (new certificates earn it over time). To update now, download the installer from the releases page, allow it in your security software's protection history if it was blocked, or turn Smart App Control off in Windows Security > App & browser control (turning it off is permanent without resetting Windows)."
+                        : "Your antivirus or security software may have quarantined the downloaded installer, or the download is damaged. Check your antivirus protection history, then retry the update or install manually from the releases page.";
+                    throw new OperationCanceledException($"Windows refused to start the update installer (error {ex.NativeErrorCode}). {reason}", ex);
                 }
             }
             await _stateStore.MarkAsync("installed", packagePath, rollback, cancellationToken);
