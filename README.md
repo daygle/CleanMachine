@@ -178,6 +178,15 @@ time, so newly signed releases can still show the warning at first; EV certifica
 immediate reputation. To install an unsigned or unreputable build anyway, click
 "More info" -> "Run anyway" on the SmartScreen dialog.
 
+### Uninstalling and your data
+
+CleanMachine keeps its per-user data in `%LOCALAPPDATA%\CleanMachine` (settings, cleanup
+statistics, activity history, update state, and Registry Care `.reg` backups) so a
+reinstall picks up where you left off. The uninstaller closes the app, removes the
+startup entry and scheduled cleanup tasks, and then asks whether to also delete that
+data folder; the default answer is **No** so an accidental uninstall never destroys
+your history, and silent uninstalls always keep it. Choose **Yes** for a clean slate.
+
 The release workflow always produces a **signed** MSIX. If no production certificate is
 configured it mints a throwaway **self-signed** code-signing certificate whose subject matches
 the package publisher, so tagged releases succeed without a purchased certificate. Self-signed

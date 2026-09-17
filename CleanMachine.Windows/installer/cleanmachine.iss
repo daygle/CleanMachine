@@ -143,6 +143,7 @@ end;
 function InitializeUninstall(): Boolean;
 var
   ResultCode: Integer;
+  RemoveData: Boolean;
 begin
   Result := True; // never block the uninstall; just close the app first
   // Unconditional: older versions do not create the single-instance mutex, so a
@@ -167,4 +168,24 @@ begin
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     '-NoProfile -ExecutionPolicy Bypass -Command "Get-ScheduledTask -TaskPath ''\CleanMachine\'' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false"',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Offer to remove the per-user data (%LOCALAPPDATA%\CleanMachine: settings,
+  // statistics, activity history, update state/rollback, and .reg backups).
+  // The app intentionally keeps this folder across reinstalls, so No is the
+  // default button and silent uninstalls keep the data rather than destroying
+  // it without asking. A staged update package may also linger in %TEMP%.
+  // DelTree is Inno's built-in recursive delete; failures are ignored.
+  if not UninstallSilent then
+  begin
+    RemoveData := MsgBox(
+      'Do you also want to remove all CleanMachine data?' #13#10 #13#10
+      'This deletes your settings, cleanup statistics, activity history, and registry backup files from this user account.' #13#10 #13#10
+      'Choose No to keep them for a future reinstall.',
+      mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+    if RemoveData then
+    begin
+      Log('User chose to remove CleanMachine data');
+      DelTree(ExpandConstant('{localappdata}\CleanMachine'), True, True, True);
+      DelTree(ExpandConstant('{%TEMP}\CleanMachine'), True, True, True);
+    end;
+  end;
 end;
