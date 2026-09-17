@@ -192,6 +192,41 @@ jobs:
         run: |
           dotnet publish $env:PROJECT -c Release -p:Platform=x64 -p:PublishProfile=win-x64 `
             "/p:ApplicationDisplayVersion=$env:VERSION"
+      - name: Sign app executable
+        # An unsigned, downloaded exe is what triggers the "Windows protected your
+        # PC" SmartScreen warning. Sign the app binary before Inno embeds it so
+        # first runs and UAC prompts attribute to the publisher. Skipped with a
+        # warning when no certificate secret is configured.
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
+            Write-Host "::warning::No code-signing certificate configured (WINDOWS_SIGNING_CERTIFICATE_BASE64): the installer and app exe are unsigned, so Windows SmartScreen will warn everyone who downloads them."
+            exit 0
+          }
+          if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required when a signing certificate is configured." }
+          New-Item -ItemType Directory -Force -Path signing | Out-Null
+          $pfx = Join-Path $pwd "signing/CleanMachine-installer.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          $password = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password |
+            Where-Object HasPrivateKey | Select-Object -First 1
+          if ($null -eq $cert) { throw "Signing certificate could not be imported from the PFX (no private key)." }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq 'x64' } |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw "signtool.exe was not found on the runner." }
+          $exe = "CleanMachine.Windows/bin/x64/Release/net8.0-windows10.0.26100.0/win-x64/publish/CleanMachine.exe"
+          if (-not (Test-Path $exe)) { throw "App executable not found: $exe" }
+          & $signtool sign /fd sha256 /td sha256 /tr http://timestamp.digicert.com $exe
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed for the app exe (exit $LASTEXITCODE)." }
+          $signature = Get-AuthenticodeSignature $exe
+          if ($signature.Status -notin @('Valid', 'NotTrusted', 'UnknownError')) { throw "Invalid Authenticode signature on the app exe: $($signature.Status)" }
+          Write-Host "App exe signature: $($signature.Status) [$($signature.SignerCertificate.Subject)]"
+          "SIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Build Inno Setup installer
         shell: pwsh
         run: |
@@ -211,6 +246,27 @@ jobs:
           $stamped = "CleanMachine-Setup-$env:VERSION.exe"
           Copy-Item $setup.FullName $stamped
           Write-Host "Installer created: $stamped ($([math]::Round((Get-Item $stamped).Length/1MB,1)) MB)"
+      - name: Sign installer
+        # The setup exe users download is the artifact SmartScreen judges; sign it
+        # after ISCC and before upload so the release asset (and the sha256 the
+        # release job computes from it) belongs to the signed file.
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stamped = "CleanMachine-Setup-$env:VERSION.exe"
+          if ([string]::IsNullOrEmpty($env:SIGN_THUMBPRINT)) { Write-Host "Skipping installer signing (no certificate configured)."; exit 0 }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq 'x64' } |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw "signtool.exe was not found on the runner." }
+          & $signtool sign /fd sha256 /td sha256 /tr http://timestamp.digicert.com /sha1 $env:SIGN_THUMBPRINT $stamped
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed for $stamped (exit $LASTEXITCODE)." }
+          $signature = Get-AuthenticodeSignature $stamped
+          if ($signature.Status -notin @('Valid', 'NotTrusted', 'UnknownError')) { throw "Invalid Authenticode signature on installer: $($signature.Status)" }
+          if ($null -eq $signature.SignerCertificate) { throw "The installer is not signed." }
+          Write-Host "Installer signature: $($signature.Status) [$($signature.SignerCertificate.Subject)]"
+          Remove-Item signing/CleanMachine-installer.pfx -Force -ErrorAction SilentlyContinue
+          Remove-Item "Cert:\CurrentUser\My\$env:SIGN_THUMBPRINT" -Force -ErrorAction SilentlyContinue
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7
         with:

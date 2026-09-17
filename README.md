@@ -167,6 +167,17 @@ on a machine with an older SDK installed.
 
 The release workflow builds architecture-specific MSIX packages and hashes, validates Authenticode signatures and the configured publisher, and publishes a multi-architecture `update-manifest.json`.
 
+### SmartScreen ("Windows protected your PC")
+
+Windows SmartScreen warns on downloaded executables that are unsigned or lack download
+reputation. When the signing secrets below are configured, the workflow now signs the
+app exe and the Inno Setup installer (SHA-256 with an RFC 3161 timestamp) in addition to
+the MSIX; without them the installer is published unsigned and SmartScreen will warn
+everyone who downloads it. Note that SmartScreen reputation is earned by downloads over
+time, so newly signed releases can still show the warning at first; EV certificates get
+immediate reputation. To install an unsigned or unreputable build anyway, click
+"More info" → "Run anyway" on the SmartScreen dialog.
+
 The release workflow always produces a **signed** MSIX. If no production certificate is
 configured it mints a throwaway **self-signed** code-signing certificate whose subject matches
 the package publisher, so tagged releases succeed without a purchased certificate. Self-signed

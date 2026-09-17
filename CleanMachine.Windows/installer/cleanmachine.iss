@@ -22,7 +22,10 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 LicenseFile=..\..\LICENSE
-; Uncomment and provide a cert+key to sign the installer:
+; Signing is handled by the release workflow (signtool runs on the finished
+; installer after ISCC, using the WINDOWS_SIGNING_CERTIFICATE_* secrets), so no
+; SignTool directive is needed here. For a local signed build, uncomment and
+; provide a cert+key:
 ; SignTool=signtool sign /d "{#MyAppName}" /fd sha256 /tr http://timestamp.digicert.com /td sha256 $f
 ; Output paths are relative to this script's folder (CleanMachine.Windows\installer\).
 OutputDir=..\bin\installer
