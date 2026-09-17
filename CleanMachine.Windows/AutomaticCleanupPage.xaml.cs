@@ -112,7 +112,7 @@ public sealed partial class AutomaticCleanupPage : Page
 
     private void UpdateMonitorHint()
         => MonitoringHint.Text = _settings.CleanOnBrowserExit
-            ? "Cleans the items chosen per browser (caches by default). The browser that just closed is cleaned even if other browsers are still open; passwords, cookies, history and other destructive items are never cleaned automatically unless you opt them in. CleanMachine runs in the background and starts with Windows so exits are detected."
+            ? "Cleans the items chosen per browser (caches by default). The browser that just closed is cleaned even if other browsers are still open; passwords, cookies, history and other saved data are never cleaned automatically unless you opt them in. CleanMachine runs in the background and starts with Windows so exits are detected."
             : "Monitoring is off - browsers are only cleaned when you run it manually on the Browser Cleaner page.";
 
     private async void ChooseExitItems_Click(object sender, RoutedEventArgs e)
@@ -129,7 +129,7 @@ public sealed partial class AutomaticCleanupPage : Page
         if (hasDestructive)
             panel.Children.Add(new TextBlock
             {
-                Text = "Ticking a destructive item (cookies, history, passwords) lets the automatic close-clean remove it without asking. These stay off by default.",
+                Text = "Ticking a Saved Data item (cookies, history, passwords) lets the automatic close-clean remove it without asking. These stay off by default.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xB0, 0x3A, 0x2E)),
@@ -139,14 +139,14 @@ public sealed partial class AutomaticCleanupPage : Page
         {
             var box = new CheckBox
             {
-                Content = item.Destructive ? $"{item.Name}  (destructive)" : item.Name,
+                Content = item.Destructive ? $"{item.Name}  (Saved Data)" : item.Name,
                 IsChecked = effective.Contains(item.Id),
                 MinHeight = 26
             };
             if (item.Destructive)
             {
                 box.Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xB0, 0x3A, 0x2E));
-                ToolTipService.SetToolTip(box, "Destructive: when ticked, this is removed automatically every time the browser closes.");
+                ToolTipService.SetToolTip(box, "Saved Data: when ticked, this is removed automatically every time the browser closes.");
             }
             boxes.Add((item.Id, box));
             panel.Children.Add(box);
