@@ -197,6 +197,28 @@ the package publisher, so tagged releases succeed without a purchased certificat
 packages require the user to trust the certificate before sideloading; they are not suitable for
 unattended production distribution.
 
+### Installing the signed MSIX with the self-signed certificate
+
+CleanMachine releases include signed MSIX packages for x64 and ARM64 Windows devices. Because the project certificate is self-signed, Windows must trust the public certificate before installing the package.
+
+1. Download the MSIX package matching your device architecture and obtain the public `CleanMachine-signing.cer` file from the project maintainer. Users only need the `.cer` file; never share or install the private `.pfx` file or its password.
+2. Double-click `CleanMachine-signing.cer` and select **Install Certificate**.
+3. Choose **Current User** for your account, or **Local Machine** for all users (administrator approval required).
+4. Select **Place all certificates in the following store**, choose **Browse**, select **Trusted Root Certification Authorities**, and finish the wizard.
+5. If Windows blocks the package, open **Settings > Apps > Advanced app settings > Install apps from unknown sources** and enable sideloaded applications.
+6. Open the downloaded package, such as `CleanMachine-x64-v1.0.32.msix`, and select **Install**.
+
+Verify the package before installing it with PowerShell:
+
+```powershell
+Get-AuthenticodeSignature .\CleanMachine-x64-v1.0.32.msix |
+  Format-List Status,SignerCertificate
+```
+
+The expected signer is `CN=CleanMachine Publisher`. For the stable project certificate, the expected SHA-1 thumbprint is `FF954B01644555350E9411FEC586896BA4EF267D`.
+
+Importing the certificate does not convert an existing standalone EXE installation into an MSIX installation. Install the MSIX separately; future updates for that installation can then use the signed MSIX package. If the release was built with a temporary fallback certificate, its thumbprint will differ from the stable thumbprint above, so do not install it without verifying the signer.
+
 For production releases, configure these GitHub repository settings before creating a tag:
 
 - Repository variable `WINDOWS_PUBLISHER`: exact expected certificate subject/publisher string
