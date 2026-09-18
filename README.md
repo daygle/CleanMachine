@@ -191,20 +191,21 @@ startup entry and scheduled cleanup tasks, and then asks whether to also delete 
 data folder; the default answer is **No** so an accidental uninstall never destroys
 your history, and silent uninstalls always keep it. Choose **Yes** for a clean slate.
 
-The release workflow always produces a **signed** MSIX. If no production certificate is
-configured it mints a throwaway **self-signed** code-signing certificate whose subject matches
-the package publisher, so tagged releases succeed without a purchased certificate. Self-signed
-packages require the user to trust the certificate before sideloading; they are not suitable for
-unattended production distribution.
+The release workflow always produces a **signed** MSIX. A commercial certificate is not required:
+configure a stable self-signed code-signing certificate in the repository secrets below. The same
+certificate must be reused for every release so users trust it only once. Self-signed packages
+require the user to trust the public certificate before sideloading and may still trigger
+SmartScreen or Smart App Control warnings; they are intended for private or controlled distribution,
+not unattended public production distribution.
 
 ### Installing the signed MSIX with the self-signed certificate
 
 CleanMachine releases include signed MSIX packages for x64 and ARM64 Windows devices. Because the project certificate is self-signed, Windows must trust the public certificate before installing the package.
 
-1. Download the MSIX package matching your device architecture and obtain the public `CleanMachine-signing.cer` file from the project maintainer. Users only need the `.cer` file; never share or install the private `.pfx` file or its password.
+1. Download the MSIX package matching your device architecture and the public `CleanMachine-signing.cer` file from the same GitHub release. Users only need the `.cer` file; never share or install the private `.pfx` file or its password.
 2. Double-click `CleanMachine-signing.cer` and select **Install Certificate**.
 3. Choose **Current User** for your account, or **Local Machine** for all users (administrator approval required).
-4. Select **Place all certificates in the following store**, choose **Browse**, select **Trusted Root Certification Authorities**, and finish the wizard.
+4. Select **Place all certificates in the following store**, choose **Browse**, select **Trusted People**, and finish the wizard.
 5. If Windows blocks the package, open **Settings > Apps > Advanced app settings > Install apps from unknown sources** and enable sideloaded applications.
 6. Open the downloaded package, such as `CleanMachine-x64-v1.0.32.msix`, and select **Install**.
 
@@ -215,9 +216,9 @@ Get-AuthenticodeSignature .\CleanMachine-x64-v1.0.32.msix |
   Format-List Status,SignerCertificate
 ```
 
-The expected signer is `CN=CleanMachine Publisher`. For the stable project certificate, the expected SHA-1 thumbprint is `FF954B01644555350E9411FEC586896BA4EF267D`.
+The expected signer is `CN=CleanMachine Publisher`. For the stable project certificate, the expected SHA-1 thumbprint is `FF954B01644555350E9411FEC586896BA4EF267D`. Importing into **Trusted People** scopes trust to this signing certificate rather than treating it as a general-purpose root authority.
 
-Importing the certificate does not convert an existing standalone EXE installation into an MSIX installation. Install the MSIX separately; future updates for that installation can then use the signed MSIX package. If the release was built with a temporary fallback certificate, its thumbprint will differ from the stable thumbprint above, so do not install it without verifying the signer.
+Importing the certificate does not convert an existing standalone EXE installation into an MSIX installation. Install the MSIX separately; future updates for that installation can then use the signed MSIX package. Manual workflow builds may use a temporary fallback certificate for testing, so verify the signer and thumbprint before installing any non-tagged build.
 
 For production releases, configure these GitHub repository settings before creating a tag:
 
@@ -226,7 +227,10 @@ For production releases, configure these GitHub repository settings before creat
 - Repository secret `WINDOWS_SIGNING_CERTIFICATE_BASE64`: base64-encoded PFX certificate
 - Repository secret `WINDOWS_SIGNING_CERTIFICATE_PASSWORD`: PFX password
 
-When both secrets are present the workflow signs with the provided certificate instead of a
-self-signed one. Do not commit certificates, passwords, or private keys. Create a test tag such
-as `v0.1.1`, then verify the release assets, `Get-AuthenticodeSignature` output, SHA-256 files,
-and manifest URLs on a Windows runner.
+When both secrets are present the workflow signs with the provided certificate. That certificate
+may be self-signed; it does not need to be purchased. For this private distribution model, keep
+one stable self-signed PFX in these secrets and reuse it for every release. Do not commit
+certificates, passwords, or private keys. Create a test tag such as `v0.1.1`, then verify the
+release assets, `Get-AuthenticodeSignature` output, SHA-256 files, and manifest URLs on a Windows
+runner. The workflow intentionally requires these secrets for tagged releases so the published
+`.cer` always matches the certificate that signed the MSIX and installer.

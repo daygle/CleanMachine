@@ -11,8 +11,8 @@ permissions:
 env:
   PROJECT: CleanMachine.Windows/CleanMachine.Windows.csproj
   TESTS: CleanMachine.Windows.Tests/CleanMachine.Windows.Tests.csproj
-  # Fallback publisher used for self-signed builds when WINDOWS_PUBLISHER is not set.
-  # Must be a valid X.500 name; it is written into the package identity and the signing cert.
+  # Default publisher for the stable self-signed certificate used by private releases.
+  # Must be a valid X.500 name and must match the certificate subject.
   DEFAULT_PUBLISHER: "CN=CleanMachine Publisher"
 
 jobs:
@@ -86,14 +86,16 @@ jobs:
           $pfx = Join-Path $pwd "signing/CleanMachine.pfx"
 
           if (-not [string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
-            if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required when a signing certificate is configured." }
+            if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required for every tagged release, including self-signed certificates." }
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
             $password = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
             Write-Host "Importing the provided production certificate."
           }
           else {
-            # No production certificate configured: mint a throwaway self-signed
-            # code-signing certificate whose subject matches the package publisher.
+            # Manual builds may use a temporary certificate for local validation, but a
+            # tagged release must use the stable certificate so the published .cer and
+            # every architecture package share the same signer.
+            if ($isTag) { throw "Tagged releases require WINDOWS_SIGNING_CERTIFICATE_BASE64 and WINDOWS_SIGNING_CERTIFICATE_PASSWORD. The certificate may be self-signed; keep one stable PFX in GitHub Secrets." }
             $rawPassword = [Guid]::NewGuid().ToString('N')
             Write-Host "::add-mask::$rawPassword"
             $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $env:PUBLISHER `
@@ -159,6 +161,39 @@ jobs:
             ${{ env.MSIX_NAME }}.msix
             ${{ env.MSIX_NAME }}.sha256
 
+  certificate:
+    name: Publish public signing certificate
+    runs-on: windows-latest
+    steps:
+      - name: Export public signing certificate
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
+            throw "A tagged release requires WINDOWS_SIGNING_CERTIFICATE_BASE64. The certificate may be self-signed; keep one stable PFX in GitHub Secrets so the published .cer matches every signed package."
+          }
+          if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required for every tagged release, including self-signed certificates." }
+          $pfx = Join-Path $pwd "CleanMachine-signing-export.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          $password = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password |
+            Where-Object HasPrivateKey | Select-Object -First 1
+          if ($null -eq $cert) { throw "Signing certificate could not be imported from the PFX (no private key)." }
+          Export-Certificate -Cert $cert -FilePath "CleanMachine-signing.cer" | Out-Null
+          $exported = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("CleanMachine-signing.cer")
+          if ($exported.Thumbprint -ne $cert.Thumbprint) { throw "Exported public certificate thumbprint does not match the signing certificate." }
+          Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force -ErrorAction SilentlyContinue
+          Remove-Item $pfx -Force
+      - name: Upload public certificate
+        uses: actions/upload-artifact@v7
+        with:
+          name: CleanMachine-signing-certificate
+          path: CleanMachine-signing.cer
+          if-no-files-found: error
+
   installer:
     # The classic setup exe: friendlier than sideloading an MSIX for users who
     # do not want to trust a self-signed certificate first. Built from the same
@@ -204,10 +239,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ([string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
-            Write-Host "::warning::No code-signing certificate configured (WINDOWS_SIGNING_CERTIFICATE_BASE64): the installer and app exe are unsigned, so Windows SmartScreen will warn everyone who downloads them."
+            if ("${env:GITHUB_REF}".StartsWith("refs/tags/")) {
+              throw "Tagged releases require WINDOWS_SIGNING_CERTIFICATE_BASE64 and WINDOWS_SIGNING_CERTIFICATE_PASSWORD. The certificate may be self-signed; keep one stable PFX in GitHub Secrets."
+            }
+            Write-Host "::warning::No code-signing certificate configured: this manual installer build is unsigned."
             exit 0
           }
-          if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required when a signing certificate is configured." }
+          if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required for every tagged release, including self-signed certificates." }
           New-Item -ItemType Directory -Force -Path signing | Out-Null
           $pfx = Join-Path $pwd "signing/CleanMachine-installer.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
@@ -281,7 +319,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [build, installer]
+    needs: [build, installer, certificate]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -351,6 +389,7 @@ jobs:
             release/CleanMachine-ARM64/*.msix
             release/CleanMachine-ARM64/*.sha256
             release/CleanMachine-Setup/*.exe
+            release/CleanMachine-signing-certificate/CleanMachine-signing.cer
             update-manifest.json
           )
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then

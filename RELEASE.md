@@ -22,7 +22,7 @@ Releases are built and published by the [`Release Windows app`](.github/workflow
 
 4. **Verify the release**:
    - The run completes green (build x64, build ARM64, installer, release jobs).
-   - A GitHub release is published with `CleanMachine-x64-vX.Y.Z.msix`, `CleanMachine-ARM64-vX.Y.Z.msix`, both `.sha256` files, `CleanMachine-Setup-X.Y.Z.exe`, and `update-manifest.json`.
+   - A GitHub release is published with `CleanMachine-x64-vX.Y.Z.msix`, `CleanMachine-ARM64-vX.Y.Z.msix`, both `.sha256` files, `CleanMachine-Setup-X.Y.Z.exe`, `CleanMachine-signing.cer`, and `update-manifest.json`.
    - The MSIX signer thumbprint matches the stable cert (below).
 
 ## Code signing
@@ -38,7 +38,7 @@ The workflow signs with a PFX provided through two repository secrets:
 The certificate's subject must contain the package publisher (`CN=CleanMachine Publisher` by default, overridable via the `WINDOWS_PUBLISHER` repo variable) - the workflow and the in-app updater both validate the signer against it.
 
 ### Stable self-signed cert (current setup)
-A long-lived self-signed code-signing cert is used so users trust it **once** instead of after every release:
+A long-lived self-signed code-signing cert is used so users trust it **once** instead of after every release. A commercial certificate is not required for this private distribution model:
 
 - Subject `CN=CleanMachine Publisher`, code-signing EKU, RSA-3072
 - Valid until **Sep 2036** (regenerate before then and update the secrets)
@@ -50,12 +50,15 @@ A long-lived self-signed code-signing cert is used so users trust it **once** in
   - `CleanMachine-signing.cer` - public cert for user trust import
   - `CleanMachine-signing.pfx` - offline backup of the key pair
 
-### Fallback behavior
-If the secrets are not configured, the workflow mints a **throwaway self-signed cert per build**. The packages still sign, but the thumbprint changes every release, so users must re-trust the cert on each update. Avoid this; keep the secrets set.
+### Tagged release requirement
+Tagged releases require both signing secrets. The workflow must publish one public `.cer` that matches the certificate used to sign every architecture package and the installer; generating a separate fallback certificate in each build job could not provide that guarantee. The certificate may be self-signed—keep the stable PFX and password in GitHub Secrets and reuse them for every release. Do not use a throwaway certificate per build, because users would have to re-trust every update.
 
 ### Trusting on a user machine
-1. Double-click `CleanMachine-signing.cer` -> Certificate Import Wizard -> **Trusted Root Certification Authorities** -> tick **"Trust for certificate authentication"** -> Finish.
-2. Enable sideloading: Settings -> Apps -> Advanced app settings -> **"Install apps from unknown sources"**.
+1. Download `CleanMachine-signing.cer` from the GitHub release assets.
+2. Double-click it -> Certificate Import Wizard -> choose **Current User** -> **Place all certificates in the following store** -> **Trusted People** -> Finish.
+3. Enable sideloading: Settings -> Apps -> Advanced app settings -> **"Install apps from unknown sources"**.
+
+Users only need to import the stable public certificate once. Never distribute the PFX or its password. SmartScreen or Smart App Control can still warn about or block a self-signed download; that is an expected tradeoff without a commercial certificate.
 
 ### Verifying a release signature
 ```powershell
