@@ -214,6 +214,15 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void RecycleBinSizeProbeReturnsANonNegativeValue()
+    {
+        // The shell owns the per-drive $Recycle.Bin layout; scanning it directly as a
+        // normal folder previously made the category report zero even when it contained
+        // deleted items. The native probe must remain safe when the bin is empty too.
+        Assert.True(WindowsCleanupService.GetRecycleBinSize() >= 0);
+    }
+
+    [Fact]
     public void CleanupEnabledStateUsesOverridesThenDefaults()
     {
         var settings = new AppSettings();

@@ -119,6 +119,7 @@ public sealed class WindowsCleanupService
             {
                 CleanupKind.Files => GetDirectorySize(category.Path!, category.Pattern, category.Extensions, excludedPaths),
                 CleanupKind.RegistryValues => CountRegistryValues(category.Path!),
+                CleanupKind.RecycleBin => GetRecycleBinSize(),
                 _ => 0
             };
             items.Add(new CleanupItem(category, bytes));
@@ -433,6 +434,19 @@ public sealed class WindowsCleanupService
 
     private static long GetLength(string path) { try { return new FileInfo(path).Length; } catch { return 0; } }
 
+    /// <summary>Gets the total size currently held in all Recycle Bins. The shell API
+    /// understands the per-drive $Recycle.Bin layout and avoids treating the hidden
+    /// metadata files as ordinary cleanup files.</summary>
+    internal static long GetRecycleBinSize()
+    {
+        if (!OperatingSystem.IsWindows()) return 0;
+        var info = new SHQueryRecycleBinInfo { Size = (uint)Marshal.SizeOf<SHQueryRecycleBinInfo>() };
+        var result = SHQueryRecycleBin(null, ref info);
+        return result == 0 && info.ItemCount > 0 && info.TotalSize > 0
+            ? Math.Min(info.TotalSize, long.MaxValue)
+            : 0;
+    }
+
     private static void EmptyRecycleBin()
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Recycle Bin cleanup is supported on Windows only.");
@@ -587,6 +601,17 @@ public sealed class WindowsCleanupService
         };
         return true;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SHQueryRecycleBinInfo
+    {
+        public uint Size;
+        public long TotalSize;
+        public long ItemCount;
+    }
+
+    [DllImport("Shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHQueryRecycleBin(string? rootPath, ref SHQueryRecycleBinInfo info);
 
     [DllImport("Shell32.dll", CharSet = CharSet.Unicode)] private static extern int SHEmptyRecycleBin(IntPtr hwnd, string? rootPath, uint flags);
 }
