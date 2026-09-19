@@ -234,6 +234,33 @@ public sealed class UpdateService
         catch { return true; }
     }
 
+    /// <summary>Deletes update leftovers from the install directory: rollback
+    /// staging copies (<c>.restore</c>, <c>.failed</c>) whose end-of-rollback
+    /// delete failed while a scanner still held the file, and the elevation
+    /// write probe. Inno's uninstaller cannot remove files it did not install,
+    /// so orphans here would keep the install folder alive after uninstall.
+    /// The staging copies are always garbage once RollbackAsync has finished or
+    /// died - the master rollback copy lives under %LOCALAPPDATA%. Best-effort
+    /// per file; called once at startup before any update flow can run.</summary>
+    internal static void CleanupUpdateArtifacts(string? installDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(installDirectory) || !Directory.Exists(installDirectory)) return;
+        string[] candidates;
+        try
+        {
+            candidates = Directory.GetFiles(installDirectory, "*.restore")
+                .Concat(Directory.GetFiles(installDirectory, "*.failed"))
+                .Append(Path.Combine(installDirectory, ".update-write-probe"))
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+        foreach (var file in candidates)
+            TryDelete(file);
+    }
+
     public async Task<bool> RollbackAsync(string currentExecutable, CancellationToken cancellationToken = default)
     {
         var state = await _stateStore.LoadAsync(cancellationToken); var rollback = state?.RollbackPath ?? FindRollbackCopy();

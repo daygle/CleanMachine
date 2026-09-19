@@ -72,6 +72,10 @@ public partial class App : Application
         AppNotifications.Register();
         StartInstanceEventsListener();
 
+        // Sweep leftover update staging files from the install directory before
+        // anything update-related can run (see CleanupUpdateArtifacts).
+        UpdateService.CleanupUpdateArtifacts(Path.GetDirectoryName(Environment.ProcessPath));
+
         var settings = await AppSettings.LoadAsync();
         // Run startup cleanup before enabling periodic/background cleanup so the two
         // paths cannot mutate the same files concurrently on first launch.

@@ -87,6 +87,39 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void CleanupUpdateArtifactsRemovesStagingFilesAndProbeButNothingElse()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "cm-update-artifacts-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "CleanMachine.exe.restore"), "staged");
+            File.WriteAllText(Path.Combine(directory, "CleanMachine.exe.failed"), "backup");
+            File.WriteAllText(Path.Combine(directory, ".update-write-probe"), "probe");
+            File.WriteAllText(Path.Combine(directory, "CleanMachine.exe"), "the real app");
+
+            UpdateService.CleanupUpdateArtifacts(directory);
+
+            Assert.False(File.Exists(Path.Combine(directory, "CleanMachine.exe.restore")));
+            Assert.False(File.Exists(Path.Combine(directory, "CleanMachine.exe.failed")));
+            Assert.False(File.Exists(Path.Combine(directory, ".update-write-probe")));
+            Assert.True(File.Exists(Path.Combine(directory, "CleanMachine.exe")));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CleanupUpdateArtifactsToleratesMissingDirectoryAndNull()
+    {
+        UpdateService.CleanupUpdateArtifacts(null);
+        UpdateService.CleanupUpdateArtifacts("");
+        UpdateService.CleanupUpdateArtifacts(Path.Combine(Path.GetTempPath(), "cm-missing-" + Guid.NewGuid().ToString("N")));
+    }
+
+    [Fact]
     public void CountBackupsCountsRegFilesAndToleratesMissingDirectory()
     {
         var directory = Path.Combine(Path.GetTempPath(), "cm-backups-test-" + Guid.NewGuid().ToString("N"));

@@ -124,6 +124,7 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 - Rollback copy staging and executable restoration after failed installation
 - Clear handling of Smart App Control and antivirus blocks, including the specific reason and next steps
 - Pending-update recovery across sessions
+- Update staging files (`.restore`/`.failed` rollback copies, the elevation write probe) are swept from the install directory at startup and during uninstall, so no stray files keep the folder alive after removal
 - Optional idle-time auto-install for fully hands-off updates on per-user installs
 
 ### Settings

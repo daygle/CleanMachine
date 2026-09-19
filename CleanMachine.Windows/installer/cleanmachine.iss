@@ -163,6 +163,15 @@ begin
   Exec(ExpandConstant('{sys}\reg.exe'),
     'delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v CleanMachine /f',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Sweep update leftovers the app itself dropped next to its executable
+  // (.restore/.failed rollback staging copies, the elevation write probe).
+  // They are not in the uninstall log, so without this they would keep the
+  // {app} folder alive after removal. The app sweeps these at startup too;
+  // this covers the never-runs-again case. Ignoring failures keeps uninstall
+  // moving - a held file would only leave the folder behind, as before.
+  DelTree(ExpandConstant('{app}\*.restore'), False, True, False);
+  DelTree(ExpandConstant('{app}\*.failed'), False, True, False);
+  DelTree(ExpandConstant('{app}\.update-write-probe'), False, True, False);
   // Remove scheduled cleanup tasks (folder \CleanMachine\). PowerShell because
   // schtasks cannot enumerate/delete by task folder.
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
