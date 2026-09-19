@@ -76,7 +76,7 @@ public partial class App : Application
         // Run startup cleanup before enabling periodic/background cleanup so the two
         // paths cannot mutate the same files concurrently on first launch.
         if (settings.CleanAtStartup)
-            await RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, CancellationToken.None);
+            await RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, settings.StartupCleanNotify, CancellationToken.None);
         if (settings.RequiresBackgroundAgent)
             StartBackgroundAgent(settings);
         // Keep the OS task store in step with whatever schedules are saved.
@@ -351,8 +351,9 @@ public partial class App : Application
 
     /// <summary>Cleans the given category selection and logs the result (with a
     /// per-category breakdown) when anything was removed. Shared by the startup and
-    /// idle triggers; never shows a toast, so it stays quiet in the background.</summary>
-    private static async Task RunSafeCleanAsync(AppSettings settings, string activityTitle, string reason, IReadOnlySet<string>? categoryIds, CancellationToken token)
+    /// idle triggers; shows a toast only when the trigger's notify option is on
+    /// (off by default, so automatic runs stay quiet in the background).</summary>
+    private static async Task RunSafeCleanAsync(AppSettings settings, string activityTitle, string reason, IReadOnlySet<string>? categoryIds, bool notify, CancellationToken token)
     {
         var selected = SelectedSafeCategories(settings, categoryIds);
         if (selected.Count == 0) return;
@@ -362,11 +363,15 @@ public partial class App : Application
             cancellationToken: token);
         await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
         if (report.Result.ItemsRemoved > 0)
+        {
+            if (notify)
+                AppNotifications.ShowAutomaticCleanupComplete(activityTitle, report.Result);
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
                 activityTitle,
                 $"{reason} - cleaned {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered",
                 ActivityStore.BreakdownLines(report.Breakdown)), token);
+        }
     }
 
     /// <summary>Run a safe clean after the machine has been idle for the configured
@@ -379,7 +384,7 @@ public partial class App : Application
             if (IdleTime().TotalMinutes < Math.Max(1, settings.IdleCleanMinutes)) { _idleCleanArmed = true; return; }
             if (!_idleCleanArmed) return;
             _idleCleanArmed = false; // one clean per idle period
-            await RunSafeCleanAsync(settings, "Idle Cleanup", $"Idle {Math.Max(1, settings.IdleCleanMinutes)}+ min", settings.IdleCleanCategories, token);
+            await RunSafeCleanAsync(settings, "Idle Cleanup", $"Idle {Math.Max(1, settings.IdleCleanMinutes)}+ min", settings.IdleCleanCategories, settings.IdleCleanNotify, token);
         }
         catch { /* best-effort; never kill the agent loop */ }
     }
@@ -407,6 +412,8 @@ public partial class App : Application
             if (removed > 0)
             {
                 await new CleanupStatsStore().RecordAsync(removed, bytes, token);
+                if (settings.RecycleBinAutoEmptyNotify)
+                    AppNotifications.ShowAutomaticCleanupComplete("Recycle Bin", removed, bytes);
                 await new ActivityStore().AddAsync(new ActivityEntry(
                     DateTimeOffset.UtcNow,
                     "Recycle Bin",

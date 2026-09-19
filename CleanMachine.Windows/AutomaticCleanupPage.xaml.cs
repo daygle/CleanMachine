@@ -55,10 +55,13 @@ public sealed partial class AutomaticCleanupPage : Page
 
         // Startup / idle / recycle bin
         StartupCleanToggle.IsChecked = _settings.CleanAtStartup;
+        StartupNotifyToggle.IsChecked = _settings.StartupCleanNotify;
         IdleCleanToggle.IsChecked = _settings.IdleCleanEnabled;
         IdleMinutesBox.Value = Math.Clamp(_settings.IdleCleanMinutes, 1, 240);
+        IdleNotifyToggle.IsChecked = _settings.IdleCleanNotify;
         RecycleBinToggle.IsChecked = _settings.RecycleBinAutoEmptyEnabled;
         RecycleBinDaysBox.Value = Math.Clamp(_settings.RecycleBinAutoEmptyDays, 1, 365);
+        RecycleBinNotifyToggle.IsChecked = _settings.RecycleBinAutoEmptyNotify;
 
         UpdateItemsSummary(MonitorItemsSummary, _settings.SystemMonitorCategories);
         UpdateItemsSummary(StartupItemsSummary, _settings.StartupCleanCategories);
@@ -329,10 +332,13 @@ public sealed partial class AutomaticCleanupPage : Page
         _settings.SystemMonitorAction = FromComboIndex(SystemMonitorAction.SelectedIndex);
 
         _settings.CleanAtStartup = StartupCleanToggle.IsChecked == true;
+        _settings.StartupCleanNotify = StartupNotifyToggle.IsChecked == true;
         _settings.IdleCleanEnabled = IdleCleanToggle.IsChecked == true;
         _settings.IdleCleanMinutes = double.IsNaN(IdleMinutesBox.Value) ? 15 : (int)Math.Clamp(IdleMinutesBox.Value, 1, 240);
+        _settings.IdleCleanNotify = IdleNotifyToggle.IsChecked == true;
         _settings.RecycleBinAutoEmptyEnabled = RecycleBinToggle.IsChecked == true;
         _settings.RecycleBinAutoEmptyDays = double.IsNaN(RecycleBinDaysBox.Value) ? 30 : (int)Math.Clamp(RecycleBinDaysBox.Value, 1, 365);
+        _settings.RecycleBinAutoEmptyNotify = RecycleBinNotifyToggle.IsChecked == true;
 
         await _settings.SaveAsync();
         (App.Current as App)?.ApplyBackgroundServices(_settings);

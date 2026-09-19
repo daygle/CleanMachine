@@ -111,13 +111,18 @@ public sealed class AppSettings
     // Automatic cleanup: run a safe clean once each time CleanMachine starts (paired
     // with "Start with Windows" this cleans at every logon).
     public bool CleanAtStartup { get; set; }
+    // Opt-in completion toast for the startup clean (the browser-exit and low-disk
+    // triggers choose this via their ExitAction instead).
+    public bool StartupCleanNotify { get; set; }
     // Automatic cleanup: run a safe clean after the machine has been idle this many
     // minutes (fires once per idle period; re-arms after the next activity).
     public bool IdleCleanEnabled { get; set; }
     public int IdleCleanMinutes { get; set; } = 15;
+    public bool IdleCleanNotify { get; set; }
     // Automatic cleanup: empty Recycle Bin items older than this many days.
     public bool RecycleBinAutoEmptyEnabled { get; set; }
     public int RecycleBinAutoEmptyDays { get; set; } = 30;
+    public bool RecycleBinAutoEmptyNotify { get; set; }
     // Which categories the startup and idle cleans remove. Each is independent; null
     // means every enabled category on the Windows Cleanup page. Automatic runs only
     // ever offer/clean Safe-risk categories (Review/Advanced are never included).

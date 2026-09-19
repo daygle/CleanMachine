@@ -111,6 +111,8 @@
             <Button Content="Choose items..." Click="ChooseStartupItems_Click" Padding="14,8"/>
             <TextBlock x:Name="StartupItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
           </StackPanel>
+          <CheckBox x:Name="StartupNotifyToggle" Content="Show a notification when this runs" Margin="26,0,0,0"
+                    Checked="Setting_Changed" Unchecked="Setting_Changed"/>
           <TextBlock Text="With 'Start CleanMachine when I sign in to Windows' (Settings), this runs once at every logon."
                      FontSize="11" Foreground="#89958F" TextWrapping="Wrap"/>
         </StackPanel>
@@ -131,6 +133,8 @@
             <Button Content="Choose items..." Click="ChooseIdleItems_Click" Padding="14,8"/>
             <TextBlock x:Name="IdleItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
           </StackPanel>
+          <CheckBox x:Name="IdleNotifyToggle" Content="Show a notification when this runs" Margin="26,0,0,0"
+                    Checked="Setting_Changed" Unchecked="Setting_Changed"/>
         </StackPanel>
       </Border>
 
@@ -145,6 +149,8 @@
                        SmallChange="1" LargeChange="7" Width="120" ValueChanged="RecycleBinDays_ValueChanged"/>
             <TextBlock Text="days" VerticalAlignment="Center" Foreground="#53635B"/>
           </StackPanel>
+          <CheckBox x:Name="RecycleBinNotifyToggle" Content="Show a notification when this runs" Margin="26,0,0,0"
+                    Checked="Setting_Changed" Unchecked="Setting_Changed"/>
           <TextBlock Text="Only removes items that are already in the Recycle Bin."
                      FontSize="11" Foreground="#89958F" TextWrapping="Wrap"/>
         </StackPanel>

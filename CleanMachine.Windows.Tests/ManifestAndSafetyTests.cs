@@ -450,6 +450,10 @@ public sealed class ManifestAndSafetyTests
         Assert.False(settings.SystemMonitoringEnabled);
         Assert.Equal(ExitAction.CleanSilently, settings.SystemMonitorAction);
         Assert.Equal(1.0, settings.SystemMonitorFreeSpaceGb);
+        // The silent automatic triggers stay silent unless the user opts in.
+        Assert.False(settings.StartupCleanNotify);
+        Assert.False(settings.IdleCleanNotify);
+        Assert.False(settings.RecycleBinAutoEmptyNotify);
     }
 
     [Fact]
@@ -477,7 +481,10 @@ public sealed class ManifestAndSafetyTests
             ],
             SystemMonitoringEnabled = true,
             SystemMonitorFreeSpaceGb = 2.5,
-            SystemMonitorAction = ExitAction.CleanAndNotify
+            SystemMonitorAction = ExitAction.CleanAndNotify,
+            StartupCleanNotify = true,
+            IdleCleanNotify = true,
+            RecycleBinAutoEmptyNotify = true
         };
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -490,6 +497,9 @@ public sealed class ManifestAndSafetyTests
         Assert.True(clone.SystemMonitoringEnabled);
         Assert.Equal(2.5, clone.SystemMonitorFreeSpaceGb);
         Assert.Equal(ExitAction.CleanAndNotify, clone.SystemMonitorAction);
+        Assert.True(clone.StartupCleanNotify);
+        Assert.True(clone.IdleCleanNotify);
+        Assert.True(clone.RecycleBinAutoEmptyNotify);
     }
 
     [Fact]

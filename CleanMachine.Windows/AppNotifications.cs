@@ -37,6 +37,24 @@ public static class AppNotifications
         catch { /* notifications are best-effort */ }
     }
 
+    /// <summary>Toast for the opt-in notify option on the Automatic Cleanup page's
+    /// startup and idle triggers (browser-exit and low-disk have their own toasts).</summary>
+    public static void ShowAutomaticCleanupComplete(string trigger, CleanupResult result)
+        => ShowAutomaticCleanupComplete(trigger, result.ItemsRemoved, result.BytesRecovered);
+
+    public static void ShowAutomaticCleanupComplete(string trigger, long itemsRemoved, long bytesRecovered)
+    {
+        try
+        {
+            var notification = new AppNotificationBuilder()
+                .AddText("CleanMachine")
+                .AddText($"{trigger}: {itemsRemoved:N0} items removed, {FormatBytes(bytesRecovered)} recovered.")
+                .BuildNotification();
+            AppNotificationManager.Default.Show(notification);
+        }
+        catch { /* notifications are best-effort */ }
+    }
+
     /// <summary>Heads-up for the idle auto-install: an update will be installed
     /// silently once the PC is idle. Best-effort like every toast here.</summary>
     public static void ShowUpdateScheduled(string version)

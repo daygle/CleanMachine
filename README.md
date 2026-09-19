@@ -109,6 +109,7 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
   - At startup: run a clean each time CleanMachine starts (with "Start with Windows", that is every logon)
   - On idle: run a clean after the PC has been idle a configurable number of minutes, once per idle period
   - Recycle Bin: automatically empty items older than a configurable number of days (only ever removes items already in the Recycle Bin)
+- The startup, idle, and Recycle Bin triggers each have an opt-in "show a notification when this runs" checkbox (off by default); browser-exit and low-disk monitoring instead choose Do nothing / Clean silently / Clean and notify per trigger
 - The low-disk, startup, and idle triggers each have their own independent category selection (defaulting to every category enabled on the Windows Cleanup page); automatic runs only ever offer the cleanup categories, never Review/Advanced ones
 - Every automated run records into the same stats store and activity log as manual cleans
 
