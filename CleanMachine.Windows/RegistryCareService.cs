@@ -277,7 +277,7 @@ public sealed class RegistryCareService
         var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
 
         if (findings.Any(f => f.Path.StartsWith(UninstallRoot + @"\", StringComparison.OrdinalIgnoreCase)))
-            backups.Add(await ExportKeyAsync(UninstallRoot,
+            backups.Add(await ExportKeyWithRetryAsync(UninstallRoot,
                 Path.Combine(directory, $"registry-uninstall-{stamp}.reg"), token));
 
         foreach (var path in findings
@@ -287,7 +287,7 @@ public sealed class RegistryCareService
         {
             var name = new string(path[(ClassesRoot.Length + 1)..]
                 .Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
-            backups.Add(await ExportKeyAsync(path,
+            backups.Add(await ExportKeyWithRetryAsync(path,
                 Path.Combine(directory, $"registry-classes-{name}-{stamp}.reg"), token));
         }
 
@@ -306,12 +306,48 @@ public sealed class RegistryCareService
         {
             var name = new string(path[(path.LastIndexOf('\\') + 1)..]
                 .Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
-            backups.Add(await ExportKeyAsync(path,
+            backups.Add(await ExportKeyWithRetryAsync(path,
                 Path.Combine(directory, $"registry-{name}-{stamp}.reg"), token));
         }
         if (backups.Count == 0)
             throw new InvalidOperationException("None of the selected findings are in a registry scope this tool backs up.");
         return backups;
+    }
+
+    // A single reg.exe export occasionally fails transiently (a momentary clash
+    // with a live process, antivirus scanning the new file); the backup is the
+    // restore point the whole clean depends on, so one flaky attempt must not
+    // block it. One retry after a short delay covers that without turning a real
+    // failure (missing key, access denied) into a long stall.
+    internal static readonly TimeSpan ExportRetryDelay = TimeSpan.FromSeconds(1);
+    internal const int ExportAttempts = 2;
+
+    /// <summary>Exports a key with one bounded retry: the first attempt runs
+    /// immediately, a failure waits <see cref="ExportRetryDelay"/> and tries once
+    /// more. Cancellation is never retried. <paramref name="exportOnce"/> and
+    /// <paramref name="delayAsync"/> are overridable so tests can exercise the
+    /// policy without spawning reg.exe.</summary>
+    internal static async Task<RegistryBackup> ExportKeyWithRetryAsync(
+        string keyPath,
+        string filePath,
+        CancellationToken token,
+        int attempts = ExportAttempts,
+        Func<string, string, Task<RegistryBackup>>? exportOnce = null,
+        Func<Task>? delayAsync = null)
+    {
+        exportOnce ??= (key, file) => ExportKeyAsync(key, file, token);
+        delayAsync ??= () => Task.Delay(ExportRetryDelay, token);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await exportOnce(keyPath, filePath);
+            }
+            catch (InvalidOperationException) when (attempt < attempts)
+            {
+                await delayAsync();
+            }
+        }
     }
 
     private static async Task<RegistryBackup> ExportKeyAsync(string keyPath, string filePath, CancellationToken token)

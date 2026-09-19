@@ -37,6 +37,56 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public async Task RegistryBackupExportRetriesOnceAfterATransientFailure()
+    {
+        var backup = new RegistryBackup("unused.reg", DateTimeOffset.UtcNow);
+        var calls = 0;
+        var delays = 0;
+        var result = await RegistryCareService.ExportKeyWithRetryAsync(
+            "Software\\Whatever", "unused.reg",
+            token: default,
+            exportOnce: (_, _) => ++calls == 1
+                ? throw new InvalidOperationException("Registry backup export failed (exit code 1).")
+                : Task.FromResult(backup),
+            delayAsync: () => { delays++; return Task.CompletedTask; });
+
+        Assert.Equal(backup, result);
+        Assert.Equal(2, calls);
+        Assert.Equal(1, delays);
+    }
+
+    [Fact]
+    public async Task RegistryBackupExportStopsAfterFinalAttemptAndRethrows()
+    {
+        var calls = 0;
+        var delays = 0;
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            RegistryCareService.ExportKeyWithRetryAsync(
+                "Software\\Whatever", "unused.reg",
+                token: default,
+                exportOnce: (_, _) => { calls++; throw new InvalidOperationException("Registry backup export failed."); },
+                delayAsync: () => { delays++; return Task.CompletedTask; }));
+
+        Assert.Equal(RegistryCareService.ExportAttempts, calls);
+        Assert.Equal(1, delays);
+    }
+
+    [Fact]
+    public async Task RegistryBackupExportWithSingleAttemptDoesNotRetry()
+    {
+        var calls = 0;
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            RegistryCareService.ExportKeyWithRetryAsync(
+                "Software\\Whatever", "unused.reg",
+                token: default,
+                attempts: 1,
+                exportOnce: (_, _) => { calls++; throw new InvalidOperationException("Registry backup export failed."); },
+                delayAsync: () => throw new InvalidOperationException("delay must never run")));
+
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
     public async Task RegistryReviewRequiresLowRiskAndConfidence()
     {
         var service = new RegistryCareService();
