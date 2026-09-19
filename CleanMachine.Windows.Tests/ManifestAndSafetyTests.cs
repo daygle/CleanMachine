@@ -223,6 +223,17 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void DnsCachePreviewDescribesItsActionEvenWithoutMeasuredBytes()
+    {
+        var item = WindowsCleanupService.Catalog.Single(c => c.Id == "system-dns-cache");
+        var preview = new WindowsCleanupService().BuildPreview([item]);
+
+        Assert.Equal(1, preview.TotalItems);
+        Assert.Single(preview.Items);
+        Assert.Equal("Flush the DNS cache", preview.Items[0].Description);
+    }
+
+    [Fact]
     public void CleanupEnabledStateUsesOverridesThenDefaults()
     {
         var settings = new AppSettings();
@@ -265,59 +276,6 @@ public sealed class ManifestAndSafetyTests
 
         Assert.Equal(0, report.Result.ItemsRemoved);
         Assert.Contains(report.Skipped, issue => issue.Path == unknown.Id);
-    }
-
-    [Fact]
-    public void WindowsUpdateCleanupHasABoundedWait()
-    {
-        Assert.True(WindowsCleanupService.ComponentStoreTimeout >= TimeSpan.FromMinutes(5));
-        Assert.True(WindowsCleanupService.ComponentStoreTimeout <= TimeSpan.FromMinutes(20));
-    }
-
-    [Fact]
-    public void WindowsUpdateCleanupIsAnAdvancedOptInComponentStoreItem()
-    {
-        var item = WindowsCleanupService.Catalog.Single(c => c.Id == "advanced-component-store");
-        Assert.Equal("Windows Update Cleanup", item.Name);
-        Assert.Equal("Windows Advanced Options", item.Group);
-        Assert.Equal(CleanupKind.ComponentStore, item.Kind);
-        // It is an elevated, irreversible action, so it must never be a default or a
-        // Safe category (which the automatic/scheduled/quick paths auto-run).
-        Assert.Equal(CleanupRisk.Advanced, item.Risk);
-        Assert.False(item.EnabledByDefault);
-    }
-
-    [Fact]
-    public void BuildPreviewDescribesTheComponentStoreAction()
-    {
-        var item = WindowsCleanupService.Catalog.Single(c => c.Kind == CleanupKind.ComponentStore);
-        var preview = new WindowsCleanupService().BuildPreview([item]);
-        Assert.Equal(1, preview.TotalItems);
-        Assert.Single(preview.Items);
-        Assert.Equal(item.Name, preview.Items[0].Category);
-    }
-
-    [Fact]
-    public void ComponentStoreParsesReclaimedSpaceFromBeforeAfterAnalysis()
-    {
-        // Two "Actual Size" figures: before cleanup and after. The difference (8.00 - 6.00
-        // GB = 2 GB) is the reclaimed space DISM freed.
-        const string dism = """
-            Component Store (WinSxS) information:
-            Actual Size of Component Store : 8.00 GB
-            Component Store Cleanup Recommended : Yes
-            [after cleanup]
-            Actual Size of Component Store : 6.00 GB
-            """;
-        Assert.Equal(2L * 1024 * 1024 * 1024, WindowsCleanupService.ParseReclaimedBytes(dism));
-    }
-
-    [Fact]
-    public void ComponentStoreReclaimedSpaceIsZeroWhenUnparseable()
-    {
-        Assert.Equal(0, WindowsCleanupService.ParseReclaimedBytes("no size lines here"));
-        // A single figure (no after-analysis) cannot yield a difference.
-        Assert.Equal(0, WindowsCleanupService.ParseReclaimedBytes("Actual Size of Component Store : 8.00 GB"));
     }
 
     [Fact]

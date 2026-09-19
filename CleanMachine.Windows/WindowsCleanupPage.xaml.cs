@@ -53,10 +53,7 @@ public sealed partial class WindowsCleanupPage : Page
                      .OrderBy(g => GroupIndex(g.Key)))
         {
             var categories = group.OrderBy(c => c.Name)
-                // Windows Update Cleanup (component store) can't be pre-measured without a
-                // slow, elevated DISM analysis, so it is always listed and selectable
-                // rather than gated on a scanned byte count like the file categories.
-                .Where(c => showClean || c.Kind == CleanupKind.ComponentStore || (bytesById.TryGetValue(c.Id, out var b) && b > 0))
+                .Where(c => showClean || c.Kind == CleanupKind.DnsCache || (bytesById.TryGetValue(c.Id, out var b) && b > 0))
                 .ToList();
             if (categories.Count == 0) continue;
 
@@ -64,11 +61,11 @@ public sealed partial class WindowsCleanupPage : Page
             foreach (var category in categories)
             {
                 var bytes = bytesById.TryGetValue(category.Id, out var b) ? b : 0;
-                var isComponentStore = category.Kind == CleanupKind.ComponentStore;
                 var hasData = bytes > 0;
-                var selectable = hasData || isComponentStore;
-                var size = isComponentStore
-                    ? "Admin"
+                var isDnsCache = category.Kind == CleanupKind.DnsCache;
+                var selectable = hasData || isDnsCache;
+                var size = isDnsCache
+                    ? "Action"
                     : category.Kind == CleanupKind.RegistryValues
                         ? (hasData ? $"{bytes:N0} entries" : "Clean")
                         : (hasData ? FormatBytes(bytes) : "Clean");
@@ -81,8 +78,6 @@ public sealed partial class WindowsCleanupPage : Page
                     IsEnabled = selectable,              // empty file categories are shown but not selectable
                     Opacity = selectable ? 1.0 : 0.5
                 };
-                if (isComponentStore)
-                    ToolTipService.SetToolTip(box, "Removes superseded Windows Update components from the component store (WinSxS). Requires administrator approval, can take several minutes, and cannot be undone.");
                 box.Checked += (_, _) => SetEnabled(category, true);
                 box.Unchecked += (_, _) => SetEnabled(category, false);
                 CategoryPanel.Children.Add(box);
@@ -181,7 +176,9 @@ public sealed partial class WindowsCleanupPage : Page
 
             var enabledItems = items
                 .Where(i => enabled.Any(c => c.Id == i.Category.Id))
-                .Where(i => i.Bytes > 0)
+                // DNS cache flushing is an action rather than a measurable file set;
+                // keep it visible even though its scan size is zero.
+                .Where(i => i.Bytes > 0 || i.Category.Kind == CleanupKind.DnsCache)
                 .OrderByDescending(i => i.Bytes)
                 .ToArray();
             var totalBytes = enabledItems.Sum(i => i.Bytes);
@@ -392,7 +389,7 @@ public sealed partial class WindowsCleanupPage : Page
         var enabled = EnabledCategories();
         var enabledItems = _lastScan
             .Where(i => enabled.Any(c => c.Id == i.Category.Id))
-            .Where(i => i.Bytes > 0)
+            .Where(i => i.Bytes > 0 || i.Category.Kind == CleanupKind.DnsCache)
             .OrderByDescending(i => i.Bytes)
             .ToArray();
         var totalBytes = enabledItems.Sum(i => i.Bytes);
@@ -466,7 +463,7 @@ public sealed partial class WindowsCleanupPage : Page
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
         DetailHeadline.Text = "Cleaning...";
-        DetailSubHeadline.Text = "Step 2 of 2: Removing the selected items. This can take a while for large folders or DISM.";
+        DetailSubHeadline.Text = "Step 2 of 2: Removing the selected items. This can take a while for large folders.";
         StatusText.Text = "Cleaning in progress: preparing the selected items...";
         _cancel = new CancellationTokenSource();
         try

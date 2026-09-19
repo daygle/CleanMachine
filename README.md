@@ -62,7 +62,6 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 - Categories with nothing to clean are hidden from the selection list (shared, cached scan with the Overview card); if a scan fails the full catalog is shown so nothing becomes unreachable
 - Per-category enable/disable persisted in settings, honoring per-user overrides; the list re-measures after a clean
 - Recycle Bin cleanup through native `SHEmptyRecycleBin` (requires explicit confirmation)
-- Windows Update Cleanup (WinSxS component store, via an elevated DISM run) as an off-by-default Advanced category
 - Reparse-point and junction protection
 - Category-specific exclusion support
 - Progress and cancellation handling
@@ -139,7 +138,7 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 
 ## Safety model
 
-All destructive workflows are review-first. Browser cleaning requires supported browsers to be closed; safe items (caches, sessions, crash reports) are selected by default, while destructive items (cookies, history, saved passwords) are opt-in behind a confirmation. Registry Care deletes only after a verified `.reg` backup and only from an allow-listed set of per-user paths. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. Windows Update Cleanup (component store) runs only when explicitly selected and elevated, via DISM.
+All destructive workflows are review-first. Browser cleaning requires supported browsers to be closed; safe items (caches, sessions, crash reports) are selected by default, while destructive items (cookies, history, saved passwords) are opt-in behind a confirmation. Registry Care deletes only after a verified `.reg` backup and only from an allow-listed set of per-user paths. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. CleanMachine does not modify the protected Windows component store.
 
 "Clean All Safe Items" is bounded the same way: only non-destructive browser cache items, enabled Safe-risk Windows categories, application temp files, and registry findings passing the safety gate (with a mandatory backup) are included. Downloads, documents, Review/Advanced categories, and destructive browser items are never touched by it.
 
