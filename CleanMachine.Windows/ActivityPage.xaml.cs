@@ -9,6 +9,11 @@ public sealed partial class ActivityPage : Page
     private readonly ActivityStore _store = new();
     private IReadOnlyList<ActivityEntry> _allEntries = [];
 
+    // Shared by every drill-down chevron: the hover handlers run on each pointer move,
+    // so they must not allocate a new brush every time.
+    private static readonly SolidColorBrush ChevronIdleBrush = new(ColorFromHex("#9AA6A1"));
+    private static readonly SolidColorBrush ChevronActiveBrush = new(ColorFromHex("#4B7769"));
+
     public ActivityPage()
     {
         InitializeComponent();
@@ -82,12 +87,19 @@ public sealed partial class ActivityPage : Page
         FooterText.Text = $"{total} activity {(total == 1 ? "entry" : "entries")} recorded. Older entries are automatically pruned.";
     }
 
+    /// <summary>Builds one activity row.
+    /// Every row - with or without a drill-down - is laid out by the same four-column
+    /// grid (icon | title+detail | time | chevron), and rows are never put inside an
+    /// <c>Expander</c>. That matters for alignment: an Expander header reserves a column
+    /// for its toggle button, so expandable rows used to push their time ~60 px left of
+    /// plain rows; the reserved chevron column keeps every time on the same right edge.</summary>
     private static Border BuildActivityCard(ActivityEntry entry)
     {
-        var grid = new Grid { Margin = new Thickness(0, 3, 0, 3) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // icon
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // info
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // time
+        var grid = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44, GridUnitType.Pixel) }); // icon
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });   // title + detail
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                        // time
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28, GridUnitType.Pixel) }); // drill-down chevron
 
         // Activity type icon
         var iconInfo = ActivityIcon(entry);
@@ -97,6 +109,7 @@ public sealed partial class ActivityPage : Page
             Height = 34,
             CornerRadius = new CornerRadius(8),
             Background = new SolidColorBrush(iconInfo.BackgroundColor),
+            HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
             Child = new FontIcon
             {
@@ -109,8 +122,10 @@ public sealed partial class ActivityPage : Page
         };
         Grid.SetColumn(iconBorder, 0);
 
-        // Info stack: title + detail
-        var info = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0) };
+        // Info stack: title + detail. The detail must NOT set MaxWidth: a Stretch-aligned
+        // element that is clamped by MaxWidth is centred in its column, which is what used
+        // to push the detail line away from the title by an amount that varied per row.
+        var info = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         info.Children.Add(new TextBlock
         {
             Text = entry.Title,
@@ -124,71 +139,96 @@ public sealed partial class ActivityPage : Page
             Text = entry.Detail,
             FontSize = 11,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxWidth = 500
+            TextTrimming = TextTrimming.CharacterEllipsis
         });
         Grid.SetColumn(info, 1);
 
-        // Time badge
-        var timePanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
-        timePanel.Children.Add(new TextBlock
+        // Time, right-aligned inside an Auto column so every row shares one right edge.
+        var time = new TextBlock
         {
             Text = entry.Time.ToString("h:mm tt"),
             FontSize = 12,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69)),
-            HorizontalAlignment = HorizontalAlignment.Right
-        });
-        Grid.SetColumn(timePanel, 2);
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(time, 2);
+
+        var chevron = new FontIcon
+        {
+            Glyph = "\uE70D",
+            FontSize = 12,
+            Foreground = ChevronIdleBrush,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(chevron, 3);
 
         grid.Children.Add(iconBorder);
         grid.Children.Add(info);
-        grid.Children.Add(timePanel);
+        grid.Children.Add(time);
+        grid.Children.Add(chevron);
 
-        // When the event carries a per-category breakdown, make the card expandable so
-        // the user can drill into exactly what was cleaned.
-        if (entry.Details is { Count: > 0 } details)
-        {
-            var content = new StackPanel { Spacing = 3, Margin = new Thickness(46, 2, 8, 6) };
-            foreach (var line in details)
-                content.Children.Add(new TextBlock
-                {
-                    Text = line,
-                    FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x53, 0x63, 0x5B))
-                });
-
-            var expander = new Expander
-            {
-                Header = grid,
-                Content = content,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Margin = new Thickness(0, 1, 0, 1)
-            };
-            return new Border
-            {
-                Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 255, 255, 255)),
-                BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
-                BorderThickness = new Thickness(1),
-                Child = expander,
-                CornerRadius = new CornerRadius(6)
-            };
-        }
-
-        // Keep non-expandable events visually consistent with expandable cleanup
-        // cards. Browser Monitoring has no per-category breakdown, so it follows this
-        // path and previously appeared without the card border/padding.
-        return new Border
+        var card = new Border
         {
             Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 255, 255, 255)),
             BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
             BorderThickness = new Thickness(1),
-            Child = grid,
-            Padding = new Thickness(18, 5, 8, 5),
             CornerRadius = new CornerRadius(6),
             Margin = new Thickness(0, 1, 0, 1)
         };
+
+        if (entry.Details is not { Count: > 0 } details)
+        {
+            // No drill-down: the row is inert, so reserve the chevron column (empty) and
+            // keep the plain grid as the card's only child.
+            chevron.Visibility = Visibility.Collapsed;
+            grid.Margin = new Thickness(14, 6, 10, 6);
+            card.Child = grid;
+            return card;
+        }
+
+        var content = new StackPanel { Spacing = 3, Margin = new Thickness(58, 0, 38, 8), Visibility = Visibility.Collapsed };
+        foreach (var line in details)
+            content.Children.Add(new TextBlock
+            {
+                Text = line,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x53, 0x63, 0x5B))
+            });
+
+        // The whole row toggles the drill-down (as the old Expander did), but the chevron
+        // is drawn by our grid rather than by the control, so it cannot shift the columns.
+        // Padding here matches the plain row's grid margin so both land on the same grid.
+        var header = new Button
+        {
+            Content = grid,
+            Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(14, 6, 10, 6),
+            CornerRadius = new CornerRadius(6),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        void ApplyToggleState(bool expanded)
+        {
+            content.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            chevron.Glyph = expanded ? "\uE70E" : "\uE70D";
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+                header, $"{(expanded ? "Hide" : "Show")} details for {entry.Title}");
+        }
+        ApplyToggleState(false);
+        header.PointerEntered += (_, _) => chevron.Foreground = ChevronActiveBrush;
+        header.PointerExited += (_, _) => chevron.Foreground = ChevronIdleBrush;
+        header.Click += (_, _) => ApplyToggleState(content.Visibility != Visibility.Visible);
+
+        var stack = new StackPanel();
+        stack.Children.Add(header);
+        stack.Children.Add(content);
+        card.Child = stack;
+        return card;
     }
 
     private static (string Glyph, global::Windows.UI.Color BackgroundColor, global::Windows.UI.Color ForegroundColor) ActivityIcon(ActivityEntry entry)
