@@ -20,6 +20,37 @@ public sealed partial class RegistryCarePage : Page
         InitializeComponent();
         // Analyze automatically when the page is opened.
         Loaded += (_, _) => Scan_Click(this, new RoutedEventArgs());
+        UpdateBackupsLink();
+    }
+
+    /// <summary>Keeps the Backups link's label showing how many restore-point
+    /// .reg files currently exist, so a successful backup is visible without
+    /// opening the folder.</summary>
+    private void UpdateBackupsLink()
+    {
+        var count = RegistryCareService.CountBackups();
+        BackupsLinkText.Text = count == 1 ? "Backups (1 file)" : $"Backups ({count} files)";
+    }
+
+    private async void BackupsLink_Click(object sender, RoutedEventArgs e)
+    {
+        var directory = RegistryCareService.BackupsDirectory;
+        try
+        {
+            // Explorer is the only way to show a plain folder here; LaunchFolderAsync
+            // needs a StorageFolder and cannot open the virtualized package path.
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{directory}\"")
+                { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Could not open the backups folder: {ex.Message}";
+            return;
+        }
+        // Re-count after returning: the user may have deleted or added files.
+        await Task.Delay(250);
+        UpdateBackupsLink();
     }
 
     private async void Scan_Click(object sender, RoutedEventArgs e)
@@ -411,7 +442,8 @@ public sealed partial class RegistryCarePage : Page
             var clean = await _service.CleanAsync(result, progress: progress);
             await RecordManualCleanupAsync(result, clean);
             var backupNote = $"{result.Backups.Count} backup file(s) saved under " +
-                             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Backups");
+                             RegistryCareService.BackupsDirectory;
+            UpdateBackupsLink();
 
             DetailHeadline.Text = clean.Removed == 0 && clean.Skipped.Count == 0
                 ? "Nothing needed cleaning"

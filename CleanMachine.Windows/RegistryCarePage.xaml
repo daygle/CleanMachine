@@ -137,6 +137,10 @@
                   ToolTipService.ToolTip="Also show findings that aren't eligible for automatic cleaning"/>
         <CheckBox x:Name="SelectAllCheck" Content="Select All" VerticalAlignment="Center"
                   Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
+        <HyperlinkButton x:Name="BackupsLink" Click="BackupsLink_Click" Padding="4,0"
+                         VerticalAlignment="Center" ToolTipService.ToolTip="Open the folder holding the .reg backup files created before each clean">
+          <TextBlock x:Name="BackupsLinkText" Text="Backups" FontSize="12"/>
+        </HyperlinkButton>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
         <Button x:Name="RestoreButton" Content="Restore Last Backup" Click="Restore_Click"

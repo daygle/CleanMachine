@@ -52,6 +52,7 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 - Safe per-user cleanup with value-level deletion, so shared keys are never removed wholesale
 - Confidence-based filtering (minimum 70%) for review eligibility; Show All reveals ineligible findings when there are any (and is disabled with an explanation when there are none)
 - `.reg` backup export with validation of backup header integrity; cleaning refuses to run without a backup
+- A Backups link showing how many backup files exist and opening the backup folder in Explorer
 - Explicit restore flow using Windows `reg.exe`; the list re-scans after a clean
 
 ### Windows Cleanup

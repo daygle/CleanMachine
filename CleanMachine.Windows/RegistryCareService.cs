@@ -263,6 +263,32 @@ public sealed class RegistryCareService
     private static string ParentKeyPath(string path) => path[..path.LastIndexOf('\\')];
     private static string LeafKeyName(string path) => path[(path.LastIndexOf('\\') + 1)..];
 
+    /// <summary>The directory registry backups are written to. Under the packaged
+    /// (MSIX) build, GetFolderPath resolves to the package's virtualized
+    /// LocalCache location, so every reader and writer must go through this
+    /// property instead of guessing at %LOCALAPPDATA%.</summary>
+    public static string BackupsDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "CleanMachine", "Backups");
+
+    /// <summary>How many .reg backup files exist in the backups directory
+    /// (0 when it does not exist or cannot be read).</summary>
+    public static int CountBackups() => CountBackups(BackupsDirectory);
+
+    internal static int CountBackups(string directory)
+    {
+        try
+        {
+            return Directory.Exists(directory)
+                ? Directory.GetFiles(directory, "*.reg").Length
+                : 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
     /// <summary>Exports the registry scopes the given findings will be deleted from:
     /// one whole-root export for Uninstall findings, one per-key export for
     /// Software\\Classes findings (that root is far too large to export whole).</summary>
@@ -270,9 +296,7 @@ public sealed class RegistryCareService
         IReadOnlyList<RegistryFinding> findings, CancellationToken token)
     {
         var backups = new List<RegistryBackup>();
-        var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CleanMachine", "Backups");
+        var directory = BackupsDirectory;
         Directory.CreateDirectory(directory);
         var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
 

@@ -87,6 +87,25 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void CountBackupsCountsRegFilesAndToleratesMissingDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "cm-backups-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.Equal(0, RegistryCareService.CountBackups(directory));
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "a.reg"), "Windows Registry Editor Version 5.00");
+            File.WriteAllText(Path.Combine(directory, "b.REG"), "Windows Registry Editor Version 5.00");
+            File.WriteAllText(Path.Combine(directory, "note.txt"), "not a backup");
+            Assert.Equal(2, RegistryCareService.CountBackups(directory));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RegistryReviewRequiresLowRiskAndConfidence()
     {
         var service = new RegistryCareService();
