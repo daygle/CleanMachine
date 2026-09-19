@@ -394,7 +394,9 @@ public sealed partial class RegistryCarePage : Page
             {
                 DetailHeadline.Text = "Cleaning stopped";
                 DetailSubHeadline.Text = "";
-                StatusText.Text = "No backup could be created, so nothing was cleaned. The backup is required as a restore point.";
+                StatusText.Text = string.IsNullOrWhiteSpace(result.BackupFailure)
+                    ? "No backup could be created, so nothing was cleaned. The backup is required as a restore point."
+                    : $"No backup could be created, so nothing was cleaned. {result.BackupFailure}";
                 return;
             }
 

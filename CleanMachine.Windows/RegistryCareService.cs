@@ -3,7 +3,11 @@ using System.Diagnostics;
 
 namespace CleanMachine.Windows;
 
-public sealed record RegistryReview(IReadOnlyList<RegistryFinding> Findings, IReadOnlyList<RegistryBackup> Backups);
+/// <summary>Findings plus the backups covering them. When <see cref="Backups"/> is
+/// empty despite <see cref="Findings"/> not being so, <see cref="BackupFailure"/>
+/// carries the reason the backup could not be created, so callers can show why the
+/// clean was refused instead of a generic "no backup" message.</summary>
+public sealed record RegistryReview(IReadOnlyList<RegistryFinding> Findings, IReadOnlyList<RegistryBackup> Backups, string? BackupFailure = null);
 
 /// <summary>Outcome of cleaning selected registry findings.</summary>
 public sealed record RegistryCleanResult(
@@ -147,6 +151,7 @@ public sealed class RegistryCareService
             return new RegistryReview([], []);
 
         List<RegistryBackup> backups;
+        string? backupFailure = null;
         try
         {
             backups = await CreateBackupsAsync(safe, token);
@@ -155,10 +160,12 @@ public sealed class RegistryCareService
         {
             // Best-effort: if we cannot back up (fresh profile, no permissions,
             // reg.exe unavailable), surface an empty review so the caller can
-            // refuse to clean without a restore point.
+            // refuse to clean without a restore point - but keep the reason so
+            // the refusal is diagnosable instead of a silent generic message.
             backups = [];
+            backupFailure = ex.Message;
         }
-        return new RegistryReview(safe, backups);
+        return new RegistryReview(safe, backups, backupFailure);
     }
 
     /// <summary>Deletes the key each cleanable finding points at. Every deletion is
@@ -302,6 +309,8 @@ public sealed class RegistryCareService
             backups.Add(await ExportKeyAsync(path,
                 Path.Combine(directory, $"registry-{name}-{stamp}.reg"), token));
         }
+        if (backups.Count == 0)
+            throw new InvalidOperationException("None of the selected findings are in a registry scope this tool backs up.");
         return backups;
     }
 
@@ -319,10 +328,15 @@ public sealed class RegistryCareService
         psi.ArgumentList.Add("/y");
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Could not start the Windows registry export tool.");
+        // Read stderr fully before waiting: reg.exe writes its errors there, and a
+        // detailed message (access denied, disk error, bad key) beats a generic one.
+        var stderr = await process.StandardError.ReadToEndAsync(token);
         await process.WaitForExitAsync(token);
 
         if (process.ExitCode != 0 || !File.Exists(filePath) || new FileInfo(filePath).Length == 0)
-            throw new InvalidOperationException("Registry backup export failed.");
+            throw new InvalidOperationException(
+                $"Registry backup export failed (exit code {process.ExitCode}"
+                + (string.IsNullOrWhiteSpace(stderr) ? ")." : $": {stderr.Trim()})."));
 
         return new RegistryBackup(filePath, DateTimeOffset.UtcNow);
     }

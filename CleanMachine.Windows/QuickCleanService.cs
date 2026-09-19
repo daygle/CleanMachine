@@ -89,7 +89,11 @@ public static class QuickCleanService
         var review = await service.PrepareReviewAsync(selected, token);
         // Same rule as the Registry Care page: never clean the registry without a backup.
         if (review.Findings.Count > 0 && review.Backups.Count == 0)
-            return new QuickCleanResult(0, 0, ["Skipped: no registry backup could be created."]);
+            return new QuickCleanResult(0, 0,
+                [string.IsNullOrWhiteSpace(review.BackupFailure)
+                    ? "Skipped: no registry backup could be created."
+                    : $"Skipped: {review.BackupFailure}"],
+                "Registry cleanup was refused: no restore point.");
         var clean = await service.CleanAsync(review, token);
         return new QuickCleanResult(clean.Removed, 0, Summarize(clean.Skipped));
     }

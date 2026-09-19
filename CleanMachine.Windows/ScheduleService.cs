@@ -177,7 +177,9 @@ public sealed class ScheduleService
                 var review = await service.PrepareReviewAsync(selected, token);
                 // Same rule as the manual page: never clean the registry without a backup.
                 if (review.Findings.Count > 0 && review.Backups.Count == 0)
-                    issues.Add("Registry cleanup skipped: no backup could be created.");
+                    issues.Add(string.IsNullOrWhiteSpace(review.BackupFailure)
+                        ? "Registry cleanup skipped: no backup could be created."
+                        : $"Registry cleanup skipped: {review.BackupFailure}");
                 else if (review.Findings.Count > 0)
                 {
                     var registryRemoved = (await service.CleanAsync(review, token)).Removed;
