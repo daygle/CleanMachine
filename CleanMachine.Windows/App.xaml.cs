@@ -75,6 +75,9 @@ public partial class App : Application
         // Sweep leftover update staging files from the install directory before
         // anything update-related can run (see CleanupUpdateArtifacts).
         UpdateService.CleanupUpdateArtifacts(Path.GetDirectoryName(Environment.ProcessPath));
+        // A rollback master copy under %LOCALAPPDATA% only ever serves .exe installs;
+        // MSIX never stages one, so any leftover (e.g. from an older build) is garbage.
+        if (UpdateService.IsInstalledAsMsix) UpdateService.CleanupRollbackCopy();
 
         var settings = await AppSettings.LoadAsync();
         // Run startup cleanup before enabling periodic/background cleanup so the two

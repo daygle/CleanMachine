@@ -25,4 +25,5 @@ public sealed record UpdateState(
     DateTimeOffset UpdatedAt,
     string? ExpectedSha256 = null,
     string? ExpectedPublisher = null,
-    string? TargetVersion = null);
+    string? TargetVersion = null,
+    string? Source = null);

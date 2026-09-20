@@ -142,14 +142,26 @@ public sealed class UpdateService
         if (!HasExpectedPublisher(packagePath, stagedState.ExpectedPublisher))
             throw new InvalidDataException("The staged update failed publisher verification.");
 
-        var rollback = await StageRollbackCopyAsync(currentExecutable, cancellationToken);
-        await _stateStore.MarkAsync("installing", packagePath, rollback, cancellationToken);
+        // Rollback only matters for .exe installs: MSIX binaries live under the
+        // protected WindowsApps folder and cannot be restored by file replacement,
+        // so no rollback copy is staged (an orphaned one is cleaned up at startup).
+        var rollback = isMsix
+            ? null
+            : await StageRollbackCopyAsync(currentExecutable, cancellationToken);
+        await _stateStore.MarkAsync("installing", packagePath, rollback, cancellationToken,
+            source: automatic ? "automatic" : "manual");
         try
         {
             if (isMsix)
             {
                 var uri = new Uri(packagePath, UriKind.Absolute);
                 var manager = new global::Windows.Management.Deployment.PackageManager();
+                // ForceApplicationShutdown replaces the running package and
+                // terminates this process mid-deployment, so the await typically
+                // never resumes and the "installed" bookkeeping below is best-effort
+                // only. The install itself runs server-side (AppXDeploymentServer)
+                // and completes regardless; the update's success is recorded when
+                // the app next starts (see UpdatesPage stale-state reconciliation).
                 await manager.AddPackageAsync(uri, null, global::Windows.Management.Deployment.DeploymentOptions.ForceApplicationShutdown);
             }
             else

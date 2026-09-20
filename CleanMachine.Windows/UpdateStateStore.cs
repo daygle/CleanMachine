@@ -33,7 +33,8 @@ public sealed class UpdateStateStore
         CancellationToken token = default,
         string? expectedSha256 = null,
         string? expectedPublisher = null,
-        string? targetVersion = null)
+        string? targetVersion = null,
+        string? source = null)
     {
         // The read must be inside the same critical section as the write. Otherwise
         // two transitions can both read the same old state and the later write can
@@ -49,7 +50,8 @@ public sealed class UpdateStateStore
                 DateTimeOffset.UtcNow,
                 expectedSha256 ?? current?.ExpectedSha256,
                 expectedPublisher ?? current?.ExpectedPublisher,
-                targetVersion ?? current?.TargetVersion), token);
+                targetVersion ?? current?.TargetVersion,
+                source ?? current?.Source), token);
         }
         finally { SaveGate.Release(); }
     }

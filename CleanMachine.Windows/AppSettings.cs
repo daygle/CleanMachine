@@ -158,9 +158,6 @@ public sealed class AppSettings
     // follow a successful run.
     public List<CleanupSchedule> Schedules { get; set; } = [];
 
-    // Track whether we've created the desktop shortcut on first launch.
-    public bool DesktopShortcutCreated { get; set; }
-
     public BrowserMonitorSetting? FindBrowserMonitor(string browser) =>
         BrowserMonitors.FirstOrDefault(m => m.Browser.Equals(browser, StringComparison.OrdinalIgnoreCase));
 

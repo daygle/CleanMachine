@@ -20,16 +20,26 @@ public sealed partial class UpdatesPage : Page
         var state = await _stateStore.LoadAsync();
         if (state is { Status: "staged" or "installing" } && !string.IsNullOrEmpty(state.PackagePath))
         {
+            // The running app already satisfies the pending update's target version,
+            // so whatever produced this state is a leftover from a previous session.
+            var targetAtOrBelowCurrent = state.TargetVersion is not null
+                && Version.TryParse(state.TargetVersion, out var target)
+                && target <= UpdateService.CurrentVersion();
+
+            // An "installing" state whose target is already running means the install
+            // actually landed: the MSIX deployment terminates the calling app mid-install
+            // (ForceApplicationShutdown), so its own success bookkeeping never ran. Record
+            // the success now and drop the stale rollback copy instead of silently
+            // dismissing it - otherwise the update looks like it never happened.
+            if (state.Status == "installing" && targetAtOrBelowCurrent)
+                await RecordCompletedInstallAsync(state, isAutomatic: state.Source == "automatic");
+
             // A staged update is a leftover from a previous session. Auto-dismiss it
             // when it can no longer be a real pending update: the package file is gone
             // (the temp download was cleaned up), or it targets a version the user
             // already runs - e.g. it was installed outside the app after a declined
             // UAC prompt or a blocked download.
-            var stale = !File.Exists(state.PackagePath);
-            if (!stale && state.TargetVersion is not null
-                && Version.TryParse(state.TargetVersion, out var target)
-                && target <= UpdateService.CurrentVersion())
-                stale = true;
+            var stale = !File.Exists(state.PackagePath) || targetAtOrBelowCurrent;
 
             if (stale)
             {
@@ -54,6 +64,22 @@ public sealed partial class UpdatesPage : Page
         {
             RollbackButton.Visibility = Visibility.Visible;
         }
+    }
+
+    /// <summary>Records the success of an update whose process was terminated
+    /// mid-deployment (MSIX ForceApplicationShutdown) before it could log its own
+    /// Activity entry. Best-effort: history is diagnostic, never authoritative.</summary>
+    private static async Task RecordCompletedInstallAsync(UpdateState state, bool isAutomatic)
+    {
+        try
+        {
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                isAutomatic ? "Automatic Update" : "Manual Update",
+                $"Update installed successfully: {Path.GetFileName(state.PackagePath)}."));
+        }
+        catch { /* activity history is best-effort */ }
+        UpdateService.CleanupRollbackCopy();
     }
 
     /// <summary>Clears the leftover staged package (state + downloaded file) and
