@@ -143,10 +143,10 @@ public sealed partial class ActivityPage : Page
         });
         Grid.SetColumn(info, 1);
 
-        // Time, right-aligned inside an Auto column so every row shares one right edge.
+        // Date + time, right-aligned inside an Auto column so every row shares one right edge.
         var time = new TextBlock
         {
-            Text = entry.Time.ToString("h:mm tt"),
+            Text = entry.Time.ToString("MMM d, h:mm tt"),
             FontSize = 12,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69)),
             HorizontalAlignment = HorizontalAlignment.Right,
