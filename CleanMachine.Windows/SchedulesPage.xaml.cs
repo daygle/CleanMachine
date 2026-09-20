@@ -80,6 +80,8 @@ public sealed partial class SchedulesPage : Page
 
         foreach (var schedule in _settings.Schedules)
         {
+            var captured = schedule;
+
             var infoPanel = new StackPanel { Spacing = 2 };
             infoPanel.Children.Add(new TextBlock
             {
@@ -94,19 +96,6 @@ public sealed partial class SchedulesPage : Page
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
 
-            var runButton = new Button
-            {
-                Content = "Run Now",
-                FontSize = 12,
-                Padding = new Thickness(14, 0, 14, 0),
-                // Stretch so it matches the select card's height and the two read as
-                // one paired row instead of a small button floating alongside it.
-                VerticalAlignment = VerticalAlignment.Stretch,
-                Tag = schedule
-            };
-            var captured = schedule;
-            runButton.Click += async (_, _) => await RunNowAsync(captured, runButton);
-
             var selectButton = new Button
             {
                 Content = infoPanel,
@@ -116,13 +105,36 @@ public sealed partial class SchedulesPage : Page
             };
             selectButton.Click += (_, _) => Select(captured, isNew: false);
 
+            var editButton = new Button
+            {
+                Content = "Edit",
+                FontSize = 12,
+                Padding = new Thickness(12, 0, 12, 0),
+                // Stretch so it matches the select card's height and the actions read as
+                // paired with the row instead of small buttons floating alongside it.
+                VerticalAlignment = VerticalAlignment.Stretch
+            };
+            editButton.Click += (_, _) => Select(captured, isNew: false);
+
+            var deleteButton = new Button
+            {
+                Content = "Delete",
+                FontSize = 12,
+                Padding = new Thickness(12, 0, 12, 0),
+                VerticalAlignment = VerticalAlignment.Stretch
+            };
+            deleteButton.Click += async (_, _) => await DeleteScheduleAsync(captured.Id);
+
             var row = new Grid { ColumnSpacing = 6, Margin = new Thickness(0, 0, 0, 6) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0, GridUnitType.Auto) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0, GridUnitType.Auto) });
             Grid.SetColumn(selectButton, 0);
-            Grid.SetColumn(runButton, 1);
+            Grid.SetColumn(editButton, 1);
+            Grid.SetColumn(deleteButton, 2);
             row.Children.Add(selectButton);
-            row.Children.Add(runButton);
+            row.Children.Add(editButton);
+            row.Children.Add(deleteButton);
             ScheduleList.Children.Add(row);
         }
     }
@@ -208,28 +220,6 @@ public sealed partial class SchedulesPage : Page
             ? Visibility.Visible
             : Visibility.Collapsed;
 
-    private async Task RunNowAsync(CleanupSchedule schedule, Button button)
-    {
-        button.IsEnabled = false;
-        var originalContent = button.Content;
-        button.Content = "Running...";
-        try
-        {
-            var result = await ScheduleService.RunAsync(schedule, _settings, manual: true);
-            StatusText.Text = $"'{schedule.Name}' completed: {result.ItemsRemoved:N0} items, {AppNotifications.FormatBytes(result.BytesRecovered)} recovered"
-                + (result.Issues.Count > 0 ? $" ({result.Issues.Count} skipped)" : ".");
-        }
-        catch (Exception ex)
-        {
-            StatusText.Text = $"Run failed: {ex.Message}";
-        }
-        finally
-        {
-            button.Content = originalContent;
-            button.IsEnabled = true;
-        }
-    }
-
     private void SecureDelete_Changed(object sender, RoutedEventArgs e)
         => SecureDeleteHint.Visibility = SecureDeleteCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
@@ -300,17 +290,27 @@ public sealed partial class SchedulesPage : Page
     private async void Delete_Click(object sender, RoutedEventArgs e)
     {
         if (_currentId is null) return;
+        await DeleteScheduleAsync(_currentId);
+    }
 
-        _settings.Schedules.RemoveAll(s => s.Id == _currentId);
+    private async Task DeleteScheduleAsync(string id)
+    {
+        var schedule = _settings.Schedules.FirstOrDefault(s => s.Id == id);
+        if (schedule is null) return;
+
+        _settings.Schedules.RemoveAll(s => s.Id == id);
         await _settings.SaveAsync();
-        await ScheduleService.UnregisterAsync(_currentId);
+        await ScheduleService.UnregisterAsync(id);
 
-        _current = null;
-        _currentId = null;
-        EditorFields.Visibility = Visibility.Collapsed;
-        EditorHint.Visibility = Visibility.Visible;
-        EditorHeadline.Text = "No Schedule Selected";
+        if (_currentId == id)
+        {
+            _current = null;
+            _currentId = null;
+            EditorFields.Visibility = Visibility.Collapsed;
+            EditorHint.Visibility = Visibility.Visible;
+            EditorHeadline.Text = "No Schedule Selected";
+            StatusText.Text = string.Empty;
+        }
         RebuildList();
-        StatusText.Text = string.Empty;
     }
 }
