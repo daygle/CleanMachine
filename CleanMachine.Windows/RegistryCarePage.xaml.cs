@@ -32,26 +32,8 @@ public sealed partial class RegistryCarePage : Page
         BackupsLinkText.Text = count == 1 ? "Backups (1 file)" : $"Backups ({count} files)";
     }
 
-    private async void BackupsLink_Click(object sender, RoutedEventArgs e)
-    {
-        var directory = RegistryCareService.BackupsDirectory;
-        try
-        {
-            // Explorer is the only way to show a plain folder here; LaunchFolderAsync
-            // needs a StorageFolder and cannot open the virtualized package path.
-            System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{directory}\"")
-                { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            StatusText.Text = $"Could not open the backups folder: {ex.Message}";
-            return;
-        }
-        // Re-count after returning: the user may have deleted or added files.
-        await Task.Delay(250);
-        UpdateBackupsLink();
-    }
+    private void BackupsLink_Click(object sender, RoutedEventArgs e)
+        => ((MainWindow)App.MainWindow!).Navigate<BackupsPage>();
 
     private async void Scan_Click(object sender, RoutedEventArgs e)
     {

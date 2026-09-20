@@ -588,6 +588,7 @@ public sealed partial class MainWindow : Window
         Button? active = pageType == typeof(OverviewPage) ? NavOverview
             : pageType == typeof(CleanerPage) ? NavCleaner
             : pageType == typeof(RegistryCarePage) ? NavRegistry
+            : pageType == typeof(BackupsPage) ? NavBackups
             : pageType == typeof(WindowsCleanupPage) ? NavWindowsCleanup
             : pageType == typeof(AppCleanupPage) ? NavAppCleanup
             : pageType == typeof(InstalledAppsPage) ? NavInstalledApps
@@ -600,7 +601,7 @@ public sealed partial class MainWindow : Window
             : pageType == typeof(SettingsPage) ? NavSettings
             : pageType == typeof(UpdatesPage) ? NavUpdates
             : null;
-        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavAppCleanup, NavInstalledApps, NavStartupApps, NavSecureDelete, NavDriveWiper, NavActivity, NavSchedules, NavAutomaticCleanup, NavSettings, NavUpdates })
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavBackups, NavWindowsCleanup, NavAppCleanup, NavInstalledApps, NavStartupApps, NavSecureDelete, NavDriveWiper, NavActivity, NavSchedules, NavAutomaticCleanup, NavSettings, NavUpdates })
             button.Background = ReferenceEquals(button, active) ? NavActiveBrush : NavIdleBrush;
 
         AttachNavPointerFeedback();
@@ -614,7 +615,7 @@ public sealed partial class MainWindow : Window
     {
         if (_navPointerHandlersAttached) return;
         _navPointerHandlersAttached = true;
-        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavWindowsCleanup, NavAppCleanup, NavInstalledApps, NavStartupApps, NavSecureDelete, NavDriveWiper, NavActivity, NavSchedules, NavAutomaticCleanup, NavSettings, NavUpdates })
+        foreach (var button in new[] { NavOverview, NavCleaner, NavRegistry, NavBackups, NavWindowsCleanup, NavAppCleanup, NavInstalledApps, NavStartupApps, NavSecureDelete, NavDriveWiper, NavActivity, NavSchedules, NavAutomaticCleanup, NavSettings, NavUpdates })
         {
             button.PointerEntered += (s, _) => { var b = (Button)s; if (!IsNavActive(b)) b.Background = NavHoverBrush; };
             button.PointerExited += (s, _) => { var b = (Button)s; b.Background = IsNavActive(b) ? NavActiveBrush : NavIdleBrush; };
@@ -625,6 +626,7 @@ public sealed partial class MainWindow : Window
     private void Overview_Click(object sender, RoutedEventArgs e) => Navigate<OverviewPage>();
     private void Cleaner_Click(object sender, RoutedEventArgs e) => Navigate<CleanerPage>();
     private void Registry_Click(object sender, RoutedEventArgs e) => Navigate<RegistryCarePage>();
+    private void Backups_Click(object sender, RoutedEventArgs e) => Navigate<BackupsPage>();
     private void WindowsCleanup_Click(object sender, RoutedEventArgs e) => Navigate<WindowsCleanupPage>();
     private void AppCleanup_Click(object sender, RoutedEventArgs e) => Navigate<AppCleanupPage>();
     private void StartupApps_Click(object sender, RoutedEventArgs e) => Navigate<StartupAppsPage>();

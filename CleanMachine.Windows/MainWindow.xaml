@@ -78,6 +78,12 @@
                 <TextBlock Text="Registry Care" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
+            <Button x:Name="NavBackups" Style="{StaticResource NavButton}" Click="Backups_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <FontIcon Glyph="&#xE777;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
+                <TextBlock Text="Registry Backups" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
             <Button x:Name="NavWindowsCleanup" Style="{StaticResource NavButton}" Click="WindowsCleanup_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE9D5;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>

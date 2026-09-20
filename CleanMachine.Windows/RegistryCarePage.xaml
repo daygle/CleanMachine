@@ -138,7 +138,7 @@
         <CheckBox x:Name="SelectAllCheck" Content="Select All" VerticalAlignment="Center"
                   Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
         <HyperlinkButton x:Name="BackupsLink" Click="BackupsLink_Click" Padding="4,0"
-                         VerticalAlignment="Center" ToolTipService.ToolTip="Open the folder holding the .reg backup files created before each clean">
+                         VerticalAlignment="Center" ToolTipService.ToolTip="View and manage the .reg restore-point files created before each clean">
           <TextBlock x:Name="BackupsLinkText" Text="Backups" FontSize="12"/>
         </HyperlinkButton>
       </StackPanel>

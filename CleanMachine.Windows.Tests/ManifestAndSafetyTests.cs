@@ -139,6 +139,40 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void ListBackupsReturnsNewestFirstAndIgnoresNonRegFiles()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "cm-backups-list-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var old = Path.Combine(directory, "registry-uninstall-20260101-010000.reg");
+            var mid = Path.Combine(directory, "registry-MuiCache-20260201-020000.reg");
+            var latest = Path.Combine(directory, "registry-classes-txt-20260301-030000.reg");
+            File.WriteAllText(old, "Windows Registry Editor Version 5.00");
+            File.WriteAllText(mid, "Windows Registry Editor Version 5.00");
+            File.WriteAllText(latest, "Windows Registry Editor Version 5.00");
+            File.WriteAllText(Path.Combine(directory, "note.txt"), "not a backup");
+            File.SetLastWriteTimeUtc(old, new DateTime(2026, 1, 1, 1, 0, 0, DateTimeKind.Utc));
+            File.SetLastWriteTimeUtc(mid, new DateTime(2026, 2, 1, 2, 0, 0, DateTimeKind.Utc));
+            File.SetLastWriteTimeUtc(latest, new DateTime(2026, 3, 1, 3, 0, 0, DateTimeKind.Utc));
+
+            // ListBackups reads the app-level BackupsDirectory, so exercise the
+            // sorting through the internal overload that takes an explicit directory.
+            var backups = RegistryCareService.ListBackups(directory);
+            Assert.Equal(3, backups.Count);
+            Assert.Equal(latest, backups[0].FilePath);
+            Assert.Equal(mid, backups[1].FilePath);
+            Assert.Equal(old, backups[2].FilePath);
+            Assert.Equal(new DateTimeOffset(2026, 3, 1, 3, 0, 0, TimeSpan.Zero), backups[0].CreatedAt);
+            Assert.Empty(RegistryCareService.ListBackups(Path.Combine(directory, "missing")));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RegistryReviewRequiresLowRiskAndConfidence()
     {
         var service = new RegistryCareService();

@@ -289,6 +289,37 @@ public sealed class RegistryCareService
         }
     }
 
+    /// <summary>Lists the .reg restore-point files in the backups directory,
+    /// newest first. Empty (never throws) when the directory is missing or
+    /// cannot be read. CreatedAt comes from the file's last-write time, which
+    /// matches the stamp in its name.</summary>
+    public static IReadOnlyList<RegistryBackup> ListBackups() => ListBackups(BackupsDirectory);
+
+    internal static IReadOnlyList<RegistryBackup> ListBackups(string directory)
+    {
+        try
+        {
+            if (!Directory.Exists(directory)) return [];
+            return Directory.GetFiles(directory, "*.reg")
+                .Select(p => new RegistryBackup(p, new DateTimeOffset(File.GetLastWriteTimeUtc(p))))
+                .OrderByDescending(b => b.CreatedAt)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>Permanently deletes one restore-point file. A missing file is
+    /// not an error (idempotent); genuine failures throw for the caller to
+    /// surface.</summary>
+    public static void DeleteBackup(RegistryBackup backup)
+    {
+        if (File.Exists(backup.FilePath))
+            File.Delete(backup.FilePath);
+    }
+
     /// <summary>Exports the registry scopes the given findings will be deleted from:
     /// one whole-root export for Uninstall findings, one per-key export for
     /// Software\\Classes findings (that root is far too large to export whole).</summary>
