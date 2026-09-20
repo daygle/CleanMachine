@@ -73,7 +73,7 @@ public sealed class UpdateAutoInstaller
 
             // Download and verify only now, so a cancelled/failed idle wait never
             // left a large temp download sitting around for hours.
-            var path = await _service.DownloadAndVerifyAsync(package, new Progress<double>(), cancellationToken);
+            var path = await _service.DownloadAndVerifyAsync(package, new Progress<double>(), cancellationToken, result.Manifest?.Version);
             // The user may have returned during the download; the package stays
             // staged either way, so the manual flow can install without a
             // re-download.

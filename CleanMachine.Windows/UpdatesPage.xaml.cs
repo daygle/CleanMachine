@@ -20,13 +20,33 @@ public sealed partial class UpdatesPage : Page
         var state = await _stateStore.LoadAsync();
         if (state is { Status: "staged" or "installing" } && !string.IsNullOrEmpty(state.PackagePath))
         {
-            _stagedPackagePath = state.PackagePath;
-            PendingText.Text = $"A pending update ({state.Status}) was found from a previous session.";
-            PendingText.Visibility = Visibility.Visible;
-            InstallButton.Visibility = Visibility.Visible;
-            StatusText.Text = "A verified package is staged and ready to install.";
-            DetailText.Text = $"Package: {state.PackagePath}";
-            DetailText.Visibility = Visibility.Visible;
+            // A staged update is a leftover from a previous session. Auto-dismiss it
+            // when it can no longer be a real pending update: the package file is gone
+            // (the temp download was cleaned up), or it targets a version the user
+            // already runs - e.g. it was installed outside the app after a declined
+            // UAC prompt or a blocked download.
+            var stale = !File.Exists(state.PackagePath);
+            if (!stale && state.TargetVersion is not null
+                && Version.TryParse(state.TargetVersion, out var target)
+                && target <= UpdateService.CurrentVersion())
+                stale = true;
+
+            if (stale)
+            {
+                await DismissPendingUpdateAsync(state.PackagePath);
+            }
+            else
+            {
+                _stagedPackagePath = state.PackagePath;
+                var targetLabel = state.TargetVersion is not null ? $" for version {state.TargetVersion}" : "";
+                PendingText.Text = $"A pending update ({state.Status}){targetLabel} was found from a previous session.";
+                PendingText.Visibility = Visibility.Visible;
+                DismissButton.Visibility = Visibility.Visible;
+                InstallButton.Visibility = Visibility.Visible;
+                StatusText.Text = "A verified package is staged and ready to install.";
+                DetailText.Text = $"Package: {state.PackagePath}";
+                DetailText.Visibility = Visibility.Visible;
+            }
         }
 
         if (await _stateStore.HasPendingUpdateAsync() == false
@@ -34,6 +54,26 @@ public sealed partial class UpdatesPage : Page
         {
             RollbackButton.Visibility = Visibility.Visible;
         }
+    }
+
+    /// <summary>Clears the leftover staged package (state + downloaded file) and
+    /// hides the pending-update UI, retiring an update the user no longer wants.</summary>
+    private async Task DismissPendingUpdateAsync(string? packagePath = null)
+    {
+        await _stateStore.DismissAsync(packagePath ?? _stagedPackagePath);
+        _stagedPackagePath = null;
+        PendingText.Text = "";
+        PendingText.Visibility = Visibility.Collapsed;
+        InstallButton.Visibility = Visibility.Collapsed;
+        DismissButton.Visibility = Visibility.Collapsed;
+        DetailText.Text = "";
+        DetailText.Visibility = Visibility.Collapsed;
+    }
+
+    private async void Dismiss_Click(object sender, RoutedEventArgs e)
+    {
+        await DismissPendingUpdateAsync();
+        StatusText.Text = "Pending update removed. Check for Updates to pick up anything new.";
     }
 
     private async void Check_Click(object sender, RoutedEventArgs e)
@@ -56,7 +96,12 @@ public sealed partial class UpdatesPage : Page
         }
 
         if (result.Error is not null) { StatusText.Text = result.Error; return; }
-        if (!result.Available) { StatusText.Text = "You are running the latest version."; return; }
+        if (!result.Available)
+        {
+            StatusText.Text = "You are running the latest version.";
+            await DismissPendingUpdateAsync(); // clear any obsolete pending update
+            return;
+        }
 
         // Skip our own confirmation when the user opted in; Windows still shows its
         // administrator-permission prompt at install time.
@@ -79,13 +124,13 @@ public sealed partial class UpdatesPage : Page
             }
         }
 
-        await RunUpdateAsync(result.Package!);
+        await RunUpdateAsync(result.Package!, result.Manifest?.Version);
     }
 
     /// <summary>One-click flow: download (with a real progress bar) -> verify -> install.
     /// Verification is automatic; a declined elevation prompt keeps the package staged
     /// for a retry.</summary>
-    private async Task RunUpdateAsync(UpdatePackage package)
+    private async Task RunUpdateAsync(UpdatePackage package, string? version)
     {
         CheckButton.IsEnabled = false;
         InstallButton.IsEnabled = false;
@@ -101,7 +146,7 @@ public sealed partial class UpdatesPage : Page
                 StatusText.Text = $"Downloading update... {p:P0}";
             });
             StatusText.Text = "Downloading update...";
-            _stagedPackagePath = await _service.DownloadAndVerifyAsync(package, download);
+            _stagedPackagePath = await _service.DownloadAndVerifyAsync(package, download, targetVersion: version);
 
             Progress.IsIndeterminate = true;
             StatusText.Text = "Verified. Installing...";
@@ -111,6 +156,7 @@ public sealed partial class UpdatesPage : Page
         {
             StatusText.Text = ex.Message;
             InstallButton.Visibility = Visibility.Visible; // allow a retry
+            DismissButton.Visibility = Visibility.Visible; // or give up on it
         }
         catch (Exception ex) { StatusText.Text = $"Update failed: {ex.Message}"; }
         finally

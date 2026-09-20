@@ -16,6 +16,8 @@
               Visibility="Collapsed" Background="#286E58" Foreground="White" Padding="18,10"/>
       <Button x:Name="RollbackButton" Content="Rollback to Previous Version" Click="Rollback_Click"
               Visibility="Collapsed" Padding="18,10"/>
+      <Button x:Name="DismissButton" Content="Dismiss" Click="Dismiss_Click"
+              Visibility="Collapsed" Padding="18,10"/>
     </StackPanel>
 
     <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Visibility="Collapsed"/>

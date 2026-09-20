@@ -69,7 +69,7 @@ public sealed class UpdateService
     /// <paramref name="progress"/>, then verifies it by SHA-256 (and MSIX publisher)
     /// before staging it. Verification is automatic - a failed hash/publisher check
     /// deletes the download and throws.</summary>
-    public async Task<string> DownloadAndVerifyAsync(UpdatePackage package, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+    public async Task<string> DownloadAndVerifyAsync(UpdatePackage package, IProgress<double>? progress = null, CancellationToken cancellationToken = default, string? targetVersion = null)
     {
         if (!IsValidPackage(package)) throw new InvalidOperationException("No signed update package is available for this device.");
         var isMsix = package.PackageUrl.EndsWith(".msix", StringComparison.OrdinalIgnoreCase);
@@ -104,7 +104,8 @@ public sealed class UpdateService
             await _stateStore.MarkAsync(
                 "staged", path, null, cancellationToken,
                 expectedSha256: package.Sha256,
-                expectedPublisher: package.Publisher);
+                expectedPublisher: package.Publisher,
+                targetVersion: targetVersion);
             await RecordUpdateActivityAsync(
                 "Update Staged",
                 $"A verified update package was staged and is ready to install: {Path.GetFileName(path)}.");

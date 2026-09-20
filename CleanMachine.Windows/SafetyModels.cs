@@ -24,4 +24,5 @@ public sealed record UpdateState(
     string? RollbackPath,
     DateTimeOffset UpdatedAt,
     string? ExpectedSha256 = null,
-    string? ExpectedPublisher = null);
+    string? ExpectedPublisher = null,
+    string? TargetVersion = null);

@@ -209,7 +209,7 @@ public sealed partial class OverviewPage : Page
                 UpdateStatusText.Text = $"Downloading update... {p:P0}";
             });
             UpdateStatusText.Text = "Downloading update...";
-            var path = await _updateService.DownloadAndVerifyAsync(package, download);
+            var path = await _updateService.DownloadAndVerifyAsync(package, download, targetVersion: manifest?.Version);
 
             UpdateProgress.IsIndeterminate = true;
             UpdateStatusText.Text = "Verified. Installing...";

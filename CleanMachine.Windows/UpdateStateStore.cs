@@ -32,7 +32,8 @@ public sealed class UpdateStateStore
         string? rollbackPath = null,
         CancellationToken token = default,
         string? expectedSha256 = null,
-        string? expectedPublisher = null)
+        string? expectedPublisher = null,
+        string? targetVersion = null)
     {
         // The read must be inside the same critical section as the write. Otherwise
         // two transitions can both read the same old state and the later write can
@@ -47,7 +48,27 @@ public sealed class UpdateStateStore
                 rollbackPath,
                 DateTimeOffset.UtcNow,
                 expectedSha256 ?? current?.ExpectedSha256,
-                expectedPublisher ?? current?.ExpectedPublisher), token);
+                expectedPublisher ?? current?.ExpectedPublisher,
+                targetVersion ?? current?.TargetVersion), token);
+        }
+        finally { SaveGate.Release(); }
+    }
+
+    /// <summary>Removes any pending-update state and deletes the staged package
+    /// file, so an update that was installed outside the app (or was interrupted
+    /// and later superseded) stops being offered. Best-effort per file.</summary>
+    public async Task DismissAsync(string? packagePath, CancellationToken token = default)
+    {
+        await SaveGate.WaitAsync(token);
+        try
+        {
+            if (File.Exists(PathName)) File.Delete(PathName);
+            if (!string.IsNullOrWhiteSpace(packagePath))
+            {
+                try { if (File.Exists(packagePath)) File.Delete(packagePath); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
         }
         finally { SaveGate.Release(); }
     }
