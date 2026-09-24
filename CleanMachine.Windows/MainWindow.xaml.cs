@@ -45,6 +45,9 @@ public sealed partial class MainWindow : Window
     private IntPtr[]? _cleaningFrames;
     private int _cleaningStep;
     private bool _cleaningActive;
+    // Settings toggle for the spinner; when off the tray icon stays static
+    // (BusyTip tooltip still flags the run).
+    private bool _trayCleaningAnimation = true;
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
@@ -276,6 +279,7 @@ public sealed partial class MainWindow : Window
         _startMinimizedToTray = settings.StartMinimizedToTray || App.LaunchedAtLogon;
         _closeToTray = settings.CloseToTray;
         _alwaysShowTray = settings.AlwaysShowTray;
+        _trayCleaningAnimation = settings.TrayCleaningAnimation;
         // Surface the tray icon for the whole session when "always show" is on -
         // before any start-minimized hide below, so the window is never
         // unreachable without one.
@@ -411,6 +415,33 @@ public sealed partial class MainWindow : Window
         _alwaysShowTray = alwaysShowTray;
         if (alwaysShowTray) ShowTrayIcon();
         else if (!_inTray) HideTrayIcon();
+    }
+
+    /// <summary>Toggles the tray cleaning spinner without touching the tooltip:
+    /// the "cleaning..." tip stays, so a static icon still flags the run. Turning
+    /// it off mid-animation stops the timer and restores the plain app icon;
+    /// turning it on mid-animation starts the frames from the beginning.</summary>
+    public void ApplyTrayCleaningAnimation(bool trayCleaningAnimation)
+    {
+        _trayCleaningAnimation = trayCleaningAnimation;
+        if (!_cleaningActive) return;
+        if (trayCleaningAnimation)
+        {
+            _cleaningStep = 0;
+            if (_cleaningTimer is null)
+            {
+                _cleaningTimer = DispatcherQueue.CreateTimer();
+                _cleaningTimer.Interval = TimeSpan.FromMilliseconds(120);
+                _cleaningTimer.Tick += (_, _) => ShowCleaningFrame();
+            }
+            _cleaningTimer.Start();
+            ShowCleaningFrame();
+        }
+        else
+        {
+            _cleaningTimer?.Stop();
+            _trayIcon?.SetIcon(_appIcon);
+        }
     }
 
     private void ApplyTaskbarStyle(bool showInTaskbar)
@@ -591,6 +622,12 @@ public sealed partial class MainWindow : Window
         _cleaningActive = active;
         if (active)
         {
+            if (!_trayCleaningAnimation)
+            {
+                // Animation disabled: static icon, busy tooltip only.
+                _trayIcon?.SetTip(BusyTip);
+                return;
+            }
             _cleaningStep = 0;
             if (_cleaningTimer is null)
             {

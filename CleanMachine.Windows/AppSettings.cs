@@ -65,6 +65,10 @@ public sealed class AppSettings
     public bool CloseToTray { get; set; }
     // Minimize button sends to tray (keeps taskbar button).
     public bool MinimizeToTray { get; set; } = true;
+    // While anything is cleaning, the tray icon spins (an amber comet arc) and
+    // its tooltip reads "cleaning...". Off leaves the icon static; the tooltip
+    // still flags the run so the tray stays an honest indicator.
+    public bool TrayCleaningAnimation { get; set; } = true;
     // Application Cleanup page: when true, detected apps with nothing to clean
     // are shown in the list (greyed out) instead of being hidden.
     public bool ShowCleanApps { get; set; }

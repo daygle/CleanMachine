@@ -1138,6 +1138,9 @@ public sealed class ManifestAndSafetyTests
         Assert.True(settings.MinimizeToTray);
         Assert.True(settings.ShowInTaskbar);
         Assert.True(settings.AlwaysShowTray);
+        // The tray spinner is on by default; turning it off still leaves the
+        // busy tooltip as an indicator that a clean is running.
+        Assert.True(settings.TrayCleaningAnimation);
     }
 
     [Fact]
@@ -1149,7 +1152,8 @@ public sealed class ManifestAndSafetyTests
             CloseToTray = true,
             MinimizeToTray = false,
             ShowInTaskbar = false,
-            AlwaysShowTray = false
+            AlwaysShowTray = false,
+            TrayCleaningAnimation = false
         };
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
         var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
@@ -1160,6 +1164,7 @@ public sealed class ManifestAndSafetyTests
         Assert.False(clone.MinimizeToTray);
         Assert.False(clone.ShowInTaskbar);
         Assert.False(clone.AlwaysShowTray);
+        Assert.False(clone.TrayCleaningAnimation);
     }
 
     [Fact]
