@@ -1,5 +1,12 @@
 name: Windows CI
 
+# CI only verifies that the app compiles and the test suite passes on every
+# push/PR. Distributable artifacts (.msix packages and the setup .exe) are
+# built exclusively by the release workflow (release-windows.yml), which runs
+# on v*.*.* tags (and manual workflow_dispatch) - see RELEASE.md. A plain
+# `dotnet build` here produces no package: the packaging targets only run with
+# GenerateAppxPackageOnBuild, which is deliberately not set in CI.
+
 on:
   push:
     branches: ["main"]
@@ -38,54 +45,3 @@ jobs:
       - name: Run tests (x64)
         shell: pwsh
         run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore
-
-      - name: Publish MSIX package (x64)
-        shell: pwsh
-        run: |
-          # Plain `dotnet publish` builds the app but never produces an .msix; the
-          # packaging targets only run with GenerateAppxPackageOnBuild (as the
-          # release workflow does via dotnet msbuild -t:Publish).
-          dotnet msbuild $env:PROJECT -t:Publish `
-            -p:Configuration=Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 `
-            -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxBundle=Never `
-            -p:AppxPackageSigningEnabled=false -p:GenerateAppxPackageOnBuild=true
-          # Package lands in CleanMachine.Windows/bin/AppPackages/<name>_Test/
-
-      - name: Upload MSIX package artifact
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v7
-        with:
-          name: CleanMachine-x64-msix
-          path: CleanMachine.Windows/bin/AppPackages/**/*.msix
-          if-no-files-found: error
-
-      - name: Build Inno Setup installer (x64)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $iss = 'CleanMachine.Windows\installer\cleanmachine.iss'
-          if (-not (Test-Path $iss)) {
-            Write-Host "Inno Setup script not found at '$iss'; skipping installer build."
-            exit 0
-          }
-          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
-          if (-not $iscc) {
-            foreach ($p in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
-              if ($p -and (Test-Path $p)) { $iscc = $p; break }
-            }
-          }
-          if (-not $iscc) { throw 'Inno Setup 6 (ISCC.exe) was not found on this runner.' }
-          Write-Host "Compiling installer with $iscc"
-          & $iscc $iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
-          $setup = Get-ChildItem 'CleanMachine.Windows/bin/installer/CleanMachine-Setup-*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -eq $setup) { throw 'Installer exe was not produced by ISCC.' }
-          Write-Host "Installer created: $($setup.FullName) ($([math]::Round($setup.Length/1MB,1)) MB)"
-
-      - name: Upload installer artifact
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v7
-        with:
-          name: CleanMachine-x64-setup
-          path: CleanMachine.Windows/bin/installer/*.exe
-          if-no-files-found: warn
