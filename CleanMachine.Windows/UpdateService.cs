@@ -390,8 +390,7 @@ public sealed class UpdateService
         if (!File.Exists(currentExecutable))
             throw new FileNotFoundException("Current application was not found.", currentExecutable);
         var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CleanMachine", "Updates", "rollback");
+            AppDataPaths.Root, "Updates", "rollback");
         Directory.CreateDirectory(directory);
         var copy = Path.Combine(directory, "CleanMachine.previous");
         File.Copy(currentExecutable, copy, true);
@@ -401,8 +400,7 @@ public sealed class UpdateService
     public static string? FindRollbackCopy()
     {
         var copy = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CleanMachine", "Updates", "rollback", "CleanMachine.previous");
+            AppDataPaths.Root, "Updates", "rollback", "CleanMachine.previous");
         return File.Exists(copy) ? copy : null;
     }
 

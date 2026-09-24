@@ -200,8 +200,7 @@ public sealed class AppSettings
     }
 
     private static string FilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "CleanMachine", "settings.json");
+        AppDataPaths.Root, "settings.json");
 
     public static async Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
     {

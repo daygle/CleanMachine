@@ -82,6 +82,7 @@ Filename: "{app}\{#MyAppExeName}"; Flags: nowait runasoriginaluser; Check: Relau
 [Code]
 const
   AppExeName = 'CleanMachine.exe';
+  AppShortcutName = 'CleanMachine.lnk';
   AppMutexName = 'Local\CleanMachine.SingleInstance';
 
 // True when the app requested an automatic relaunch after a silent self-update.
@@ -144,6 +145,7 @@ function InitializeUninstall(): Boolean;
 var
   ResultCode: Integer;
   RemoveData: Boolean;
+  DesktopShortcut: String;
 begin
   Result := True; // never block the uninstall; just close the app first
   // Unconditional: older versions do not create the single-instance mutex, so a
@@ -163,6 +165,25 @@ begin
   Exec(ExpandConstant('{sys}\reg.exe'),
     'delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v CleanMachine /f',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Sweep a stale desktop shortcut the app itself created. Older versions
+  // auto-created CleanMachine.lnk on every launch (before commit 44fbfd6 the
+  // app did this for installer builds too), independently of the desktopicon
+  // task. Inno only removes shortcuts it recorded in the uninstall log, so
+  // when that task was unchecked it had no record of the file and it survived
+  // uninstall. {autodesktop} equals the uninstalling user's desktop for the
+  // default per-user install (an elevated all-users uninstall would target
+  // the elevating user's desktop instead - same best-effort trade-off as the
+  // reg.exe delete above). A missing file is a no-op, so this is safe to run
+  // unconditionally, including when the icon was made by [Icons] and would
+  // have been removed anyway.
+  DesktopShortcut := ExpandConstant('{autodesktop}\') + AppShortcutName;
+  if FileExists(DesktopShortcut) then
+  begin
+    if DeleteFile(DesktopShortcut) then
+      Log('Removed the stale desktop shortcut ' + AppShortcutName)
+    else
+      Log('Could not delete the stale desktop shortcut ' + AppShortcutName);
+  end;
   // Sweep update leftovers the app itself dropped next to its executable
   // (.restore/.failed rollback staging copies, the elevation write probe).
   // They are not in the uninstall log, so without this they would keep the

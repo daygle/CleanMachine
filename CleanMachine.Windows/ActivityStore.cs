@@ -9,7 +9,7 @@ public sealed record ActivityEntry(DateTimeOffset Time, string Title, string Det
 public sealed class ActivityStore
 {
     private const int MaxEntries = 100;
-    private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "activity.json");
+    private static string FilePath => Path.Combine(AppDataPaths.Root, "activity.json");
 
     // AddAsync is a read-modify-write and can be called concurrently (background
     // agent, scheduled runs, quick cleans); serialize it so entries are not lost.

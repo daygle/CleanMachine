@@ -28,8 +28,7 @@ public sealed class BrowserCleanupService
     private static readonly SemaphoreSlim StateGate = new(1, 1);
     private readonly CleanupService _cleanup = new();
     private readonly string _statePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "CleanMachine", "browser-cleanup-state.json");
+        AppDataPaths.Root, "browser-cleanup-state.json");
 
     public Task<IReadOnlyList<BrowserCleanupTarget>> ScanAsync(
         IEnumerable<string> browsers,

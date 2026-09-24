@@ -5,7 +5,7 @@ namespace CleanMachine.Windows;
 public sealed class UpdateStateStore
 {
     private static readonly SemaphoreSlim SaveGate = new(1, 1);
-    private static string PathName => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Updates", "state.json");
+    private static string PathName => Path.Combine(AppDataPaths.Root, "Updates", "state.json");
 
     public async Task<UpdateState?> LoadAsync(CancellationToken token = default)
     {

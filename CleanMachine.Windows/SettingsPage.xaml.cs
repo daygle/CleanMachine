@@ -16,6 +16,9 @@ public sealed partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent();
+        // The in-app uninstall flow exists only for MSIX: the .exe flavor's
+        // uninstaller already closes the app, cleans up, and asks about data.
+        if (UpdateService.IsInstalledAsMsix) UninstallSection.Visibility = Visibility.Visible;
         Loaded += async (_, _) => await LoadAsync();
     }
 
@@ -114,5 +117,58 @@ public sealed partial class SettingsPage : Page
 
         await PersistAsync();
         StatusText.Text = "Defaults restored.";
+    }
+
+    /// <summary>MSIX uninstall flow: confirm, ask about the data folder (keeping
+    /// it is the default, matching the .exe installer), let
+    /// <see cref="MsixUninstallService"/> clean everything outside the package
+    /// and start the deferred package removal, then exit so the helper can run.</summary>
+    private async void Uninstall_Click(object sender, RoutedEventArgs e)
+    {
+        var confirm = new ContentDialog
+        {
+            Title = "Uninstall CleanMachine?",
+            Content = "The app will close and the package will be removed for this user.",
+            PrimaryButtonText = "Uninstall",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+
+        var data = new ContentDialog
+        {
+            Title = "Also delete your CleanMachine data?",
+            Content = "Settings, cleanup statistics, activity history, and registry backup files. " +
+                      "Keep them and a future reinstall picks up where you left off.",
+            PrimaryButtonText = "Delete data",
+            SecondaryButtonText = "Keep data",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Secondary,
+            XamlRoot = XamlRoot
+        };
+        var dataChoice = await data.ShowAsync();
+        if (dataChoice == ContentDialogResult.None) return; // Cancel aborts the uninstall
+        var removeData = dataChoice == ContentDialogResult.Primary;
+
+        UninstallButton.IsEnabled = false;
+        var started = await Task.Run(() => MsixUninstallService.Start(removeData));
+        if (!started)
+        {
+            UninstallButton.IsEnabled = true;
+            var failed = new ContentDialog
+            {
+                Title = "Could not start the removal",
+                Content = "Nothing was changed. Uninstall through Windows Settings > Apps instead.",
+                CloseButtonText = "OK",
+                XamlRoot = XamlRoot
+            };
+            await failed.ShowAsync();
+            return;
+        }
+
+        // The package removal runs in the deferred helper once this process exits.
+        if (App.MainWindow is MainWindow mainWindow) mainWindow.RequestExit();
+        else Application.Current.Exit();
     }
 }

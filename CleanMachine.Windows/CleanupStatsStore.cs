@@ -16,8 +16,7 @@ public sealed class CleanupStatsStore
     private const int RecentWindowDays = 30;
     private const int MaxRuns = 200;
     private static string FilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "CleanMachine", "stats.json");
+        AppDataPaths.Root, "stats.json");
 
     private static readonly CleanupStatsFile Empty = new(0, 0, DateTimeOffset.MinValue, []);
 

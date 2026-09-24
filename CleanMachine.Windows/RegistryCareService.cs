@@ -264,13 +264,13 @@ public sealed class RegistryCareService
     private static string ParentKeyPath(string path) => path[..path.LastIndexOf('\\')];
     private static string LeafKeyName(string path) => path[(path.LastIndexOf('\\') + 1)..];
 
-    /// <summary>The directory registry backups are written to. Under the packaged
-    /// (MSIX) build, GetFolderPath resolves to the package's virtualized
-    /// LocalCache location, so every reader and writer must go through this
-    /// property instead of guessing at %LOCALAPPDATA%.</summary>
+    /// <summary>The directory registry backups are written to. Every reader and
+    /// writer must go through this property instead of guessing at %LOCALAPPDATA%:
+    /// the root comes from <see cref="AppDataPaths"/>, which migrates MSIX installs
+    /// out of the package's virtualized LocalCache so an uninstall can honor the
+    /// keep/delete choice.</summary>
     public static string BackupsDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "CleanMachine", "Backups");
+        AppDataPaths.Root, "Backups");
 
     /// <summary>How many .reg backup files exist in the backups directory
     /// (0 when it does not exist or cannot be read).</summary>

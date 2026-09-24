@@ -189,9 +189,21 @@ immediate reputation. To install an unsigned or unreputable build anyway, click
 CleanMachine keeps its per-user data in `%LOCALAPPDATA%\CleanMachine` (settings, cleanup
 statistics, activity history, update state, and Registry Care `.reg` backups) so a
 reinstall picks up where you left off. The uninstaller closes the app, removes the
-startup entry and scheduled cleanup tasks, and then asks whether to also delete that
-data folder; the default answer is **No** so an accidental uninstall never destroys
-your history, and silent uninstalls always keep it. Choose **Yes** for a clean slate.
+startup entry and scheduled cleanup tasks, sweeps away a desktop shortcut the app may
+have created itself (older versions auto-created one even when the installer's
+desktop-icon option was unchecked, and Inno only removes shortcuts it recorded), and
+then asks whether to also delete that data folder; the default answer is **No** so an
+accidental uninstall never destroys your history, and silent uninstalls always keep it.
+Choose **Yes** for a clean slate.
+
+The **MSIX** build gets the same treatment from **Settings > Uninstall CleanMachine...**
+inside the app: Windows' own MSIX uninstall cannot ask first and used to leave the desktop
+shortcut behind (a package has no uninstall hook), so the in-app flow confirms, offers the
+same keep/delete choice for the data (keeping is the default), removes the desktop
+shortcut, scheduled cleanup tasks, and startup entry, and then removes the package.
+App data lives in the same `%LOCALAPPDATA%\CleanMachine` folder for both install flavors
+(MSIX installs are migrated there automatically on first run), so keeping the data means a
+reinstall picks up where you left off - and uninstalling from Windows Settings keeps it too.
 
 The release workflow always produces a **signed** MSIX. A commercial certificate is not required:
 configure a stable self-signed code-signing certificate in the repository secrets below. The same
