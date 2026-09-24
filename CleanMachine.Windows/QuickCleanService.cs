@@ -11,9 +11,16 @@ public sealed record QuickCleanResult(int Items, long Bytes, IReadOnlyList<strin
 /// item selection (<see cref="AppSettings.QuickCleanWindowsCategories"/> and friends).
 /// Only safe, non-destructive items are ever cleaned: browser caches, Safe-risk
 /// Windows categories, application temp files, and registry findings that pass the
-/// safety gate (backed up first). Each run records one stats + activity entry.</summary>
+/// safety gate (backed up first). The one exception is the Windows Recycle Bin,
+/// offered as an explicit opt-in in the Quick Clean picker; ticking it there is
+/// the confirmation required for its Review risk. Each run records one stats +
+/// activity entry.</summary>
 public static class QuickCleanService
 {
+    /// <summary>The Windows Cleanup catalog id for the Recycle Bin, offered in the
+    /// Quick Clean picker as an explicit opt-in despite its Review risk.</summary>
+    internal const string RecycleBinCategoryId = "system-recycle-bin";
+
     /// <summary>Registry Care categories eligible for Quick Clean (see RegistryFinding.Category).</summary>
     public static readonly IReadOnlyList<string> RegistryCategories =
         ["Installer/Uninstaller", "File Extensions", "MUI Cache", "Windows Startup", "Sound AppEvents", "Shell Cache", "App Paths", "Open With", "Compatibility Assistant"];
@@ -66,13 +73,23 @@ public static class QuickCleanService
 
     private static async Task<QuickCleanResult> RunWindowsAsync(AppSettings settings, CancellationToken token)
     {
+        // Safe categories per the user's selection (or the Windows Cleanup page's
+        // enabled set when unconfigured), plus the Recycle Bin as an explicit opt-in:
+        // IsWindowsSelected only ever selects the bin when the user ticked it in the
+        // Quick Clean picker, and ticking it there is the confirmation its Review risk
+        // requires (the same way the schedule editor opts into Review categories).
         var categories = WindowsCleanupService.Catalog
-            .Where(c => c.Risk == CleanupRisk.Safe && IsWindowsSelected(c, settings))
+            .Where(c => (c.Risk == CleanupRisk.Safe || c.Id == RecycleBinCategoryId)
+                        && IsWindowsSelected(c, settings))
             .ToList();
         if (categories.Count == 0) return new QuickCleanResult(0, 0, [], "No categories selected.");
         var report = await new WindowsCleanupService().CleanSelectedAsync(
             categories,
-            new WindowsCleanupOptions(ConfirmReviewCategories: false, ExcludedPaths: settings.ExcludedPaths),
+            new WindowsCleanupOptions(
+                // Ticking the Recycle Bin in the picker is the explicit confirmation;
+                // without this flag the service refuses every Review-risk category.
+                ConfirmReviewCategories: categories.Any(c => c.Risk != CleanupRisk.Safe),
+                ExcludedPaths: settings.ExcludedPaths),
             cancellationToken: token);
         return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped),
             Details: ActivityStore.BreakdownLines(report.Breakdown));
@@ -111,13 +128,15 @@ public static class QuickCleanService
         return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped));
     }
 
-    /// <summary>Whether a Safe Windows category is included in Quick Clean: the user's
-    /// explicit selection when configured, otherwise the categories enabled on the
-    /// Windows Cleanup page.</summary>
+    /// <summary>Whether a Windows category is included in Quick Clean: the user's
+    /// explicit selection when configured (this is also how the Review-risk Recycle
+    /// Bin is opted in - only a tick in the Quick Clean picker selects it), otherwise
+    /// the Safe categories enabled on the Windows Cleanup page (Review categories,
+    /// including the Recycle Bin, stay out of the unconfigured fallback).</summary>
     internal static bool IsWindowsSelected(CleanupCategory category, AppSettings settings)
         => settings.QuickCleanWindowsCategories is { } set
             ? set.Contains(category.Id)
-            : WindowsCleanupService.IsEnabled(category, settings);
+            : category.Risk == CleanupRisk.Safe && WindowsCleanupService.IsEnabled(category, settings);
 
     private static IReadOnlyList<string> Summarize(IReadOnlyList<CleanupIssue> skipped)
         => skipped.Take(20).Select(i => $"{i.Path}: {i.Reason}").ToList();

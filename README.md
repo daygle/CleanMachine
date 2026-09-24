@@ -23,6 +23,7 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 - Live availability cards per area (Browser Cleaner, Windows Cleanup, Registry Care, Application Cleanup) showing what could be cleaned right now; results are cached for a few minutes so revisiting is instant, and any cleanup invalidates the cache
 - Update status card: installed version, automatic check (debounced), manual check, and update details when a new version exists; with the idle auto-install setting on, a background check's update is downloaded, verified, and installed silently once the PC has been idle 30 minutes (never for installs that would pop an administrator prompt, and never while Secure Delete or a drive wipe is running)
 - "Clean All Safe Items" runs every area's safe cleanables in sequence behind one confirmation, with per-area figures, progress, and cancellation
+- Each area's Quick Clean has a gear picker choosing exactly what it includes; the Windows picker also offers the Recycle Bin as an explicit opt-in (off by default, since it permanently removes deleted items)
 
 ### Browser Cleaner
 - Scans Chrome, Edge, and Firefox profiles including standard, custom, and portable installations
@@ -143,7 +144,7 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 
 All destructive workflows are review-first. Browser cleaning requires supported browsers to be closed; safe items (caches, sessions, crash reports) are selected by default, while destructive items (cookies, history, saved passwords) are opt-in behind a confirmation. Registry Care deletes only after a verified `.reg` backup and only from an allow-listed set of per-user paths. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. CleanMachine does not modify the protected Windows component store.
 
-"Clean All Safe Items" is bounded the same way: only non-destructive browser cache items, enabled Safe-risk Windows categories, application temp files, and registry findings passing the safety gate (with a mandatory backup) are included. Downloads, documents, Review/Advanced categories, and destructive browser items are never touched by it.
+"Clean All Safe Items" is bounded the same way: only non-destructive browser cache items, enabled Safe-risk Windows categories, application temp files, and registry findings passing the safety gate (with a mandatory backup) are included. Downloads, documents, Review/Advanced categories, and destructive browser items are never touched by it. Quick Clean is bounded the same way, with one deliberate exception: the Recycle Bin can be opted into per user choice in its picker, and ticking it there is the confirmation its Review risk requires.
 
 Startup Apps changes affect only auto-start entries, never the programs themselves. Installed Apps uninstalls run the vendor's own uninstaller; CleanMachine does not delete other programs' files. The Drive Wiper overwrites only free space and never touches existing files.
 

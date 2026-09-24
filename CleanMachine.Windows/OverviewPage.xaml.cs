@@ -309,7 +309,7 @@ public sealed partial class OverviewPage : Page
             .Where(b => b.Family != BrowserFamily.InternetExplorer)
             .Select(b => (b.Id, b.Name, settings.QuickCleanBrowsers.Contains(b.Id)))
             .ToList();
-        await ShowPickerAsync("Browser Quick Clean - caches to clear", items,
+        await ShowPickerAsync("Browser Quick Clean", items,
             (s, selected) => s.QuickCleanBrowsers = selected);
     }
 
@@ -317,10 +317,10 @@ public sealed partial class OverviewPage : Page
     {
         var settings = await AppSettings.LoadAsync();
         var items = WindowsCleanupService.Catalog
-            .Where(c => c.Risk == CleanupRisk.Safe)
+            .Where(c => c.Risk == CleanupRisk.Safe || c.Id == QuickCleanService.RecycleBinCategoryId)
             .Select(c => (c.Id, c.Name, QuickCleanService.IsWindowsSelected(c, settings)))
             .ToList();
-        await ShowPickerAsync("Windows Quick Clean - categories", items,
+        await ShowPickerAsync("Windows Quick Clean", items,
             (s, selected) => s.QuickCleanWindowsCategories = selected);
     }
 
@@ -331,7 +331,7 @@ public sealed partial class OverviewPage : Page
         var items = QuickCleanService.RegistryCategories
             .Select(cat => (cat, cat, current is null || current.Contains(cat)))
             .ToList();
-        await ShowPickerAsync("Registry Quick Clean - categories", items,
+        await ShowPickerAsync("Registry Quick Clean", items,
             (s, selected) => s.QuickCleanRegistryCategories = selected);
     }
 
@@ -342,7 +342,7 @@ public sealed partial class OverviewPage : Page
         var items = AppCatalog.Definitions
             .Select(d => (d.Id, d.Name, current is null || current.Contains(d.Id)))
             .ToList();
-        await ShowPickerAsync("Application Quick Clean - apps", items,
+        await ShowPickerAsync("Application Quick Clean", items,
             (s, selected) => s.QuickCleanApps = selected);
     }
 
