@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10" IgnorableNamespaces="uap desktop rescap com">
-  <Identity Name="CleanMachine" Publisher="CN=CleanMachine Publisher" Version="1.0.39.0" />
+  <Identity Name="CleanMachine" Publisher="CN=CleanMachine Publisher" Version="1.0.40.0" />
   <Properties>
     <DisplayName>CleanMachine</DisplayName>
     <PublisherDisplayName>CleanMachine contributors</PublisherDisplayName>
