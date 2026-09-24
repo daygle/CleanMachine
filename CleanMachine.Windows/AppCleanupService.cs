@@ -248,10 +248,14 @@ public sealed class AppCleanupService
                 foreach (var entry in entries)
                 {
                     var fullPath = Path.Combine(rootPath, entry.RelativePath);
-                    // Check the package root (first path segment).
-                    var packageRoot = fullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    // Check the package root (segments before AC/TempState). Guard the
+                    // empty case: a path whose very first segment matched TakeWhile's
+                    // stop condition would make Aggregate throw on no elements.
+                    var segments = fullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                         .TakeWhile(s => !s.Contains("AC") && !s.Contains("TempState"))
-                        .Aggregate((a, b) => Path.Combine(a, b));
+                        .ToArray();
+                    if (segments.Length == 0) continue;
+                    var packageRoot = Path.Combine(segments);
                     if (Directory.Exists(packageRoot)) return true;
                 }
             }

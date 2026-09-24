@@ -40,7 +40,9 @@ public sealed partial class OverviewPage : Page
         try
         {
             var stats = await new CleanupStatsStore().LoadAsync();
-            var (recentItems, recentBytes) = await CleanupStatsStore.RecentTotalsAsync();
+            // Derive the recent window from the stats just loaded instead of reading
+            // stats.json a second time.
+            var (recentItems, recentBytes) = CleanupStatsStore.RecentTotals(stats);
 
             StatsItems.Value = stats.ItemsRemoved.ToString("N0");
             StatsItems.Detail = recentItems > 0

@@ -48,30 +48,30 @@ public sealed class BrowserCleanupService
         try
         {
             options ??= new BrowserCleanupOptions();
-        if (options.RequireBrowsersClosed)
-        {
-            var running = GetRunningBrowsers();
-            if (running.Count > 0)
-                throw new InvalidOperationException(
-                    $"Close these browsers before cleaning: {string.Join(", ", running)}.");
-        }
+            if (options.RequireBrowsersClosed)
+            {
+                var running = GetRunningBrowsers();
+                if (running.Count > 0)
+                    throw new InvalidOperationException(
+                        $"Close these browsers before cleaning: {string.Join(", ", running)}.");
+            }
 
-        var allowed = targets
-            .Where(t => t.Selected && !IsExcluded(t.Path, options.ExcludedPaths))
-            .ToArray();
+            var allowed = targets
+                .Where(t => t.Selected && !IsExcluded(t.Path, options.ExcludedPaths))
+                .ToArray();
 
-        var operationId = Guid.NewGuid().ToString("N");
-        var files = allowed
-            .SelectMany(t => FileEnumeration.Files(t.Path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+            var operationId = Guid.NewGuid().ToString("N");
+            var files = allowed
+                .SelectMany(t => FileEnumeration.Files(t.Path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
-        await SaveInterruptedStateAsync(
-            new BrowserCleanupState(operationId, files, 0, 0, DateTimeOffset.UtcNow), token);
+            await SaveInterruptedStateAsync(
+                new BrowserCleanupState(operationId, files, 0, 0, DateTimeOffset.UtcNow), token);
 
-        var report = await _cleanup.CleanBrowserTargetsAsync(allowed, progress, options.SecureDelete, token);
-        await ClearStateAsync(token);
-        return report;
+            var report = await _cleanup.CleanBrowserTargetsAsync(allowed, progress, options.SecureDelete, token);
+            await ClearStateAsync(token);
+            return report;
         }
         finally
         {
@@ -94,6 +94,7 @@ public sealed class BrowserCleanupService
             return await JsonSerializer.DeserializeAsync<BrowserCleanupState>(stream, cancellationToken: token);
         }
         catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
         catch (JsonException) { return null; }
     }
 
@@ -122,6 +123,10 @@ public sealed class BrowserCleanupService
         await StateGate.WaitAsync(token);
         try { if (File.Exists(_statePath)) File.Delete(_statePath); }
         catch (IOException) { }
+        // Access-denied must be swallowed too: this runs right after a successful
+        // clean, and letting it escape would discard the report the caller is about
+        // to return (the same handling SaveInterruptedStateAsync already applies).
+        catch (UnauthorizedAccessException) { }
         finally { StateGate.Release(); }
     }
 
@@ -257,51 +262,51 @@ public sealed class BrowserCleanupService
         await CleanupCoordinator.Gate.WaitAsync(token);
         try
         {
-        var running = GetRunningBrowsers();
-        if (requireBrowsersClosed && running.Count > 0)
-            throw new InvalidOperationException(
-                $"Close these browsers before cleaning: {string.Join(", ", running)}.");
+            var running = GetRunningBrowsers();
+            if (requireBrowsersClosed && running.Count > 0)
+                throw new InvalidOperationException(
+                    $"Close these browsers before cleaning: {string.Join(", ", running)}.");
 
-        // Deleting (and optionally multi-pass overwriting) the selected items is
-        // long-running disk work; keep it off the caller's (UI) thread.
-        return await Task.Run(async () =>
-        {
-            var removed = 0;
-            long bytes = 0;
-            var skipped = new List<CleanupIssue>();
-            var cleanedItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var (browserId, itemId) in selection.Distinct())
+            // Deleting (and optionally multi-pass overwriting) the selected items is
+            // long-running disk work; keep it off the caller's (UI) thread.
+            return await Task.Run(async () =>
             {
-                token.ThrowIfCancellationRequested();
-                var browser = BrowserCatalog.Find(browserId);
-                if (browser is null || !BrowserCatalog.IsInstalled(browser)) continue;
+                var removed = 0;
+                long bytes = 0;
+                var skipped = new List<CleanupIssue>();
+                var cleanedItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                var profiles = BrowserCatalog.Profiles(browser);
-                var userData = browser.UserDataRoots.Where(Directory.Exists).ToArray();
-
-                if (BrowserCatalog.IsPreferenceEdit(itemId))
+                foreach (var (browserId, itemId) in selection.Distinct())
                 {
-                    if (ApplyPreferenceEdit(browser, profiles, skipped))
+                    token.ThrowIfCancellationRequested();
+                    var browser = BrowserCatalog.Find(browserId);
+                    if (browser is null || !BrowserCatalog.IsInstalled(browser)) continue;
+
+                    var profiles = BrowserCatalog.Profiles(browser);
+                    var userData = browser.UserDataRoots.Where(Directory.Exists).ToArray();
+
+                    if (BrowserCatalog.IsPreferenceEdit(itemId))
                     {
-                        removed++;
-                        cleanedItems.Add($"{browserId}:{itemId}");
+                        if (ApplyPreferenceEdit(browser, profiles, skipped))
+                        {
+                            removed++;
+                            cleanedItems.Add($"{browserId}:{itemId}");
+                        }
+                        continue;
                     }
-                    continue;
-                }
 
-                foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
-                {
-                    var result = await DeletePathAsync(path, secureDelete, token);
-                    removed += result.Removed;
-                    bytes += result.Bytes;
-                    skipped.AddRange(result.Skipped);
-                    if (result.Removed > 0)
-                        cleanedItems.Add($"{browserId}:{itemId}");
+                    foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
+                    {
+                        var result = await DeletePathAsync(path, secureDelete, token);
+                        removed += result.Removed;
+                        bytes += result.Bytes;
+                        skipped.AddRange(result.Skipped);
+                        if (result.Removed > 0)
+                            cleanedItems.Add($"{browserId}:{itemId}");
+                    }
                 }
-            }
-            return new CleanupReport(new CleanupResult(removed, bytes), skipped, CleanedPaths: cleanedItems);
-        }, token);
+                return new CleanupReport(new CleanupResult(removed, bytes), skipped, CleanedPaths: cleanedItems);
+            }, token);
         }
         finally
         {

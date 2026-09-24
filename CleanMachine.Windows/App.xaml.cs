@@ -262,9 +262,6 @@ public partial class App : Application
         else Exit();
     }
 
-    /// <summary>Runs the configured after-exit action for one specific browser.
-    /// Only that browser's targets are cleaned, and only if monitoring for it
-    /// is enabled and an action is selected.</summary>
     internal static bool TryReserveAutomaticUpdateCheck()
     {
         lock (AutomaticUpdateLock)
@@ -297,6 +294,9 @@ public partial class App : Application
         }
     }
 
+    /// <summary>Runs the configured after-exit action for one specific browser.
+    /// Only that browser's targets are cleaned, and only if monitoring for it
+    /// is enabled and an action is selected.</summary>
     private static async Task OnBrowserExitAsync(string browser, CancellationToken token)
     {
         try
@@ -378,7 +378,7 @@ public partial class App : Application
     /// <summary>Cleans the given category selection and logs the result (with a
     /// per-category breakdown) when anything was removed. Shared by the startup and
     /// idle triggers; shows a toast only when the trigger's notify option is on
-    /// (off by default, so automatic runs stay quiet in the background).</summary>
+    /// (on by default, so every automatic run reports what it did).</summary>
     private static async Task RunSafeCleanAsync(AppSettings settings, string activityTitle, string reason, IReadOnlySet<string>? categoryIds, bool notify, CancellationToken token)
     {
         var selected = SelectedSafeCategories(settings, categoryIds);

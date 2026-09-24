@@ -126,6 +126,10 @@ public sealed partial class WindowsCleanupPage : Page
 
     private void SetEnabled(CleanupCategory category, bool enabled)
     {
+        // The cached preview was built from the enabled set at Analyze time; any
+        // selection change makes it stale, so drop it and let Clean rebuild it
+        // (off the UI thread) from the current selection.
+        _lastPreview = null;
         if (enabled)
         {
             _settings.EnabledCleanupCategories.Add(category.Id);

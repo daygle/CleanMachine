@@ -116,7 +116,13 @@ public sealed class StartupAppsService
         foreach (var folder in folders)
         {
             if (!Directory.Exists(folder)) continue;
-            foreach (var file in Directory.EnumerateFiles(folder))
+            // Materialise inside a guard: enumeration is lazy, so an I/O error surfacing
+            // mid-foreach would otherwise escape Scan and crash the page's async handler.
+            string[] files;
+            try { files = Directory.EnumerateFiles(folder).ToArray(); }
+            catch (IOException) { continue; }
+            catch (UnauthorizedAccessException) { continue; }
+            foreach (var file in files)
             {
                 var name = Path.GetFileNameWithoutExtension(file);
                 var ext = Path.GetExtension(file).ToLowerInvariant();
@@ -183,9 +189,9 @@ public sealed class StartupAppsService
         }
         catch
         {
-            // HKLM values may deny write access to the per-user approval key is
-            // not the issue - the approval key is always under HKCU, so failures
-            // here are unexpected; report failure so the UI can revert the toggle.
+            // The approval key always lives under HKCU (even for HKLM entries), so
+            // this toggle needs no elevation; failures here are unexpected - report
+            // them so the UI can revert the toggle.
             return false;
         }
     }

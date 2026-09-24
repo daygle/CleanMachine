@@ -28,6 +28,12 @@ public sealed partial class StartupAppsPage : Page
             _entries = await Task.Run(() => _service.Scan());
             RenderEntries();
         }
+        catch (Exception)
+        {
+            // async void handler: a scan failure must surface here, not crash the app.
+            ListLabel.Text = "SCAN FAILED";
+            EmptyState.Visibility = Visibility.Visible;
+        }
         finally
         {
             ScanButton.IsEnabled = true;
@@ -316,6 +322,12 @@ public sealed partial class StartupAppsPage : Page
         {
             _entries = await Task.Run(() => _service.Scan());
             RenderEntries();
+        }
+        catch (Exception)
+        {
+            // async void handler: a scan failure must surface here, not crash the app.
+            ListLabel.Text = "SCAN FAILED";
+            EmptyState.Visibility = Visibility.Visible;
         }
         finally
         {

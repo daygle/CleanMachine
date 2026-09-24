@@ -30,6 +30,14 @@ public sealed partial class InstalledAppsPage : Page
             _searchText = SearchBox.Text ?? "";
             RenderList();
         }
+        catch (Exception ex)
+        {
+            // This handler is async void: an uncaught scan failure would take the
+            // whole app down. Surface it instead.
+            ListLabel.Text = "SCAN FAILED";
+            EmptyState.Visibility = Visibility.Visible;
+            FooterText.Text = ex.Message;
+        }
         finally
         {
             ScanButton.IsEnabled = true;

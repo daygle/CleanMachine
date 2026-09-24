@@ -82,6 +82,15 @@ jobs:
           $manifest.Package.Identity.Version = $env:VERSION4
           $manifest.Save((Resolve-Path $manifestPath))
 
+          # app.manifest's Win32 assembly identity is never stamped elsewhere; keep it
+          # on the tag version too so every embedded version in the MSIX agrees.
+          $appManifestPath = "CleanMachine.Windows/app.manifest"
+          $stampedAppManifest = (Get-Content $appManifestPath -Raw) `
+            -replace 'assemblyIdentity version="\d+\.\d+\.\d+\.\d+"', "assemblyIdentity version=`"$env:VERSION4`""
+          if ($stampedAppManifest -notmatch [regex]::Escape("assemblyIdentity version=`"$env:VERSION4`"")) { throw "app.manifest assemblyIdentity version was not stamped." }
+          Set-Content -NoNewline -Path $appManifestPath -Value $stampedAppManifest
+          Write-Host "Stamped app.manifest with $env:VERSION4."
+
           New-Item -ItemType Directory -Force -Path signing | Out-Null
           $pfx = Join-Path $pwd "signing/CleanMachine.pfx"
 
@@ -219,6 +228,20 @@ jobs:
             Write-Host "Ref '$ref' is not a version tag; using placeholder version."
           }
           "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Stamp app.manifest version from tag
+        shell: pwsh
+        run: |
+          # The exe's assembly version comes from ApplicationDisplayVersion in the
+          # publish step below; the Win32 assembly identity in app.manifest must be
+          # stamped from the tag too, so the installer's embedded manifest agrees
+          # with every other version surface.
+          $path = "CleanMachine.Windows/app.manifest"
+          $version4 = $env:VERSION + ".0"
+          $stamped = (Get-Content $path -Raw) `
+            -replace 'assemblyIdentity version="\d+\.\d+\.\d+\.\d+"', "assemblyIdentity version=`"$version4`""
+          if ($stamped -notmatch [regex]::Escape("assemblyIdentity version=`"$version4`"")) { throw "app.manifest assemblyIdentity version was not stamped." }
+          Set-Content -NoNewline -Path $path -Value $stamped
+          Write-Host "Stamped app.manifest with $version4."
       - name: Restore
         shell: pwsh
         run: dotnet restore $env:PROJECT
@@ -398,4 +421,61 @@ jobs:
           else
             echo "Release $tag does not exist; creating it with auto-generated notes."
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes "${files[@]}"
+          fi
+      - name: Checkout main
+        # The tag is the only version a maintainer ever types. Artifacts were
+        # stamped from it in the build jobs; this checkout lets the next step
+        # commit the same bump back to main. The workspace wipe is harmless -
+        # the release assets were already published above.
+        uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Sync checked-in version defaults on main
+        # Keeps Package.appxmanifest, app.manifest, and the README examples
+        # tracking the release tag with zero manual edits. The commit is pushed
+        # with the default GITHUB_TOKEN, which never re-triggers workflows;
+        # [skip ci] documents that intent (and silences any tooling that would
+        # still react). A push race must not fail an already-published release.
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          VERSION="${version}" python3 - <<'PY'
+          import os, pathlib, re
+
+          version = os.environ["VERSION"]
+          v4 = version + ".0"
+
+          def patch(path, pattern, repl, minimum=1):
+              file = pathlib.Path(path)
+              with open(file, "r", encoding="utf-8", newline="") as handle:
+                  text = handle.read()
+              text, count = re.subn(pattern, repl, text)
+              if count < minimum:
+                  raise SystemExit(f"{path}: version stamp matched {count} time(s), expected at least {minimum}")
+              with open(file, "w", encoding="utf-8", newline="") as handle:
+                  handle.write(text)
+              print(f"{path}: {count} version stamp(s) updated")
+
+          # Anchor on the Identity element: Package.appxmanifest also carries
+          # MinVersion/MaxVersionTested four-part versions that must not change.
+          patch("CleanMachine.Windows/Package.appxmanifest",
+                r'(<Identity\b[^>]*?Version=")[0-9]+(?:\.[0-9]+){3}("[^>]*?/>)',
+                rf'\g<1>{v4}\g<2>')
+          patch("CleanMachine.Windows/app.manifest",
+                r'(assemblyIdentity\s+version=")[0-9]+(?:\.[0-9]+){3}(" )',
+                rf'\g<1>{v4}\g<2>')
+          patch("README.md",
+                r'(CleanMachine-(?:x64|ARM64)-v)[0-9]+\.[0-9]+\.[0-9]+(\.msix)',
+                rf'\g<1>{version}\g<2>', minimum=0)
+          PY
+          git add CleanMachine.Windows/Package.appxmanifest CleanMachine.Windows/app.manifest README.md
+          if git diff --cached --quiet; then
+            echo "Checked-in version defaults already at ${version}; nothing to commit."
+            exit 0
+          fi
+          git commit -m "Bump version defaults to ${version} [skip ci]"
+          if ! git push origin HEAD:main; then
+            echo "::warning::Could not push the version-default bump to main (concurrent update?). Released artifacts are unaffected."
           fi

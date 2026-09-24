@@ -110,7 +110,7 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
   - At startup: run a clean each time CleanMachine starts (with "Start with Windows", that is every logon)
   - On idle: run a clean after the PC has been idle a configurable number of minutes, once per idle period
   - Recycle Bin: automatically empty items older than a configurable number of days (only ever removes items already in the Recycle Bin)
-- The startup, idle, and Recycle Bin triggers each have an opt-in "show a notification when this runs" checkbox (off by default); browser-exit and low-disk monitoring instead choose Do nothing / Clean silently / Clean and notify per trigger
+- The startup, idle, and Recycle Bin triggers each have a "show a notification when this runs" checkbox (on by default on a fresh install); browser-exit and low-disk monitoring instead choose Do nothing / Clean silently / Clean and notify per trigger (clean and notify by default)
 - The low-disk, startup, and idle triggers each have their own independent category selection (defaulting to every category enabled on the Windows Cleanup page); automatic runs only ever offer the cleanup categories, never Review/Advanced ones
 - Every automated run records into the same stats store and activity log as manual cleans
 
@@ -133,7 +133,7 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 - Automatic update check toggle, an option to install updates without CleanMachine's own confirmation step, and an opt-in setting to install updates automatically while the PC is idle
 - "Start CleanMachine when I sign in to Windows" toggle, independent of the background services; a logon start opens straight to the tray
 - Minimize to tray options (start minimized, on close, on minimize; taskbar visibility)
-- Tray icon: left-click restores the window; right-click opens a menu to Open or Exit CleanMachine
+- Tray icon: on by default for the whole session, even while the window is open (toggle in Settings); left-click restores the window; right-click opens a menu to Open or Exit CleanMachine
 - Default wipe method selection
 - Configurable exclusion paths
 - Persisted startup registration
@@ -209,12 +209,12 @@ CleanMachine releases include signed MSIX packages for x64 and ARM64 Windows dev
 3. Choose **Current User** for your account, or **Local Machine** for all users (administrator approval required).
 4. Select **Place all certificates in the following store**, choose **Browse**, select **Trusted People**, and finish the wizard.
 5. If Windows blocks the package, open **Settings > Apps > Advanced app settings > Install apps from unknown sources** and enable sideloaded applications.
-6. Open the downloaded package, such as `CleanMachine-x64-v1.0.32.msix`, and select **Install**.
+6. Open the downloaded package, such as `CleanMachine-x64-v1.0.39.msix`, and select **Install**.
 
 Verify the package before installing it with PowerShell:
 
 ```powershell
-Get-AuthenticodeSignature .\CleanMachine-x64-v1.0.32.msix |
+Get-AuthenticodeSignature .\CleanMachine-x64-v1.0.39.msix |
   Format-List Status,SignerCertificate
 ```
 

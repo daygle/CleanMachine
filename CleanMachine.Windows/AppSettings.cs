@@ -55,7 +55,10 @@ public sealed class AppSettings
     // When false the main window is hidden from the taskbar and, when minimized,
     // it collapses to a system-tray icon instead.
     public bool ShowInTaskbar { get; set; } = true;
-    // Tray behavior: three independent options.
+    // Tray behavior: four independent options.
+    // Keep the tray icon visible for the whole app session - even while the window
+    // is open - instead of only showing it while the window sits in the tray.
+    public bool AlwaysShowTray { get; set; } = true;
     // Start minimized to tray on launch.
     public bool StartMinimizedToTray { get; set; }
     // Close button minimizes to tray instead of exiting.
@@ -106,23 +109,27 @@ public sealed class AppSettings
     // Display unit for the threshold above, "GB" or "MB". The value itself is always
     // stored in GB; this is only which unit the Settings UI shows and edits in.
     public string SystemMonitorFreeSpaceUnit { get; set; } = "GB";
-    public ExitAction SystemMonitorAction { get; set; } = ExitAction.CleanSilently;
+    // What the low-disk trigger does when it fires. Clean-and-notify on a fresh
+    // install: every automatic trigger reports what it did by default.
+    public ExitAction SystemMonitorAction { get; set; } = ExitAction.CleanAndNotify;
 
     // Automatic cleanup: run a safe clean once each time CleanMachine starts (paired
     // with "Start with Windows" this cleans at every logon).
     public bool CleanAtStartup { get; set; }
-    // Opt-in completion toast for the startup clean (the browser-exit and low-disk
-    // triggers choose this via their ExitAction instead).
-    public bool StartupCleanNotify { get; set; }
+    // Completion toast for the startup clean; on by default (the browser-exit and
+    // low-disk triggers choose this via their ExitAction instead).
+    public bool StartupCleanNotify { get; set; } = true;
     // Automatic cleanup: run a safe clean after the machine has been idle this many
     // minutes (fires once per idle period; re-arms after the next activity).
     public bool IdleCleanEnabled { get; set; }
     public int IdleCleanMinutes { get; set; } = 15;
-    public bool IdleCleanNotify { get; set; }
+    // Completion toast for the idle clean; on by default (the browser-exit and
+    // low-disk triggers choose this via their ExitAction instead).
+    public bool IdleCleanNotify { get; set; } = true;
     // Automatic cleanup: empty Recycle Bin items older than this many days.
     public bool RecycleBinAutoEmptyEnabled { get; set; }
     public int RecycleBinAutoEmptyDays { get; set; } = 30;
-    public bool RecycleBinAutoEmptyNotify { get; set; }
+    public bool RecycleBinAutoEmptyNotify { get; set; } = true;
     // Which categories the startup and idle cleans remove. Each is independent; null
     // means every enabled category on the Windows Cleanup page. Automatic runs only
     // ever offer/clean Safe-risk categories (Review/Advanced are never included).

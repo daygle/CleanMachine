@@ -37,6 +37,8 @@
                 Checked="Setting_Changed" Unchecked="Setting_Changed"/>
       <CheckBox x:Name="MinimizeToTrayToggle" Content="Minimize to system tray when minimized"
                 Checked="Setting_Changed" Unchecked="Setting_Changed"/>
+      <CheckBox x:Name="AlwaysShowTrayToggle" Content="Always show tray icon (also while the program is open)"
+                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
 
       <TextBlock Text="SECURE DELETE" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
       <StackPanel Spacing="4">

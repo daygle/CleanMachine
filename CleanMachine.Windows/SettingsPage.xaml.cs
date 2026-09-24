@@ -32,6 +32,7 @@ public sealed partial class SettingsPage : Page
         StartMinimizedToTrayToggle.IsChecked = _settings.StartMinimizedToTray;
         CloseToTrayToggle.IsChecked = _settings.CloseToTray;
         MinimizeToTrayToggle.IsChecked = _settings.MinimizeToTray;
+        AlwaysShowTrayToggle.IsChecked = _settings.AlwaysShowTray;
         WipeMethodCombo.SelectedIndex = _settings.SecureDeleteMethod switch
         {
             WipeMethod.Dod522022M => 1,
@@ -63,6 +64,7 @@ public sealed partial class SettingsPage : Page
         _settings.StartMinimizedToTray = StartMinimizedToTrayToggle.IsChecked == true;
         _settings.CloseToTray = CloseToTrayToggle.IsChecked == true;
         _settings.MinimizeToTray = MinimizeToTrayToggle.IsChecked == true;
+        _settings.AlwaysShowTray = AlwaysShowTrayToggle.IsChecked == true;
         _settings.SecureDeleteMethod = WipeMethodCombo.SelectedIndex switch
         {
             1 => WipeMethod.Dod522022M,
@@ -81,6 +83,7 @@ public sealed partial class SettingsPage : Page
             mainWindow.ApplyShowInTaskbar(_settings.ShowInTaskbar);
             mainWindow.ApplyMinimizeToTray(_settings.MinimizeToTray);
             mainWindow.ApplyCloseToTray(_settings.CloseToTray);
+            mainWindow.ApplyAlwaysShowTray(_settings.AlwaysShowTray);
         }
 
         // Keep Windows startup registration (and the background agent) in step with
@@ -104,6 +107,7 @@ public sealed partial class SettingsPage : Page
         StartMinimizedToTrayToggle.IsChecked = defaults.StartMinimizedToTray;
         CloseToTrayToggle.IsChecked = defaults.CloseToTray;
         MinimizeToTrayToggle.IsChecked = defaults.MinimizeToTray;
+        AlwaysShowTrayToggle.IsChecked = defaults.AlwaysShowTray;
         WipeMethodCombo.SelectedIndex = 0;
         ExclusionsBox.Text = "";
         _loading = false;

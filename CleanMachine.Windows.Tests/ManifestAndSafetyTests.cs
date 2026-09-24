@@ -1,5 +1,6 @@
 using CleanMachine.Windows;
 using Microsoft.Win32;
+using System.Xml.Linq;
 using Xunit;
 
 namespace CleanMachine.Windows.Tests;
@@ -584,12 +585,12 @@ public sealed class ManifestAndSafetyTests
         });
         // System monitoring is opt-in and conservative by default.
         Assert.False(settings.SystemMonitoringEnabled);
-        Assert.Equal(ExitAction.CleanSilently, settings.SystemMonitorAction);
+        Assert.Equal(ExitAction.CleanAndNotify, settings.SystemMonitorAction);
         Assert.Equal(1.0, settings.SystemMonitorFreeSpaceGb);
-        // The silent automatic triggers stay silent unless the user opts in.
-        Assert.False(settings.StartupCleanNotify);
-        Assert.False(settings.IdleCleanNotify);
-        Assert.False(settings.RecycleBinAutoEmptyNotify);
+        // Every automatic trigger defaults to clean and notify on a fresh install.
+        Assert.True(settings.StartupCleanNotify);
+        Assert.True(settings.IdleCleanNotify);
+        Assert.True(settings.RecycleBinAutoEmptyNotify);
     }
 
     [Fact]
@@ -1131,6 +1132,7 @@ public sealed class ManifestAndSafetyTests
         Assert.False(settings.CloseToTray);
         Assert.True(settings.MinimizeToTray);
         Assert.True(settings.ShowInTaskbar);
+        Assert.True(settings.AlwaysShowTray);
     }
 
     [Fact]
@@ -1141,7 +1143,8 @@ public sealed class ManifestAndSafetyTests
             StartMinimizedToTray = true,
             CloseToTray = true,
             MinimizeToTray = false,
-            ShowInTaskbar = false
+            ShowInTaskbar = false,
+            AlwaysShowTray = false
         };
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
         var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
@@ -1151,6 +1154,7 @@ public sealed class ManifestAndSafetyTests
         Assert.True(clone.CloseToTray);
         Assert.False(clone.MinimizeToTray);
         Assert.False(clone.ShowInTaskbar);
+        Assert.False(clone.AlwaysShowTray);
     }
 
     [Fact]
@@ -1196,5 +1200,51 @@ public sealed class ManifestAndSafetyTests
 
         var encoded = command.Split(" -EncodedCommand ")[^1];
         Assert.Equal(script, System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(encoded)));
+    }
+
+    /// <summary>The in-repo version defaults (RELEASE.md checklist step 1) must stay
+    /// in lockstep: the MSIX package identity and the Win32 assembly identity are
+    /// bumped together on every release. The release workflow stamps the package
+    /// identity from the tag but never rewrites app.manifest, so this checked-in
+    /// pair is the only thing that keeps them from silently drifting apart again.</summary>
+    [Fact]
+    public void PackageAndAppManifestVersionsAgree()
+    {
+        var root = FindRepoRoot();
+        Assert.True(root is not null,
+            "Repo root (containing CleanMachine.Windows\\) was not found above the test output directory.");
+
+        var appx = XDocument.Load(Path.Combine(root!, "CleanMachine.Windows", "Package.appxmanifest"));
+        var appManifest = XDocument.Load(Path.Combine(root!, "CleanMachine.Windows", "app.manifest"));
+
+        // Descend by LocalName so the appx default xmlns and the asm.v1 xmlns on
+        // app.manifest never have to be spelled out (and can never go stale).
+        var packageVersion = appx.Descendants().FirstOrDefault(e => e.Name.LocalName == "Identity")?
+            .Attribute("Version")?.Value;
+        var assemblyVersion = appManifest.Descendants().FirstOrDefault(e => e.Name.LocalName == "assemblyIdentity")?
+            .Attribute("version")?.Value;
+
+        Assert.False(string.IsNullOrWhiteSpace(packageVersion),
+            "Package.appxmanifest has no Identity Version attribute.");
+        Assert.False(string.IsNullOrWhiteSpace(assemblyVersion),
+            "app.manifest has no assemblyIdentity version attribute.");
+        // Four-part X.Y.Z.0: the shape the release workflow stamps from the tag.
+        Assert.Matches(@"^\d+\.\d+\.\d+\.\d+$", packageVersion);
+        Assert.Matches(@"^\d+\.\d+\.\d+\.\d+$", assemblyVersion);
+        Assert.Equal(packageVersion, assemblyVersion);
+    }
+
+    /// <summary>Walks up from the test output directory (bin/&lt;config&gt;/&lt;tfm&gt;,
+    /// any platform) to the checkout that contains the app project.</summary>
+    private static string? FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "CleanMachine.Windows", "Package.appxmanifest")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+        return null;
     }
 }

@@ -149,7 +149,9 @@ public sealed partial class SchedulesPage : Page
     };
 
     private void Add_Click(object sender, RoutedEventArgs e)
-        => Select(new CleanupSchedule { Name = $"Cleanup {DateTime.Now:MMM d}" }, isNew: true);
+        // New schedules start with an empty Name field - no generated "Cleanup Sep 24"
+        // prefill - so the user names it from scratch (Save still requires a name).
+        => Select(new CleanupSchedule { Name = string.Empty }, isNew: true);
 
     private void Select(CleanupSchedule schedule, bool isNew)
     {

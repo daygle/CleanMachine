@@ -143,9 +143,12 @@ public sealed class OverviewScanService
 
         lock (Gate)
         {
-            // Clear the slot whether we succeeded or failed: a failed scan must not
-            // stick (the next call retries). If the cache was invalidated while the
-            // scan ran, the result is stale - discard it instead of caching it.
+            // Only the scan that still owns the slot may update the cache: a failed
+            // scan must not stick (the next call retries), and if the cache was
+            // invalidated while this scan ran - or a newer scan has since taken the
+            // slot - this (possibly stale) result must be discarded without clobbering
+            // the newer in-flight task. Mirrors ScanAllAsync's ReferenceEquals guard.
+            if (!ReferenceEquals(_windowsItemsTask, scan)) return result;
             _windowsItemsTask = null;
             if (result is not null && _windowsItemsGeneration == _generation)
             {

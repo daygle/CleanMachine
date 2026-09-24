@@ -69,10 +69,10 @@ public sealed class CleanupStatsStore
         catch { /* stats are best-effort */ }
     }
 
-    /// <summary>Items and bytes cleaned within the recent window.</summary>
-    public static async Task<(long Items, long Bytes)> RecentTotalsAsync(CancellationToken token = default)
+    /// <summary>Items and bytes cleaned within the recent window of an already-loaded
+    /// stats file, so callers that just loaded stats do not read the file twice.</summary>
+    public static (long Items, long Bytes) RecentTotals(CleanupStatsFile stats)
     {
-        var stats = await new CleanupStatsStore().LoadAsync(token);
         var cutoff = DateTimeOffset.UtcNow.AddDays(-RecentWindowDays);
         long items = 0, bytes = 0;
         foreach (var run in stats.Runs)
@@ -83,6 +83,10 @@ public sealed class CleanupStatsStore
         }
         return (items, bytes);
     }
+
+    /// <summary>Items and bytes cleaned within the recent window.</summary>
+    public static async Task<(long Items, long Bytes)> RecentTotalsAsync(CancellationToken token = default)
+        => RecentTotals(await new CleanupStatsStore().LoadAsync(token));
 
     private static async Task SaveAsync(CleanupStatsFile stats, CancellationToken token)
     {

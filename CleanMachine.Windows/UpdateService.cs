@@ -366,11 +366,13 @@ public sealed class UpdateService
 
     public async Task<bool> RollbackAsync(string currentExecutable, CancellationToken cancellationToken = default)
     {
-        var state = await _stateStore.LoadAsync(cancellationToken); var rollback = state?.RollbackPath ?? FindRollbackCopy();
+        var state = await _stateStore.LoadAsync(cancellationToken);
+        var rollback = state?.RollbackPath ?? FindRollbackCopy();
         if (string.IsNullOrWhiteSpace(rollback) || !File.Exists(rollback) || !File.Exists(currentExecutable)) return false;
         // Stage the restored copy before touching the live executable so a mid-restore
         // failure never leaves the application without a runnable binary.
-        var staged = currentExecutable + ".restore"; var backup = currentExecutable + ".failed";
+        var staged = currentExecutable + ".restore";
+        var backup = currentExecutable + ".failed";
         try
         {
             File.Copy(rollback, staged, true);
@@ -378,18 +380,37 @@ public sealed class UpdateService
             TryDelete(backup);
         }
         catch { TryDelete(staged); throw; }
-        await _stateStore.MarkAsync("rolled-back", null, rollback, cancellationToken); return true;
+        await _stateStore.MarkAsync("rolled-back", null, rollback, cancellationToken);
+        return true;
     }
 
     public Task<string> StageRollbackCopyAsync(string currentExecutable, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested(); if (!File.Exists(currentExecutable)) throw new FileNotFoundException("Current application was not found.", currentExecutable);
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Updates", "rollback"); Directory.CreateDirectory(directory);
-        var copy = Path.Combine(directory, "CleanMachine.previous"); File.Copy(currentExecutable, copy, true); return Task.FromResult(copy);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!File.Exists(currentExecutable))
+            throw new FileNotFoundException("Current application was not found.", currentExecutable);
+        var directory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "CleanMachine", "Updates", "rollback");
+        Directory.CreateDirectory(directory);
+        var copy = Path.Combine(directory, "CleanMachine.previous");
+        File.Copy(currentExecutable, copy, true);
+        return Task.FromResult(copy);
     }
 
-    public static string? FindRollbackCopy() { var copy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine", "Updates", "rollback", "CleanMachine.previous"); return File.Exists(copy) ? copy : null; }
-    public static void CleanupRollbackCopy() { var copy = FindRollbackCopy(); try { if (copy is not null) File.Delete(copy); } catch { } }
+    public static string? FindRollbackCopy()
+    {
+        var copy = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "CleanMachine", "Updates", "rollback", "CleanMachine.previous");
+        return File.Exists(copy) ? copy : null;
+    }
+
+    public static void CleanupRollbackCopy()
+    {
+        var copy = FindRollbackCopy();
+        try { if (copy is not null) File.Delete(copy); } catch { }
+    }
     private static UpdatePackage? ResolvePackage(UpdateManifest manifest)
     {
         var arch = CurrentArchitecture();

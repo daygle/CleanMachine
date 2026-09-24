@@ -426,20 +426,11 @@ public sealed partial class RegistryCarePage : Page
             var backupNote = $"{result.Backups.Count} backup file(s) saved under " +
                              RegistryCareService.BackupsDirectory;
             UpdateBackupsLink();
-
-            DetailHeadline.Text = clean.Removed == 0 && clean.Skipped.Count == 0
-                ? "Nothing needed cleaning"
-                : "Cleaning complete";
-            DetailSubHeadline.Text = backupNote + ".";
-            SetChips("REMOVED", clean.Removed.ToString(), "SKIPPED", clean.Skipped.Count.ToString(), "BACKUPS", result.Backups.Count.ToString());
-            StatusText.Text = clean.Removed == 0 && clean.Skipped.Count == 0
-                ? $"No registry values were changed. {backupNote}."
-                : $"Cleaned {clean.Removed} registry item(s); {clean.Skipped.Count} skipped. {backupNote}.";
-
             RestoreButton.Visibility = Visibility.Visible;
 
-            // Re-scan so the left list reflects what was cleaned, then restore the
-            // completion report because RenderFindings repopulates the detail card.
+            // Re-scan so the left list reflects what was cleaned, then render the
+            // completion report (RenderFindings repopulates the detail card, so the
+            // final headline/chips/status are set once, after the refresh, below).
             try
             {
                 var review = await _service.ScanAsync();

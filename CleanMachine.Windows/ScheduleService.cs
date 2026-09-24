@@ -58,10 +58,19 @@ public sealed class ScheduleService
         foreach (var schedule in settings.Schedules)
         {
             token.ThrowIfCancellationRequested();
-            if (schedule.Enabled && ScheduledTask.HasWork(schedule))
-                await RegisterAsync(schedule, token);
-            else
-                await UnregisterAsync(schedule.Id, token);
+            try
+            {
+                if (schedule.Enabled && ScheduledTask.HasWork(schedule))
+                    await RegisterAsync(schedule, token);
+                else
+                    await UnregisterAsync(schedule.Id, token);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Best-effort sync: one schedule that cannot be (un)registered must
+                // not abort the rest, and the caller fires this without awaiting.
+                // The Schedules page still reports failures when editing a schedule.
+            }
         }
     }
 

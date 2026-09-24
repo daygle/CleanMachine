@@ -310,8 +310,10 @@ public sealed class InstalledAppsService
                 }
                 else
                 {
-                    // Prefer the longest prefix that exists as a file (handles
-                    // unquoted "C:\Program Files\..." paths with spaces).
+                    // Grow the prefix to the next space until it names an existing
+                    // file: the first (shortest) existing prefix is the executable
+                    // itself for unquoted "C:\Program Files\..." paths with spaces,
+                    // while any longer prefix would already swallow the arguments.
                     fileName = trimmed[..space];
                     while (space > 0)
                     {

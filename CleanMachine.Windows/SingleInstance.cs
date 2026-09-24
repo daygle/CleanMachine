@@ -133,8 +133,18 @@ public static class SingleInstance
         try
         {
             // Exclude this process: the --shutdown helper runs from the very same
-            // CleanMachine.exe and must never wait for (or kill) itself.
-            return Process.GetProcessesByName(processName).Any(p => p.Id != Environment.ProcessId);
+            // CleanMachine.exe and must never wait for (or kill) itself. Every
+            // Process object is disposed even on an early exit: this helper is
+            // polled every 200 ms during a shutdown wait, so leaking handles here
+            // would accumulate for seconds at a time.
+            foreach (var process in Process.GetProcessesByName(processName))
+            {
+                using (process)
+                {
+                    if (process.Id != Environment.ProcessId) return true;
+                }
+            }
+            return false;
         }
         catch { return false; }
     }

@@ -29,6 +29,7 @@ public sealed partial class MainWindow : Window
     private bool _minimizeToTray;
     private bool _startMinimizedToTray;
     private bool _closeToTray;
+    private bool _alwaysShowTray = true;
     private bool _inTray;
     private TrayIcon? _trayIcon;
     private WndProc? _baseWndProc;
@@ -227,6 +228,11 @@ public sealed partial class MainWindow : Window
         // "minimize to tray on startup" preference.
         _startMinimizedToTray = settings.StartMinimizedToTray || App.LaunchedAtLogon;
         _closeToTray = settings.CloseToTray;
+        _alwaysShowTray = settings.AlwaysShowTray;
+        // Surface the tray icon for the whole session when "always show" is on -
+        // before any start-minimized hide below, so the window is never
+        // unreachable without one.
+        if (_alwaysShowTray) ShowTrayIcon();
 
         // Create a desktop shortcut for MSIX installs on every launch so a
         // missing or removed shortcut is re-created (the .exe installer already
@@ -348,6 +354,17 @@ public sealed partial class MainWindow : Window
 
     /// <summary>When true, the close button minimizes to tray instead of exiting.</summary>
     public void ApplyCloseToTray(bool closeToTray) => _closeToTray = closeToTray;
+
+    /// <summary>Keeps the tray icon visible for the whole session, not just while
+    /// the window sits in the tray. Turning it on shows the icon immediately;
+    /// turning it off drops it unless the window is currently in the tray (the
+    /// icon is the only way back from there).</summary>
+    public void ApplyAlwaysShowTray(bool alwaysShowTray)
+    {
+        _alwaysShowTray = alwaysShowTray;
+        if (alwaysShowTray) ShowTrayIcon();
+        else if (!_inTray) HideTrayIcon();
+    }
 
     private void ApplyTaskbarStyle(bool showInTaskbar)
     {
@@ -508,6 +525,9 @@ public sealed partial class MainWindow : Window
 
     private void HideTrayIcon()
     {
+        // With "always show" on the icon outlives the tray state: only app exit
+        // (Dispose in the Closed handler) removes it.
+        if (_alwaysShowTray) return;
         _trayIcon?.Hide();
     }
 

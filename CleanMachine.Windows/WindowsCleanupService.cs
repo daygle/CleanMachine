@@ -231,9 +231,23 @@ public sealed class WindowsCleanupService
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                if (category.Kind == CleanupKind.RecycleBin) { EmptyRecycleBin(); removed++; }
-                else { FlushDnsCache(); removed++; }
-                breakdown.Add(new CleanupCategoryResult(category.Name, 1, 0));
+                if (category.Kind == CleanupKind.RecycleBin)
+                {
+                    // Measure before emptying: the report, Overview stats, and
+                    // activity entry should credit the bytes actually freed
+                    // instead of always showing 0 B recovered.
+                    var binBytes = GetRecycleBinSize();
+                    EmptyRecycleBin();
+                    removed++;
+                    recovered += binBytes;
+                    breakdown.Add(new CleanupCategoryResult(category.Name, 1, binBytes));
+                }
+                else
+                {
+                    FlushDnsCache();
+                    removed++;
+                    breakdown.Add(new CleanupCategoryResult(category.Name, 1, 0));
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or COMException)
             {
@@ -399,7 +413,7 @@ public sealed class WindowsCleanupService
         var info = new SHQueryRecycleBinInfo { Size = (uint)Marshal.SizeOf<SHQueryRecycleBinInfo>() };
         var result = SHQueryRecycleBin(null, ref info);
         return result == 0 && info.ItemCount > 0 && info.TotalSize > 0
-            ? Math.Min(info.TotalSize, long.MaxValue)
+            ? info.TotalSize
             : 0;
     }
 
