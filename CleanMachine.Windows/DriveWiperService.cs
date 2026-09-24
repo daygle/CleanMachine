@@ -112,6 +112,7 @@ public sealed class DriveWiperService
         bool wipeMftFreeSpace = false,
         bool wipeFatFreeSpace = false)
     {
+        using var cleaning = CleaningActivity.Begin();
         await CleanupCoordinator.Gate.WaitAsync(token);
         try
         {

@@ -1,4 +1,5 @@
 using Microsoft.UI;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -36,6 +37,15 @@ public sealed partial class MainWindow : Window
     private IntPtr _hwnd;
     private IntPtr _originalWndProc;
 
+    // Tray "cleaning" spinner: driven by CleaningActivity (which can fire from
+    // any thread) and animated on the UI thread.
+    private const string IdleTip = "CleanMachine";
+    private const string BusyTip = "CleanMachine - cleaning...";
+    private DispatcherQueueTimer? _cleaningTimer;
+    private IntPtr[]? _cleaningFrames;
+    private int _cleaningStep;
+    private bool _cleaningActive;
+
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -52,11 +62,21 @@ public sealed partial class MainWindow : Window
         // By the first Activated event the button is registered, and the default
         // preference (show) would be a no-op anyway.
         Activated += OnFirstActivated;
+        // Every cleaning path (manual, Quick Clean, scheduled, background agent)
+        // flips this; the event can fire from a background thread, so the handler
+        // marshals onto the UI queue before touching the tray.
+        CleaningActivity.Changed += OnCleaningActivityChanged;
         SubclassForMinimizeToTray();
         AppWindow.Closing += OnClosing;
         Closed += (_, _) =>
         {
+            CleaningActivity.Changed -= OnCleaningActivityChanged;
+            _cleaningTimer?.Stop();
+            _cleaningTimer = null;
             _trayIcon?.Dispose();
+            // Destroy the spinner frames only after the tray icon is gone: its
+            // last SetIcon call still points at the frame currently displayed.
+            DestroyCleaningFrames();
             Unsubclass();
             // Release the single-instance mutex and IPC events now (not at process
             // teardown) so a relaunch - e.g. right after an uninstall/reinstall -
@@ -133,17 +153,36 @@ public sealed partial class MainWindow : Window
         return File.Exists(logoPath) ? File.OpenRead(logoPath) : null;
     }
 
-    /// <summary>Loads the app icon embedded in the executable (resource 32512),
-    /// falling back to the loose Assets\app.ico next to the executable.</summary>
+    /// <summary>Process-lifetime HICON, shared by the title bar and the tray so
+    /// the icon is only ever decoded once.</summary>
+    private IntPtr _appIcon;
+
+    /// <summary>Loads the app icon at its largest native frame (256x256): first
+    /// from the resource embedded in the executable (group icon 32512, which
+    /// carries the 256/48/32/24/16 frames), then from the loose Assets\app.ico
+    /// next to the executable. The shell scales tray/taskbar icons *down* to fit
+    /// its cell but never upscales a small one, and LoadIcon() only ever returns
+    /// SM_CXICON (32px) - which is why the tray icon rendered visibly small on
+    /// HiDPI taskbars.</summary>
     private IntPtr GetAppIcon()
     {
-        var hIcon = LoadIcon(GetModuleHandle(null), new IntPtr(32512));
-        if (hIcon != IntPtr.Zero) return hIcon;
+        if (_appIcon != IntPtr.Zero) return _appIcon;
+
+        _appIcon = LoadImageById(GetModuleHandle(null), new IntPtr(32512),
+            IMAGE_ICON, HiResIconSize, HiResIconSize, 0);
+        if (_appIcon != IntPtr.Zero) return _appIcon;
 
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
-        return File.Exists(iconPath)
-            ? LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON, 0, 0, LR_LOADFROMFILE)
-            : IntPtr.Zero;
+        if (File.Exists(iconPath))
+        {
+            _appIcon = LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON,
+                HiResIconSize, HiResIconSize, LR_LOADFROMFILE);
+            if (_appIcon != IntPtr.Zero) return _appIcon;
+        }
+
+        // Last resort: LoadIcon's system default size (SM_CXICON, 32px).
+        _appIcon = LoadIcon(GetModuleHandle(null), new IntPtr(32512));
+        return _appIcon;
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
@@ -195,9 +234,17 @@ public sealed partial class MainWindow : Window
 
     private const uint IMAGE_ICON = 1;
     private const uint LR_LOADFROMFILE = 0x00000010;
+    // Largest frame in Assets\app.ico. Always hand the shell the big one: it
+    // downscales to the notification-area cell but does not upscale small icons.
+    private const int HiResIconSize = 256;
 
     [DllImport("user32.dll", EntryPoint = "LoadImageW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr LoadImage(IntPtr hInstance, string lpFileName, uint ulType, int cxDesired, int cyDesired, uint fuLoad);
+
+    /// <summary>The same LoadImageW entry point addressed by resource ordinal
+    /// (IS_INTRESOURCE: a high-word-zero pointer is an integer resource ID).</summary>
+    [DllImport("user32.dll", EntryPoint = "LoadImageW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadImageById(IntPtr hInstance, IntPtr lpName, uint ulType, int cxDesired, int cyDesired, uint fuLoad);
 
     private bool _taskbarPreferenceApplied;
 
@@ -515,7 +562,9 @@ public sealed partial class MainWindow : Window
         {
             var hIcon = GetAppIcon();
             if (hIcon == IntPtr.Zero) return false;
-            _trayIcon = new TrayIcon(hIcon, "CleanMachine");
+            // Pick up an animation that started before any tray icon existed; the
+            // first spinner frame then follows within one timer tick.
+            _trayIcon = new TrayIcon(hIcon, _cleaningActive ? BusyTip : IdleTip);
             _trayIcon.Clicked += OnTrayIconClicked;
             _trayIcon.ExitRequested += OnTrayExitRequested;
         }
@@ -529,6 +578,68 @@ public sealed partial class MainWindow : Window
         // (Dispose in the Closed handler) removes it.
         if (_alwaysShowTray) return;
         _trayIcon?.Hide();
+    }
+
+    /// <summary>Called (on any thread) when the first cleanup starts or the last
+    /// one ends; hops to the UI thread to start or stop the tray spinner.</summary>
+    private void OnCleaningActivityChanged(bool active)
+        => DispatcherQueue.TryEnqueue(() => ApplyCleaningState(active));
+
+    private void ApplyCleaningState(bool active)
+    {
+        if (_cleaningActive == active) return;
+        _cleaningActive = active;
+        if (active)
+        {
+            _cleaningStep = 0;
+            if (_cleaningTimer is null)
+            {
+                _cleaningTimer = DispatcherQueue.CreateTimer();
+                _cleaningTimer.Interval = TimeSpan.FromMilliseconds(120);
+                _cleaningTimer.Tick += (_, _) => ShowCleaningFrame();
+            }
+            _cleaningTimer.Start();
+            _trayIcon?.SetTip(BusyTip);
+            ShowCleaningFrame();
+        }
+        else
+        {
+            _cleaningTimer?.Stop();
+            _trayIcon?.SetIcon(_appIcon);
+            _trayIcon?.SetTip(IdleTip);
+        }
+    }
+
+    /// <summary>Advances the spinner: frames are rendered on first use and kept
+    /// for the window's lifetime. If rendering ever fails the icon simply stays
+    /// static - the busy tooltip alone still flags the run.</summary>
+    private void ShowCleaningFrame()
+    {
+        if (_trayIcon is null) return;
+        _cleaningFrames ??= RenderCleaningFrames();
+        if (_cleaningFrames is null) return;
+        _trayIcon.SetIcon(_cleaningFrames[_cleaningStep % _cleaningFrames.Length]);
+        _cleaningStep++;
+    }
+
+    private IntPtr[]? RenderCleaningFrames()
+    {
+        var frames = new IntPtr[TrayBusyIcon.FrameCount];
+        for (var i = 0; i < frames.Length; i++)
+        {
+            frames[i] = TrayBusyIcon.RenderFrame(_appIcon, i);
+            if (frames[i] != IntPtr.Zero) continue;
+            for (var j = 0; j < i; j++) TrayBusyIcon.Destroy(frames[j]);
+            return null;
+        }
+        return frames;
+    }
+
+    private void DestroyCleaningFrames()
+    {
+        if (_cleaningFrames is null) return;
+        foreach (var frame in _cleaningFrames) TrayBusyIcon.Destroy(frame);
+        _cleaningFrames = null;
     }
 
     private void OnTrayIconClicked()

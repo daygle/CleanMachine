@@ -134,6 +134,7 @@ public sealed class WindowsCleanupService
 
     public async Task<CleanupReport> CleanSelectedAsync(IEnumerable<CleanupCategory> categories, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        using var cleaning = CleaningActivity.Begin();
         await CleanupCoordinator.Gate.WaitAsync(cancellationToken);
         try
         {

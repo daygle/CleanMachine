@@ -12,6 +12,7 @@ namespace CleanMachine.Windows;
 public sealed class TrayIcon : IDisposable
 {
     private const uint NIM_ADD = 0x00000000;
+    private const uint NIM_MODIFY = 0x00000001;
     private const uint NIM_DELETE = 0x00000002;
     private const uint NIF_MESSAGE = 0x00000001;
     private const uint NIF_ICON = 0x00000002;
@@ -33,9 +34,9 @@ public sealed class TrayIcon : IDisposable
     private static readonly uint TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
 
     private readonly IntPtr _hwnd;
-    private readonly IntPtr _icon;
+    private IntPtr _icon;
     private readonly uint _id;
-    private readonly string _tip;
+    private string _tip;
     private readonly TrayWndProc _wndProc;
     private string _className = string.Empty;
     private bool _added;
@@ -67,6 +68,28 @@ public sealed class TrayIcon : IDisposable
         var data = CreateData();
         Shell_NotifyIcon(NIM_DELETE, ref data);
         _added = false;
+    }
+
+    /// <summary>Swaps the displayed icon in place (NIM_MODIFY) - the cleaning
+    /// animation calls this once per spinner frame. If the icon is currently
+    /// hidden the new value is remembered for the next Show(), and a TaskbarCreated
+    /// re-add uses it too (CreateData reads the field).</summary>
+    public void SetIcon(IntPtr icon)
+    {
+        _icon = icon;
+        if (!_added) return;
+        var data = CreateData();
+        Shell_NotifyIcon(NIM_MODIFY, ref data);
+    }
+
+    /// <summary>Swaps the tooltip in place (NIM_MODIFY): "CleanMachine - cleaning..."
+    /// while a clean runs, the plain name otherwise.</summary>
+    public void SetTip(string tip)
+    {
+        _tip = tip;
+        if (!_added) return;
+        var data = CreateData();
+        Shell_NotifyIcon(NIM_MODIFY, ref data);
     }
 
     public void Dispose()

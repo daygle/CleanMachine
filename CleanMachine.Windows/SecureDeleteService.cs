@@ -41,6 +41,7 @@ public sealed class SecureDeleteService
 
     public async Task<SecureDeleteResult> DeleteAsync(IEnumerable<SecureDeleteSelection> selection, SecureDeleteOptions options, IProgress<CleanupProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        using var cleaning = CleaningActivity.Begin();
         await CleanupCoordinator.Gate.WaitAsync(cancellationToken);
         try
         {

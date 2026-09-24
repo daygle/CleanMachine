@@ -424,6 +424,7 @@ public partial class App : Application
             if (!settings.RecycleBinAutoEmptyEnabled) return;
             if (_recycleBinLastRun is { } last && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(1)) return;
             _recycleBinLastRun = DateTimeOffset.UtcNow;
+            using var cleaning = CleaningActivity.Begin();
             await CleanupCoordinator.Gate.WaitAsync(token);
             (int removed, long bytes) result;
             try

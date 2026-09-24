@@ -30,6 +30,7 @@ public sealed class AppCleanupService
         CancellationToken token = default,
         IProgress<CleanupProgress>? progress = null)
     {
+        using var cleaning = CleaningActivity.Begin();
         await CleanupCoordinator.Gate.WaitAsync(token);
         try
         {

@@ -5,6 +5,11 @@ using Xunit;
 
 namespace CleanMachine.Windows.Tests;
 
+/// <summary>Shares the "Cleaning" collection with <see cref="CleaningActivityTests"/>:
+/// these tests exercise real cleaning services (which flip the shared
+/// CleaningActivity counter), and CleaningActivityTests asserts absolute states of
+/// that counter - xUnit would otherwise run the two classes in parallel.</summary>
+[Collection("Cleaning")]
 public sealed class ManifestAndSafetyTests
 {
     [Theory]

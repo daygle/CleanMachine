@@ -44,6 +44,7 @@ public sealed class BrowserCleanupService
         IProgress<CleanupProgress>? progress = null,
         CancellationToken token = default)
     {
+        using var cleaning = CleaningActivity.Begin();
         await CleanupCoordinator.Gate.WaitAsync(token);
         try
         {
@@ -259,6 +260,7 @@ public sealed class BrowserCleanupService
         CancellationToken token = default,
         bool requireBrowsersClosed = true)
     {
+        using var cleaning = CleaningActivity.Begin();
         await CleanupCoordinator.Gate.WaitAsync(token);
         try
         {
