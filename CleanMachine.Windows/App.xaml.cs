@@ -60,6 +60,10 @@ public partial class App : Application
             return;
         }
         _instanceMutex = instanceMutex;
+        // A handed-off MSIX update must exit this process so the helper can replace
+        // the package with no live window for Windows to freeze mid-deployment (the
+        // "Stopped responding and was closed" hang reports on every update).
+        UpdateService.MsixHandoff += ExitForMsixUpdate;
         // A logon autostart launches with --background; open to the tray, not the desktop.
         LaunchedAtLogon = Environment.GetCommandLineArgs()
             .Any(a => a.Equals("--background", StringComparison.OrdinalIgnoreCase));
@@ -240,7 +244,22 @@ public partial class App : Application
         _agent = new BackgroundAgent(
             onBrowserExit: OnBrowserExitAsync,
             onTick: OnAgentTickAsync);
-        _agentTask = _agent.RunAsync(_agentCts.Token);
+        // Start the loop on the thread pool: RunAsync captures the caller's
+        // synchronization context at its first await, and starting it from the UI
+        // thread made every tick - the 5-second process poll, browser-exit cleans,
+        // monitors, update checks - run on the WinUI dispatcher, where any slow
+        // synchronous stretch froze the window and fed WER's hang reports.
+        _agentTask = Task.Run(() => _agent.RunAsync(_agentCts.Token));
+    }
+
+    /// <summary>Handed-off MSIX update: shut the app down cleanly now, so the helper
+    /// waits for a graceful exit instead of Windows having to freeze and kill a live
+    /// window mid-deployment. <see cref="MainWindow.RequestExit"/> marshals itself.</summary>
+    private void ExitForMsixUpdate()
+    {
+        StopBackgroundAgent();
+        if (MainWindow is MainWindow window) window.RequestExit();
+        else Exit();
     }
 
     /// <summary>Runs the configured after-exit action for one specific browser.

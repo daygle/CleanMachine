@@ -33,8 +33,10 @@ public sealed partial class ActivityPage : Page
         ActivityPanel.Children.Clear();
 
         var total = _allEntries.Count;
-        var today = _allEntries.Count(e => e.Time.Date == DateTimeOffset.Now.Date);
-        var yesterday = _allEntries.Count(e => e.Time.Date == DateTimeOffset.Now.Date.AddDays(-1));
+        // Entries are stored as UTC instants; group/count them by the local calendar
+        // day, otherwise early-morning runs land on the previous day's bucket.
+        var today = _allEntries.Count(e => e.Time.ToLocalTime().Date == DateTimeOffset.Now.Date);
+        var yesterday = _allEntries.Count(e => e.Time.ToLocalTime().Date == DateTimeOffset.Now.Date.AddDays(-1));
 
         TotalCount.Text = $"{total} {(total == 1 ? "event" : "events")}";
         TodayCount.Text = $"{today} today";
@@ -144,9 +146,12 @@ public sealed partial class ActivityPage : Page
         Grid.SetColumn(info, 1);
 
         // Date + time, right-aligned inside an Auto column so every row shares one right edge.
+        // DateTimeOffset.ToString renders in the value's own offset (UTC for entries
+        // written with UtcNow), so convert to local time - otherwise a 3 AM run shows
+        // as the previous afternoon for anyone east of UTC.
         var time = new TextBlock
         {
-            Text = entry.Time.ToString("MMM d, h:mm tt"),
+            Text = entry.Time.ToLocalTime().ToString("MMM d, h:mm tt"),
             FontSize = 12,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x4B, 0x77, 0x69)),
             HorizontalAlignment = HorizontalAlignment.Right,
@@ -250,7 +255,8 @@ public sealed partial class ActivityPage : Page
     private static string RelativeDate(DateTimeOffset time)
     {
         var now = DateTimeOffset.Now;
-        var diff = now.Date - time.Date;
+        // Compare local calendar days: time carries a UTC offset.
+        var diff = now.Date - time.ToLocalTime().Date;
         if (diff.Days == 0) return "Today";
         if (diff.Days == 1) return "Yesterday";
         if (diff.Days < 7) return $"Earlier this week";

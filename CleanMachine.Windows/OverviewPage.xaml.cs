@@ -224,7 +224,9 @@ public sealed partial class OverviewPage : Page
             }
             else
             {
-                UpdateStatusText.Text = "Update installed. Please restart CleanMachine.";
+                UpdateStatusText.Text = _updateService.MsixInstallHandedOff
+                    ? "Installing update - CleanMachine will close and reopen shortly."
+                    : "Update installed. Please restart CleanMachine.";
             }
         }
         catch (OperationCanceledException ex)

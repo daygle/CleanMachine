@@ -48,6 +48,16 @@ public sealed class UpdateService
     private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly UpdateStateStore _stateStore = new();
 
+    /// <summary>Raised after a staged MSIX package has been handed to the update
+    /// helper. The subscriber must exit the process promptly: the helper only
+    /// deploys once every process of the package is gone.</summary>
+    public static event Action? MsixHandoff;
+
+    /// <summary>True when the last <see cref="InstallVerifiedPackageAsync"/> call
+    /// handed the MSIX package to the detached helper (the app is about to exit),
+    /// as opposed to deploying in-process.</summary>
+    public bool MsixInstallHandedOff { get; private set; }
+
     public async Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -154,6 +164,24 @@ public sealed class UpdateService
         {
             if (isMsix)
             {
+                // Hand the package to a detached helper and exit instead of deploying
+                // from inside the running app. Replacing the package while this
+                // process - and its window - is still alive makes Windows freeze the
+                // window and kill the app mid-deployment; WER files that as an AppHang
+                // ("Stopped responding and was closed") on every MSIX update, which
+                // the user experiences as a crash. The helper runs outside the package
+                // via Task Scheduler, waits for this process to exit, installs, and
+                // relaunches the app.
+                if (MsixHandoff is not null
+                    && ScheduleService.TryGetPackageFamilyName(out var family)
+                    && family is not null
+                    && await StartMsixUpdateHelperAsync(packagePath, family, automatic, cancellationToken))
+                {
+                    MsixInstallHandedOff = true;
+                    MsixHandoff.Invoke();
+                    return;
+                }
+                // Helper unavailable: keep the previous in-process deployment.
                 var uri = new Uri(packagePath, UriKind.Absolute);
                 var manager = new global::Windows.Management.Deployment.PackageManager();
                 // ForceApplicationShutdown replaces the running package and
@@ -224,6 +252,68 @@ public sealed class UpdateService
             await _stateStore.MarkAsync("rollback-required", packagePath, rollback, cancellationToken);
             throw;
         }
+    }
+
+    /// <summary>Builds the PowerShell script for the MSIX update helper. The helper
+    /// waits until every CleanMachine process is gone (the handing-off app exits right
+    /// after starting it), installs the package, then relaunches the app - the new
+    /// version when the install landed, otherwise the one still installed, so the user
+    /// is never left without a running app. A failed install keeps the update state at
+    /// "installing", which the Updates page reconciles on next start. Pure function:
+    /// the round-trip through -EncodedCommand is covered by unit tests.</summary>
+    internal static string BuildMsixUpdateScript(string packagePath, string familyName, bool relaunchBackground)
+    {
+        static string Q(string value) => value.Replace("'", "''");
+        var processName = typeof(UpdateService).Assembly.GetName().Name ?? "CleanMachine";
+        return
+            $"$pkg='{Q(packagePath)}';" +
+            $"$fam='{Q(familyName)}';" +
+            $"$name='{Q(processName)}';" +
+            $"$bg={(relaunchBackground ? "$true" : "$false")};" +
+            "$deadline=[DateTimeOffset]::UtcNow.AddSeconds(60);" +
+            // Never wait forever: if the app refuses to exit, the deploy below fails
+            // harmlessly (package in use) and the relaunch brings the running copy up.
+            "while([DateTimeOffset]::UtcNow -lt $deadline -and (Get-Process -Name $name -ErrorAction SilentlyContinue)){Start-Sleep -Milliseconds 400};" +
+            "try{ Add-AppxPackage -Path $pkg -ErrorAction Stop }catch{ };" +
+            "$tail=''; if($bg){ $tail=' --background' };" +
+            "& cmd.exe /c ('start \"\" \"shell:AppsFolder\\' + $fam + '!App\"' + $tail)";
+    }
+
+    /// <summary>Builds the powershell.exe command line for the helper task. The script
+    /// travels base64-encoded (-EncodedCommand) so package paths, quotes and the
+    /// shell: URI survive schtasks' quoting layers untouched.</summary>
+    internal static string BuildMsixUpdateHelperCommand(string script)
+    {
+        var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+        var powerShell = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+        return $"\"{powerShell}\" -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand {encoded}";
+    }
+
+    /// <summary>Creates, fires, and removes the one-shot Task Scheduler task that runs
+    /// the update helper. Launching through the scheduler instead of as a child process
+    /// is deliberate: a child of this app would inherit the package identity and then
+    /// be unable to Add-AppxPackage over the very package it belongs to, while a
+    /// scheduler-launched process has a plain user token. Returns false when the task
+    /// could not be started, so the caller can fall back to in-process deployment.</summary>
+    internal static async Task<bool> StartMsixUpdateHelperAsync(
+        string packagePath, string familyName, bool relaunchBackground, CancellationToken token = default)
+    {
+        var command = BuildMsixUpdateHelperCommand(BuildMsixUpdateScript(packagePath, familyName, relaunchBackground))
+            .Replace("\"", "\\\"");
+        // /ST only has to be a valid future time: /Run fires the task immediately
+        // regardless of the schedule, and the definition is deleted right after so no
+        // update task ever lingers in the store.
+        var created = await ScheduleService.RunProcessAsync("schtasks.exe",
+            $"/Create /TN \"{ScheduledTask.UpdateHelperTaskName}\" /TR \"{command}\" " +
+            $"/SC ONCE /ST {DateTime.Now.AddMinutes(2):HH:mm} /RL LIMITED /F", token);
+        if (!created) return false;
+        var run = await ScheduleService.RunProcessAsync("schtasks.exe",
+            $"/Run /TN \"{ScheduledTask.UpdateHelperTaskName}\"", token);
+        await ScheduleService.RunProcessAsync("schtasks.exe",
+            $"/Delete /TN \"{ScheduledTask.UpdateHelperTaskName}\" /F", CancellationToken.None);
+        return run;
     }
 
     /// <summary>True when replacing the running executable needs an administrator,

@@ -1152,4 +1152,49 @@ public sealed class ManifestAndSafetyTests
         Assert.False(clone.MinimizeToTray);
         Assert.False(clone.ShowInTaskbar);
     }
+
+    [Fact]
+    public void MsixUpdateScriptWaitsForExitInstallsAndRelaunches()
+    {
+        var script = UpdateService.BuildMsixUpdateScript(
+            @"C:\Temp\Clean Machine\Pkg.msix", "Pkg_abc123", relaunchBackground: true);
+
+        // Waits for the handing-off app to exit before touching the package...
+        Assert.Contains("Get-Process", script);
+        Assert.Contains("Start-Sleep", script);
+        Assert.Contains("Add-AppxPackage", script);
+        // ...carries the exact package path and family...
+        Assert.Contains(@"C:\Temp\Clean Machine\Pkg.msix", script);
+        Assert.Contains("shell:AppsFolder", script);
+        Assert.Contains("Pkg_abc123", script);
+        // ...and relaunches into the tray after an automatic (idle) update.
+        Assert.Contains("$bg=$true", script);
+        Assert.Contains("--background", script);
+    }
+
+    [Fact]
+    public void MsixUpdateScriptQuotesEmbeddedSingleQuotes()
+    {
+        var script = UpdateService.BuildMsixUpdateScript("C:\\o'x.msix", "Fam", relaunchBackground: false);
+        // A PowerShell single-quoted literal escapes ' by doubling it; without that,
+        // an apostrophe in the path would truncate the literal and break the helper.
+        Assert.Contains("$pkg='C:\\o''x.msix';", script);
+        Assert.Contains("$bg=$false", script);
+    }
+
+    [Fact]
+    public void MsixUpdateHelperCommandRoundTripsThroughEncodedScript()
+    {
+        var script = UpdateService.BuildMsixUpdateScript(@"C:\p.msix", "Fam_x", relaunchBackground: false);
+        var command = UpdateService.BuildMsixUpdateHelperCommand(script);
+
+        Assert.Contains("-EncodedCommand", command);
+        Assert.Contains("powershell.exe", command);
+        // The raw script never appears on the command line - it only travels encoded,
+        // so schtasks' quoting cannot corrupt the package path or shell: URI.
+        Assert.DoesNotContain("Add-AppxPackage", command);
+
+        var encoded = command.Split(" -EncodedCommand ")[^1];
+        Assert.Equal(script, System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(encoded)));
+    }
 }

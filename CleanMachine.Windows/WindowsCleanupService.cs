@@ -424,6 +424,10 @@ public sealed class WindowsCleanupService
             }
         };
         process.Start();
+        // Drain the redirected streams: an undrained pipe fills after ~64 KB and the
+        // child would then block forever, hanging WaitForExit with it.
+        _ = process.StandardOutput.ReadToEndAsync();
+        _ = process.StandardError.ReadToEndAsync();
         process.WaitForExit();
         if (process.ExitCode != 0) throw new IOException($"ipconfig /flushdns returned exit code {process.ExitCode}.");
     }

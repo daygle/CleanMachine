@@ -557,7 +557,7 @@ public sealed partial class RegistryCarePage : Page
         var confirm = new ContentDialog
         {
             Title = "Restore registry backups?",
-            Content = $"This will re-import {_lastBackups.Count} backup file(s) from {_lastBackups[0].CreatedAt:g}. Continue?",
+            Content = $"This will re-import {_lastBackups.Count} backup file(s) from {_lastBackups[0].CreatedAt.ToLocalTime():g}. Continue?",
             PrimaryButtonText = "Restore",
             CloseButtonText = "Cancel",
             XamlRoot = XamlRoot

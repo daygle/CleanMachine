@@ -76,6 +76,10 @@ public static class ScheduledTask
     /// find (and clean up) in Task Scheduler.</summary>
     public const string Folder = "CleanMachine";
 
+    /// <summary>One-shot task used for the MSIX update hand-off: it is created,
+    /// run immediately, and deleted again, so no update task ever lingers.</summary>
+    public const string UpdateHelperTaskName = Folder + @"\UpdateHelper";
+
     public static string TaskName(string scheduleId)
     {
         ValidateScheduleId(scheduleId);

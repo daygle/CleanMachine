@@ -239,7 +239,7 @@ public sealed class ScheduleService
     [DllImport("powrprof.dll", SetLastError = true)]
     private static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
 
-    private static async Task<bool> RunProcessAsync(string fileName, string arguments, CancellationToken token)
+    internal static async Task<bool> RunProcessAsync(string fileName, string arguments, CancellationToken token)
     {
         var psi = new ProcessStartInfo(fileName, arguments)
         {
@@ -250,11 +250,18 @@ public sealed class ScheduleService
         };
         using var process = Process.Start(psi);
         if (process is null) return false;
+        // Drain the redirected streams while waiting: an undrained pipe fills after
+        // about 64 KB, the child then blocks writing to it, WaitForExitAsync never
+        // completes, and whatever UI flow awaited registration freezes for good.
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync(token);
+        try { await Task.WhenAll(stdout, stderr); }
+        catch { /* the output is discarded either way */ }
         return process.ExitCode == 0;
     }
 
-    private static bool TryGetPackageFamilyName(out string? familyName)
+    internal static bool TryGetPackageFamilyName(out string? familyName)
     {
         familyName = null;
         try
