@@ -175,7 +175,8 @@ public sealed class UpdateService
                 if (MsixHandoff is not null
                     && ScheduleService.TryGetPackageFamilyName(out var family)
                     && family is not null
-                    && await StartMsixUpdateHelperAsync(packagePath, family, automatic, cancellationToken))
+                    && await StartMsixUpdateHelperAsync(
+                        packagePath, family, automatic, UpdateStateStore.ErrorPath, cancellationToken))
                 {
                     MsixInstallHandedOff = true;
                     MsixHandoff.Invoke();
@@ -256,12 +257,18 @@ public sealed class UpdateService
 
     /// <summary>Builds the PowerShell script for the MSIX update helper. The helper
     /// waits until every CleanMachine process is gone (the handing-off app exits right
-    /// after starting it), installs the package, then relaunches the app - the new
-    /// version when the install landed, otherwise the one still installed, so the user
-    /// is never left without a running app. A failed install keeps the update state at
-    /// "installing", which the Updates page reconciles on next start. Pure function:
-    /// the round-trip through -EncodedCommand is covered by unit tests.</summary>
-    internal static string BuildMsixUpdateScript(string packagePath, string familyName, bool relaunchBackground)
+    /// after starting it), installs the package - retrying, because the first attempt
+    /// often races the exiting process - then relaunches the app: the new version when
+    /// the install landed, otherwise the one still installed, so the user is never left
+    /// without a running app. A failed install is written to <paramref name="errorPath"/>
+    /// so the Updates page can explain what went wrong on the next launch instead of
+    /// silently re-offering the same update. Pure function: the round-trip through
+    /// -EncodedCommand is covered by unit tests.</summary>
+    internal static string BuildMsixUpdateScript(
+        string packagePath,
+        string familyName,
+        bool relaunchBackground,
+        string? errorPath = null)
     {
         static string Q(string value) => value.Replace("'", "''");
         var processName = typeof(UpdateService).Assembly.GetName().Name ?? "CleanMachine";
@@ -270,11 +277,30 @@ public sealed class UpdateService
             $"$fam='{Q(familyName)}';" +
             $"$name='{Q(processName)}';" +
             $"$bg={(relaunchBackground ? "$true" : "$false")};" +
+            (errorPath is null ? "" : $"$errFile='{Q(errorPath)}';") +
+            // The task definition outlives this run on purpose (deleting a task that is
+            // still executing terminates it mid-deployment). If that leftover task ever
+            // fires again - e.g. the PC was off when its scheduled time passed - the
+            // staged package is long gone, so exit without deploying or relaunching.
+            "if(-not (Test-Path -LiteralPath $pkg)){ exit 0 };" +
             "$deadline=[DateTimeOffset]::UtcNow.AddSeconds(60);" +
             // Never wait forever: if the app refuses to exit, the deploy below fails
             // harmlessly (package in use) and the relaunch brings the running copy up.
             "while([DateTimeOffset]::UtcNow -lt $deadline -and (Get-Process -Name $name -ErrorAction SilentlyContinue)){Start-Sleep -Milliseconds 400};" +
-            "try{ Add-AppxPackage -Path $pkg -ErrorAction Stop }catch{ };" +
+            // Clear any report from a previous attempt before trying, so a later
+            // success never leaves a stale failure message behind.
+            (errorPath is null ? "" : "if($errFile){ try{ Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue }catch{ } };") +
+            // Retry the deploy several times. The first attempt routinely loses the
+            // race with the just-exited process (the deployment service still holds
+            // the old package files for a moment), and a single silent failure was
+            // what users saw as "the update did nothing": the old version came back.
+            "$err='';" +
+            "for($i=0;$i -lt 5;$i++){ try{ Add-AppxPackage -Path $pkg -ErrorAction Stop; $err=''; break }catch{ $err=$_.Exception.Message; Start-Sleep -Seconds 2 } };" +
+            // Record the failure as plain text where the Updates page reads it on the
+            // next launch, so the user learns what went wrong instead of being offered
+            // the same update again with no explanation.
+            (errorPath is null ? "" :
+                "if($err -ne '' -and $errFile){ try{ Set-Content -LiteralPath $errFile -Value $err -Encoding UTF8 -ErrorAction Stop }catch{ } };") +
             "$tail=''; if($bg){ $tail=' --background' };" +
             "& cmd.exe /c ('start \"\" \"shell:AppsFolder\\' + $fam + '!App\"' + $tail)";
     }
@@ -298,22 +324,27 @@ public sealed class UpdateService
     /// scheduler-launched process has a plain user token. Returns false when the task
     /// could not be started, so the caller can fall back to in-process deployment.</summary>
     internal static async Task<bool> StartMsixUpdateHelperAsync(
-        string packagePath, string familyName, bool relaunchBackground, CancellationToken token = default)
+        string packagePath,
+        string familyName,
+        bool relaunchBackground,
+        string? errorPath = null,
+        CancellationToken token = default)
     {
-        var command = BuildMsixUpdateHelperCommand(BuildMsixUpdateScript(packagePath, familyName, relaunchBackground))
-            .Replace("\"", "\\\"");
+        var script = BuildMsixUpdateScript(packagePath, familyName, relaunchBackground, errorPath);
+        var command = BuildMsixUpdateHelperCommand(script).Replace("\"", "\\\"");
         // /ST only has to be a valid future time: /Run fires the task immediately
-        // regardless of the schedule, and the definition is deleted right after so no
-        // update task ever lingers in the store.
+        // regardless of the schedule. The definition is deliberately NOT deleted
+        // after /Run: deleting a scheduled task that is still executing terminates
+        // it, which is exactly how the update ended up neither applied nor reported
+        // (the app had already exited, so the user was left with nothing running).
+        // The next update re-creates the definition with /F, and if this leftover
+        // one ever fires again the script exits immediately on the missing package.
         var created = await ScheduleService.RunProcessAsync("schtasks.exe",
             $"/Create /TN \"{ScheduledTask.UpdateHelperTaskName}\" /TR \"{command}\" " +
             $"/SC ONCE /ST {DateTime.Now.AddMinutes(2):HH:mm} /RL LIMITED /F", token);
         if (!created) return false;
-        var run = await ScheduleService.RunProcessAsync("schtasks.exe",
+        return await ScheduleService.RunProcessAsync("schtasks.exe",
             $"/Run /TN \"{ScheduledTask.UpdateHelperTaskName}\"", token);
-        await ScheduleService.RunProcessAsync("schtasks.exe",
-            $"/Delete /TN \"{ScheduledTask.UpdateHelperTaskName}\" /F", CancellationToken.None);
-        return run;
     }
 
     /// <summary>True when replacing the running executable needs an administrator,

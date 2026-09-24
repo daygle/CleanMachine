@@ -18,6 +18,18 @@ public sealed partial class UpdatesPage : Page
     private async Task CheckPendingUpdateAsync()
     {
         var state = await _stateStore.LoadAsync();
+
+        // The detached MSIX helper records why an install failed; surface it before
+        // anything else so a failed update is explained instead of looking like
+        // nothing happened (the old version simply came back).
+        var installError = UpdateStateStore.TakeInstallError();
+        if (installError is not null)
+        {
+            StatusText.Text = "The last update did not install.";
+            DetailText.Text = installError;
+            DetailText.Visibility = Visibility.Visible;
+        }
+
         if (state is { Status: "staged" or "installing" } && !string.IsNullOrEmpty(state.PackagePath))
         {
             // The running app already satisfies the pending update's target version,
@@ -38,7 +50,8 @@ public sealed partial class UpdatesPage : Page
             // when it can no longer be a real pending update: the package file is gone
             // (the temp download was cleaned up), or it targets a version the user
             // already runs - e.g. it was installed outside the app after a declined
-            // UAC prompt or a blocked download.
+            // UAC prompt or a blocked download. A failed helper install is likewise
+            // finished business: the package never landed and the download is stale.
             var stale = !File.Exists(state.PackagePath) || targetAtOrBelowCurrent;
 
             if (stale)
@@ -53,9 +66,12 @@ public sealed partial class UpdatesPage : Page
                 PendingText.Visibility = Visibility.Visible;
                 DismissButton.Visibility = Visibility.Visible;
                 InstallButton.Visibility = Visibility.Visible;
-                StatusText.Text = "A verified package is staged and ready to install.";
-                DetailText.Text = $"Package: {state.PackagePath}";
-                DetailText.Visibility = Visibility.Visible;
+                if (installError is null)
+                {
+                    StatusText.Text = "A verified package is staged and ready to install.";
+                    DetailText.Text = $"Package: {state.PackagePath}";
+                    DetailText.Visibility = Visibility.Visible;
+                }
             }
         }
 

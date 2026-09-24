@@ -285,10 +285,12 @@ public sealed partial class MainWindow : Window
         // unreachable without one.
         if (_alwaysShowTray) ShowTrayIcon();
 
-        // Create a desktop shortcut for MSIX installs on every launch so a
-        // missing or removed shortcut is re-created (the .exe installer already
-        // creates one via its desktopicon task; CreateDesktopShortcut no-ops
-        // when the .lnk already exists).
+        // Create the desktop shortcut for MSIX installs on every launch. Windows
+        // removes the Start-menu entry when a package is replaced but never touches
+        // a plain .lnk, so the shortcut the app wrote against the *previous* install
+        // is left behind pointing at a WindowsApps folder that no longer exists -
+        // that is the "broken desktop icon after updating" report. Rewriting it every
+        // launch re-points it at the current package and repairs a stale one.
         if (ScheduleService.IsMsix)
             CreateDesktopShortcut();
 
@@ -299,8 +301,14 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    /// <summary>Creates a desktop shortcut to the application. Works for both
-    /// MSIX and .exe installs by using the current executable path.</summary>
+    /// <summary>Writes the desktop shortcut for this install. MSIX packages are
+    /// targeted through the package identity (<c>shell:AppsFolder\PFN!App</c>) rather
+    /// than the executable: the executable lives in a version-stamped WindowsApps
+    /// folder that is deleted on the next update, so an exe-targeting shortcut breaks
+    /// every single time the app updates. The identity-based link survives every
+    /// future update. The .exe install keeps its direct path (it is not versioned)
+    /// and is only created when missing, so the installer's own shortcut is left
+    /// alone.</summary>
     private void CreateDesktopShortcut()
     {
         try
@@ -308,24 +316,36 @@ public sealed partial class MainWindow : Window
             var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             if (string.IsNullOrEmpty(desktopPath)) return;
 
-            var shortcutPath = Path.Combine(desktopPath, "CleanMachine.lnk");
-            if (File.Exists(shortcutPath)) return;
+            var shortcutPath = Path.Combine(desktopPath, MsixUninstallService.ShortcutFileName);
+            var isMsix = ScheduleService.IsMsix;
+            // An MSIX shortcut is rewritten every launch (that is the self-heal for a
+            // link left over from a replaced package); a standalone install only
+            // needs it created once.
+            if (!isMsix && File.Exists(shortcutPath)) return;
 
-            var exePath = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return;
-
-            // Create a simple .lnk shortcut using COM Shell.
             var shell = (IShellLinkW)new CShellLink();
-            shell.SetPath(exePath);
+            if (isMsix)
+            {
+                if (!ScheduleService.TryGetPackageFamilyName(out var family) || string.IsNullOrEmpty(family)) return;
+                shell.SetPath(MsixUninstallService.BuildMsixShortcutTarget(family));
+                // No working directory: the identity link resolves the install folder
+                // itself, and a stale one would point into a deleted WindowsApps path.
+            }
+            else
+            {
+                var exePath = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return;
+                shell.SetPath(exePath);
+                shell.SetWorkingDirectory(Path.GetDirectoryName(exePath) ?? exePath);
+            }
             shell.SetDescription("CleanMachine - Privacy cleanup utility");
-            shell.SetWorkingDirectory(Path.GetDirectoryName(exePath) ?? exePath);
 
             var persistFile = (IPersistFile)shell;
             persistFile.Save(shortcutPath, false);
         }
         catch
         {
-            // Shortcut creation is best-effort; missing icon is acceptable.
+            // Shortcut creation is best-effort; a missing icon is acceptable.
         }
     }
 

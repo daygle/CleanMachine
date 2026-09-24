@@ -26,4 +26,5 @@ public sealed record UpdateState(
     string? ExpectedSha256 = null,
     string? ExpectedPublisher = null,
     string? TargetVersion = null,
-    string? Source = null);
+    string? Source = null,
+    string? Error = null);

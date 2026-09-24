@@ -20,6 +20,14 @@ internal static class MsixUninstallService
     /// package removal.</summary>
     internal const string ShortcutFileName = "CleanMachine.lnk";
 
+    /// <summary>The target a desktop shortcut must use for an MSIX install: the
+    /// package identity, not the executable. A shortcut aimed at
+    /// C:\Program Files\WindowsApps\CleanMachine_1.0.0.0_x64__&lt;hash&gt;\CleanMachine.exe
+    /// breaks on the very next update, because that version-stamped folder is deleted
+    /// when the package is replaced. shell:AppsFolder\&lt;PFN&gt;!App is resolved by the
+    /// shell on every launch and therefore survives every future update.</summary>
+    internal static string BuildMsixShortcutTarget(string familyName) => $"shell:AppsFolder\\{familyName}!App";
+
     /// <summary>Runs the uninstall. Returns false only when the deferred removal
     /// helper could not be launched - in that case nothing has been touched, so
     /// the caller can point the user at Windows Settings > Apps instead.

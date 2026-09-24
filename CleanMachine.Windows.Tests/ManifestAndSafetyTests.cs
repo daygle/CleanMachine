@@ -1186,6 +1186,54 @@ public sealed class ManifestAndSafetyTests
         Assert.Contains("--background", script);
     }
 
+    /// <summary>The first Add-AppxPackage attempt routinely loses the race with the
+    /// just-exited process, so a single silent failure looked to users exactly like
+    /// "the update did nothing". The helper must retry, and must leave a note when
+    /// every attempt fails.</summary>
+    [Fact]
+    public void MsixUpdateScriptRetriesTheInstallAndReportsFailure()
+    {
+        var script = UpdateService.BuildMsixUpdateScript(
+            @"C:\p.msix", "Fam_x", relaunchBackground: false, errorPath: @"C:\data\install-error.txt");
+
+        Assert.Contains("for($i=0;$i -lt 5;$i++)", script);
+        Assert.Contains("Start-Sleep -Seconds 2", script);
+        // The failure reason is recorded where the Updates page can show it...
+        Assert.Contains(@"$errFile='C:\data\install-error.txt';", script);
+        Assert.Contains("Set-Content -LiteralPath $errFile", script);
+        // ...and a stale note from an earlier attempt is cleared before retrying.
+        Assert.Contains("Remove-Item -LiteralPath $errFile", script);
+        // The relaunch must happen whether or not the deploy succeeded, so the
+        // user is never left with no running app at all.
+        Assert.True(script.IndexOf("Add-AppxPackage", StringComparison.Ordinal)
+            < script.IndexOf("shell:AppsFolder", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MsixUpdateScriptOmitsErrorReportingWhenNoPathIsGiven()
+    {
+        var script = UpdateService.BuildMsixUpdateScript(@"C:\p.msix", "Fam_x", relaunchBackground: false);
+        Assert.DoesNotContain("$errFile", script);
+        Assert.DoesNotContain("Set-Content", script);
+    }
+
+    /// <summary>The desktop shortcut must target the package identity, not the
+    /// version-stamped WindowsApps executable: the folder an exe-targeting link
+    /// points at is deleted on the next update, which is what broke the user's
+    /// desktop icon after every in-app update.</summary>
+    [Fact]
+    public void MsixDesktopShortcutTargetsThePackageIdentityNotTheVersionedExe()
+    {
+        var family = "CleanMachine_1234567890abcdef_abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+
+        var target = MsixUninstallService.BuildMsixShortcutTarget(family);
+
+        Assert.Equal($"shell:AppsFolder\\{family}!App", target);
+        Assert.DoesNotContain("WindowsApps", target, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(".exe", target, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(@"\", target[(target.IndexOf('\\') + 1)..], StringComparison.Ordinal);
+    }
+
     [Fact]
     public void MsixUpdateScriptQuotesEmbeddedSingleQuotes()
     {

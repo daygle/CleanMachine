@@ -7,6 +7,31 @@ public sealed class UpdateStateStore
     private static readonly SemaphoreSlim SaveGate = new(1, 1);
     private static string PathName => Path.Combine(AppDataPaths.Root, "Updates", "state.json");
 
+    /// <summary>Where the MSIX update helper (a PowerShell process outside the
+    /// package) drops the reason an install failed. It is plain text written with
+    /// Set-Content, so the helper never has to hand-serialize the app's JSON state
+    /// file; the Updates page reads it on the next launch and then deletes it.</summary>
+    internal static string ErrorPath => Path.Combine(AppDataPaths.Root, "Updates", "install-error.txt");
+
+    /// <summary>Reads and clears the helper's failure note. Returns null when the
+    /// last update installed cleanly (or never ran).</summary>
+    internal static string? TakeInstallError()
+    {
+        try
+        {
+            if (!File.Exists(ErrorPath)) return null;
+            var text = File.ReadAllText(ErrorPath).Trim();
+            TryDelete(ErrorPath);
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static void TryDelete(string path) { try { File.Delete(path); } catch { } }
+
     public async Task<UpdateState?> LoadAsync(CancellationToken token = default)
     {
         try
