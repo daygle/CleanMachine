@@ -81,11 +81,25 @@ public sealed class UpdateAutoInstaller
 
             await _service.InstallVerifiedPackageAsync(path, executable, cancellationToken, automatic: true);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // UAC declined (should not happen for silent-capable installs, but a
-            // policy change mid-session could), SAC refusal, or a network error:
-            // the package stays staged for the manual retry path.
+            // The app is shutting down or the background agent was disabled: not a
+            // failure, and the package stays staged for the next attempt.
+        }
+        catch (OperationCanceledException ex)
+        {
+            // Not a cancellation - the helper could not be scheduled, the installer
+            // was declined, or the download was blocked. Nothing was installed and
+            // the package stays staged, but swallowing this silently left an
+            // automatic update that simply never happened with no trace anywhere.
+            try
+            {
+                await new ActivityStore().AddAsync(new ActivityEntry(
+                    DateTimeOffset.UtcNow,
+                    "Automatic Update",
+                    $"Automatic update install did not run: {ex.Message}"));
+            }
+            catch { /* activity store is best-effort */ }
         }
         catch (Exception ex)
         {

@@ -43,13 +43,13 @@ public sealed class ScheduleService
         // so this only needs to run when wake is wanted. A failure (e.g. wake timers
         // disabled by policy) must not fail registration - the task still runs whenever
         // the PC is already awake.
-        if (created && schedule.WakeToRun)
+        if (created.Success && schedule.WakeToRun)
             await RunProcessAsync("powershell.exe", ScheduledTask.BuildWakeToRunArguments(schedule.Id), token);
-        return created;
+        return created.Success;
     }
 
-    public static Task<bool> UnregisterAsync(string scheduleId, CancellationToken token = default)
-        => RunProcessAsync("schtasks.exe", ScheduledTask.BuildDeleteArguments(scheduleId), token);
+    public static async Task<bool> UnregisterAsync(string scheduleId, CancellationToken token = default)
+        => (await RunProcessAsync("schtasks.exe", ScheduledTask.BuildDeleteArguments(scheduleId), token)).Success;
 
     /// <summary>Brings the machine's task store in line with the saved schedules:
     /// enabled schedules are (re)registered; disabled or empty ones are removed.</summary>
@@ -69,7 +69,12 @@ public sealed class ScheduleService
             {
                 // Best-effort sync: one schedule that cannot be (un)registered must
                 // not abort the rest, and the caller fires this without awaiting.
-                // The Schedules page still reports failures when editing a schedule.
+                // The reason is recorded so a silently missing schedule is traceable
+                // after the fact instead of looking like it was never configured.
+                _ = new ActivityStore().AddAsync(new ActivityEntry(
+                    DateTimeOffset.UtcNow,
+                    "Schedule Sync",
+                    $"Could not sync '{schedule.Id}': {ex.Message}"));
             }
         }
     }
@@ -248,7 +253,20 @@ public sealed class ScheduleService
     [DllImport("powrprof.dll", SetLastError = true)]
     private static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
 
-    internal static async Task<bool> RunProcessAsync(string fileName, string arguments, CancellationToken token)
+    /// <summary>Result of running a helper process, carrying the reason it failed.
+    /// The captured output is the point: schtasks.exe explains a refusal on
+    /// stderr ("Value for '/TR' option cannot be more than 261 character(s)"),
+    /// and throwing that away is exactly how an unschedulable update task went
+    /// unnoticed for five releases and six user-visible hangs.</summary>
+    internal readonly record struct ProcessOutcome(bool Success, int ExitCode, string? Reason)
+    {
+        internal static ProcessOutcome Failed(string? reason) => new(false, -1, reason);
+    }
+
+    /// <summary>Runs a helper process to completion. Returns the exit status plus the
+    /// first meaningful output line on failure, so callers can report *why* rather
+    /// than only that something went wrong.</summary>
+    internal static async Task<ProcessOutcome> RunProcessAsync(string fileName, string arguments, CancellationToken token)
     {
         var psi = new ProcessStartInfo(fileName, arguments)
         {
@@ -258,16 +276,33 @@ public sealed class ScheduleService
             RedirectStandardOutput = true
         };
         using var process = Process.Start(psi);
-        if (process is null) return false;
+        if (process is null) return ProcessOutcome.Failed($"{fileName} could not be started.");
         // Drain the redirected streams while waiting: an undrained pipe fills after
         // about 64 KB, the child then blocks writing to it, WaitForExitAsync never
         // completes, and whatever UI flow awaited registration freezes for good.
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync(token);
-        try { await Task.WhenAll(stdout, stderr); }
-        catch { /* the output is discarded either way */ }
-        return process.ExitCode == 0;
+        string outText = string.Empty, errText = string.Empty;
+        try { await Task.WhenAll(stdout, stderr); outText = stdout.Result; errText = stderr.Result; }
+        catch { /* a partially read stream still leaves a usable exit code */ }
+        if (process.ExitCode == 0) return new ProcessOutcome(true, 0, null);
+        // schtasks writes its refusal to stderr, but not every tool does, so fall
+        // back to stdout before giving up and reporting the bare exit code.
+        var reason = FirstLine(errText) ?? FirstLine(outText)
+            ?? $"{Path.GetFileName(fileName)} exited with code {process.ExitCode}.";
+        return new ProcessOutcome(false, process.ExitCode, reason);
+    }
+
+    /// <summary>First non-blank line of captured tool output, trimmed of the trailing
+    /// period schtasks adds so a message can be embedded in a sentence.</summary>
+    internal static string? FirstLine(string text)
+    {
+        var line = text?.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .FirstOrDefault(l => l.Length > 0);
+        if (string.IsNullOrEmpty(line)) return null;
+        return line.TrimEnd('.').Trim();
     }
 
     internal static bool TryGetPackageFamilyName(out string? familyName)

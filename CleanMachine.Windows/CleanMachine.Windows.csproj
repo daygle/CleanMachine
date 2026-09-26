@@ -6,6 +6,13 @@
     <RootNamespace>CleanMachine.Windows</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x86;x64;ARM64</Platforms>
+    <!-- WindowsAppSDKSelfContained rejects AnyCPU ("requires a supported Windows
+         architecture"), so a plain `dotnet build` failed unless the caller passed
+         -p:Platform. CI and the release workflow always do, which is why this stayed
+         hidden. Default to x64 - the architecture this app ships and runs as. An
+         explicit -p:Platform from the command line is a global property and still wins,
+         so the x86/ARM64 release matrix is unaffected. -->
+    <Platform Condition="'$(Platform)' == '' or '$(Platform)' == 'AnyCPU'">x64</Platform>
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>

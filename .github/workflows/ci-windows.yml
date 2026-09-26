@@ -42,6 +42,13 @@ jobs:
         shell: pwsh
         run: dotnet build $env:PROJECT -c Release -p:Platform=x64 --no-restore
 
+      # CLEANMACHINE_RUN_SCHEDULED_TESTS=1 enables the one test that creates and runs
+      # a real scheduled task. It is the only coverage that can catch a helper task
+      # Windows refuses to schedule - the failure that shipped unnoticed for five
+      # releases - and it is safe here because the runner is ephemeral. The flag is
+      # not set for local runs, so `dotnet test` on a developer machine stays inert.
       - name: Run tests (x64)
         shell: pwsh
+        env:
+          CLEANMACHINE_RUN_SCHEDULED_TESTS: "1"
         run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore

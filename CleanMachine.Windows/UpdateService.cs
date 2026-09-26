@@ -201,9 +201,7 @@ public sealed class UpdateService
                 // single-line headline, where a sentence and a half was truncated to
                 // "...would freeze and close Cl". The rationale above stays in the code
                 // and the page puts this in the wrapped detail line beneath the banner.
-                throw new OperationCanceledException(
-                    "Windows couldn't start the background update helper. " +
-                    "The update is still staged - install it again to retry.");
+                throw new OperationCanceledException(HelperUnavailableMessage);
             }
             else
             {
@@ -375,8 +373,9 @@ public sealed class UpdateService
     /// be unable to Add-AppxPackage over the very package it belongs to, while a
     /// scheduler-launched process has a plain user token. The task definition is
     /// deliberately left behind rather than deleted once fired - see below. Returns
-    /// false when the task could not be started, so the caller can report the
-    /// failure instead of deploying in-process.</summary>
+    /// true once the task is created and fired; throws with schtasks' own reason
+    /// when it could not be, so the caller reports the failure instead of falling
+    /// back to the in-process deployment that hangs.</summary>
     internal static async Task<bool> StartMsixUpdateHelperAsync(
         string packagePath,
         string familyName,
@@ -405,10 +404,32 @@ public sealed class UpdateService
         var created = await ScheduleService.RunProcessAsync("schtasks.exe",
             $"/Create /TN \"{ScheduledTask.UpdateHelperTaskName}\" /TR \"{command}\" " +
             $"/SC ONCE /ST {DateTime.Now.AddMinutes(2):HH:mm} /RL LIMITED /F", token);
-        if (!created) return false;
-        return await ScheduleService.RunProcessAsync("schtasks.exe",
+        if (!created.Success) throw HelperUnavailable(created.Reason);
+        var run = await ScheduleService.RunProcessAsync("schtasks.exe",
             $"/Run /TN \"{ScheduledTask.UpdateHelperTaskName}\"", token);
+        if (!run.Success) throw HelperUnavailable(run.Reason);
+        return true;
     }
+
+    /// <summary>The one-line user-facing reason, kept separate so its length can be
+    /// asserted in tests: it is shown in a single-line banner and in the activity
+    /// log, and an earlier sentence-and-a-half version was clipped mid-word.</summary>
+    internal const string HelperUnavailableMessage =
+        "Windows couldn't start the background update helper. " +
+        "The update is still staged - install it again to retry.";
+
+    /// <summary>Builds the failure for an unschedulable helper, appending whatever
+    /// schtasks actually said. Reporting the tool's own words is the whole point:
+    /// the reason it refused is what makes the next occurrence diagnosable instead
+    /// of a mystery the user can only retry.
+    /// <para>An <see cref="OperationCanceledException"/> on purpose, matching the
+    /// UAC-declined and blocked-installer cases: nothing was installed, so the
+    /// outer handler must leave the package staged and must not demand a rollback
+    /// that has nothing to roll back.</para></summary>
+    private static OperationCanceledException HelperUnavailable(string? reason) =>
+        new(string.IsNullOrWhiteSpace(reason)
+            ? HelperUnavailableMessage
+            : $"{HelperUnavailableMessage} ({reason})");
 
     /// <summary>True when replacing the running executable needs an administrator,
     /// i.e. the install lives in a directory a standard user cannot write (a

@@ -111,6 +111,74 @@ public sealed class UpdateStateStore
     public async Task<bool> HasPendingUpdateAsync(CancellationToken token = default)
         => (await LoadAsync(token)) is { Status: "staged" or "installing" };
 
+    /// <summary>Outcome of reconciling leftover update state. <see cref="Pending"/>
+    /// is non-null only when an update is genuinely still installable; the flags let
+    /// callers report or simply proceed.</summary>
+    internal readonly record struct UpdateReconciliation(
+        UpdateState? Pending,
+        bool InstallRecorded,
+        bool Dismissed);
+
+    /// <summary>Retires update state left behind by a previous session.
+    ///
+    /// An MSIX install terminates the app mid-deployment, so the process that
+    /// started it never records its own outcome. Without this pass the app carries
+    /// a "pending" update it has already installed - and worse, it carried that lie
+    /// everywhere except the Updates page, which is the only place this used to run.
+    /// It now runs at startup too, so the Overview page never offers an update that
+    /// is already installed.
+    ///
+    /// Two cases are resolved: an "installing" state whose target version is already
+    /// running means the deployment actually landed, so the success is recorded; and
+    /// a staged package that is gone, or that targets a version already running, is
+    /// stale and gets dismissed. Best-effort throughout - a failure here must never
+    /// stop the app from starting.</summary>
+    internal static async Task<UpdateReconciliation> ReconcileAsync(CancellationToken token = default)
+    {
+        try
+        {
+            var store = new UpdateStateStore();
+            var state = await store.LoadAsync(token);
+            if (state is not { Status: "staged" or "installing" }
+                || string.IsNullOrEmpty(state.PackagePath))
+                return new UpdateReconciliation(null, false, false);
+
+            var targetAtOrBelowCurrent = state.TargetVersion is not null
+                && Version.TryParse(state.TargetVersion, out var target)
+                && target <= UpdateService.CurrentVersion();
+
+            var recorded = state.Status == "installing" && targetAtOrBelowCurrent;
+            if (recorded) await RecordCompletedInstallAsync(state);
+
+            var stale = !File.Exists(state.PackagePath) || targetAtOrBelowCurrent;
+            if (!stale) return new UpdateReconciliation(state, recorded, false);
+
+            await store.DismissAsync(state.PackagePath);
+            return new UpdateReconciliation(null, recorded, true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Never let leftover bookkeeping stop the app from launching.
+            return new UpdateReconciliation(null, false, false);
+        }
+    }
+
+    /// <summary>Records the success of an update whose process was terminated
+    /// mid-deployment (MSIX ForceApplicationShutdown) before it could log its own
+    /// Activity entry. Best-effort: history is diagnostic, never authoritative.</summary>
+    private static async Task RecordCompletedInstallAsync(UpdateState state)
+    {
+        try
+        {
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                state.Source == "automatic" ? "Automatic Update" : "Manual Update",
+                $"Update installed successfully: {Path.GetFileName(state.PackagePath)}."));
+        }
+        catch { /* activity history is best-effort */ }
+        UpdateService.CleanupRollbackCopy();
+    }
+
     private static async Task SaveCoreAsync(UpdateState state, CancellationToken token)
     {
         var temp = $"{PathName}.{Guid.NewGuid():N}.tmp";

@@ -84,6 +84,11 @@ public partial class App : Application
         if (UpdateService.IsInstalledAsMsix) UpdateService.CleanupRollbackCopy();
 
         var settings = await AppSettings.LoadAsync();
+        // Retire update state left by a previous session before anything reads it.
+        // An MSIX install kills the app mid-deployment, so a finished update used to
+        // look pending until the Updates page happened to be opened - and the
+        // Overview page would offer an update that was already installed.
+        _ = UpdateStateStore.ReconcileAsync();
         // Run startup cleanup before enabling periodic/background cleanup so the two
         // paths cannot mutate the same files concurrently on first launch.
         if (settings.CleanAtStartup)

@@ -1327,6 +1327,116 @@ public sealed class ManifestAndSafetyTests
         Assert.Equal(packageVersion, assemblyVersion);
     }
 
+    /// <summary>The helper-failure message is rendered in a single-line banner and in
+    /// the activity log. An earlier version ran to a sentence and a half and was
+    /// clipped mid-word on the Overview page, hiding the part that explained the
+    /// failure, so the length is pinned rather than left to prose.</summary>
+    [Fact]
+    public void UpdateHelperFailureMessageFitsASingleLine()
+    {
+        const int singleLineBudget = 160;
+        var message = UpdateService.HelperUnavailableMessage;
+
+        Assert.True(message.Length <= singleLineBudget,
+            $"Helper failure message is {message.Length} chars; budget is {singleLineBudget}.");
+        Assert.DoesNotContain("\n", message);
+        Assert.DoesNotContain("\r", message);
+        // It must still say what to do, not just what went wrong.
+        Assert.Contains("retry", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>schtasks writes the reason it refused a task to stderr. Keeping the
+    /// first meaningful line is what turns "something went wrong" into a diagnosable
+    /// failure - it is the whole reason this bug was catchable after the fact.</summary>
+    [Theory]
+    [InlineData("ERROR: Value for '/TR' option cannot be more than 261 character(s).\r\n", "/TR")]
+    [InlineData("\r\n   \r\nERROR: Access is denied.\r\n", "Access is denied")]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void FirstLineExtractsTheToolsOwnRefusal(string? text, string? expected)
+    {
+        var line = ScheduleService.FirstLine(text!);
+        if (expected is null) Assert.Null(line);
+        else Assert.Contains(expected, line, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A failing helper process must come back with a reason attached. This
+    /// is the regression guard for the bug that hid for five releases: RunProcessAsync
+    /// used to read schtasks' stderr and throw it away, so an unschedulable update
+    /// task was indistinguishable from a successful one.
+    ///
+    /// Uses a read-only query for a task that cannot exist, so it has no side effects
+    /// and can run unconditionally.</summary>
+    [Fact]
+    public async Task RunProcessAsyncReportsWhyACommandFailed()
+    {
+        var outcome = await ScheduleService.RunProcessAsync(
+            "schtasks.exe", @"/Query /TN ""\CleanMachine\ThisTaskMustNotExist"" /FO LIST /V", default);
+
+        Assert.False(outcome.Success);
+        Assert.NotEqual(0, outcome.ExitCode);
+        Assert.False(string.IsNullOrWhiteSpace(outcome.Reason));
+    }
+
+    /// <summary>The success path must not invent a reason, or every caller would
+    /// surface a bogus error message on a working update.</summary>
+    [Fact]
+    public async Task RunProcessAsyncReportsSuccessWithoutAReason()
+    {
+        var outcome = await ScheduleService.RunProcessAsync("schtasks.exe", "/Query /FO LIST", default);
+
+        Assert.True(outcome.Success);
+        Assert.Equal(0, outcome.ExitCode);
+        Assert.Null(outcome.Reason);
+    }
+
+    /// <summary>End-to-end proof that a helper task can actually be scheduled and
+    /// run on this machine - the one thing no pure unit test can show, and the gap
+    /// that let an unschedulable helper ship unnoticed. It creates a real scheduled
+    /// task, so it is opt-in: set CLEANMACHINE_RUN_SCHEDULED_TESTS=1. CI enables it
+    /// because its runners are ephemeral, which is where this coverage belongs.</summary>
+    [Fact]
+    [Trait("Category", "ScheduledTask")]
+    public async Task MsixUpdateHelperTaskCanBeScheduledAndRuns()
+    {
+        if (Environment.GetEnvironmentVariable("CLEANMACHINE_RUN_SCHEDULED_TESTS") != "1") return;
+
+        const string taskName = @"\CleanMachine\TestsHelperSelfTest";
+        var directory = Path.Combine(Path.GetTempPath(), "CleanMachine-HelperSelfTest");
+        var marker = Path.Combine(directory, "ran.txt");
+        var scriptPath = Path.Combine(directory, "update-helper.ps1");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            // A harmless stand-in with the real script's shape, including an apostrophe
+            // in the value it echoes: that is the quoting this path has to survive.
+            await File.WriteAllTextAsync(scriptPath,
+                $"Set-Content -LiteralPath '{marker}' -Value 'ran'\n");
+
+            var action = UpdateService.BuildMsixUpdateHelperCommand(scriptPath);
+            Assert.True(action.Length <= UpdateService.MaxHelperActionLength,
+                $"Helper action is {action.Length} chars; schtasks allows at most {UpdateService.MaxHelperActionLength}.");
+
+            var escaped = action.Replace("\"", "\\\"");
+            var created = await ScheduleService.RunProcessAsync("schtasks.exe",
+                $"/Create /TN \"{taskName}\" /TR \"{escaped}\" /SC ONCE /ST {DateTime.Now.AddMinutes(5):HH:mm} /RL LIMITED /F",
+                default);
+            Assert.True(created.Success, $"schtasks /Create failed: {created.Reason}");
+
+            var run = await ScheduleService.RunProcessAsync("schtasks.exe", $"/Run /TN \"{taskName}\"", default);
+            Assert.True(run.Success, $"schtasks /Run failed: {run.Reason}");
+
+            // The task is fire-and-forget, so poll for the marker rather than guessing.
+            for (var i = 0; i < 40 && !File.Exists(marker); i++) await Task.Delay(500);
+            Assert.True(File.Exists(marker), "The helper task ran but the script never executed.");
+        }
+        finally
+        {
+            await ScheduleService.RunProcessAsync("schtasks.exe", $"/Delete /TN \"{taskName}\" /F", default);
+            try { Directory.Delete(directory, recursive: true); } catch { }
+        }
+    }
+
     /// <summary>Walks up from the test output directory (bin/&lt;config&gt;/&lt;tfm&gt;,
     /// any platform) to the checkout that contains the app project.</summary>
     private static string? FindRepoRoot()

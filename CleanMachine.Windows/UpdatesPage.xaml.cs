@@ -17,7 +17,10 @@ public sealed partial class UpdatesPage : Page
 
     private async Task CheckPendingUpdateAsync()
     {
-        var state = await _stateStore.LoadAsync();
+        // Reconcile leftovers from a previous session. This used to be done inline
+        // here, which meant the app carried stale "pending update" state everywhere
+        // else; it now also runs at startup (see App.OnLaunched).
+        var result = await UpdateStateStore.ReconcileAsync();
 
         // The detached MSIX helper records why an install failed; surface it before
         // anything else so a failed update is explained instead of looking like
@@ -30,72 +33,26 @@ public sealed partial class UpdatesPage : Page
             DetailText.Visibility = Visibility.Visible;
         }
 
-        if (state is { Status: "staged" or "installing" } && !string.IsNullOrEmpty(state.PackagePath))
+        if (result.Pending is { } pending)
         {
-            // The running app already satisfies the pending update's target version,
-            // so whatever produced this state is a leftover from a previous session.
-            var targetAtOrBelowCurrent = state.TargetVersion is not null
-                && Version.TryParse(state.TargetVersion, out var target)
-                && target <= UpdateService.CurrentVersion();
-
-            // An "installing" state whose target is already running means the install
-            // actually landed: the MSIX deployment terminates the calling app mid-install
-            // (ForceApplicationShutdown), so its own success bookkeeping never ran. Record
-            // the success now and drop the stale rollback copy instead of silently
-            // dismissing it - otherwise the update looks like it never happened.
-            if (state.Status == "installing" && targetAtOrBelowCurrent)
-                await RecordCompletedInstallAsync(state, isAutomatic: state.Source == "automatic");
-
-            // A staged update is a leftover from a previous session. Auto-dismiss it
-            // when it can no longer be a real pending update: the package file is gone
-            // (the temp download was cleaned up), or it targets a version the user
-            // already runs - e.g. it was installed outside the app after a declined
-            // UAC prompt or a blocked download. A failed helper install is likewise
-            // finished business: the package never landed and the download is stale.
-            var stale = !File.Exists(state.PackagePath) || targetAtOrBelowCurrent;
-
-            if (stale)
+            _stagedPackagePath = pending.PackagePath;
+            var targetLabel = pending.TargetVersion is not null ? $" for version {pending.TargetVersion}" : "";
+            PendingText.Text = $"A pending update ({pending.Status}){targetLabel} was found from a previous session.";
+            PendingText.Visibility = Visibility.Visible;
+            DismissButton.Visibility = Visibility.Visible;
+            InstallButton.Visibility = Visibility.Visible;
+            if (installError is null)
             {
-                await DismissPendingUpdateAsync(state.PackagePath);
-            }
-            else
-            {
-                _stagedPackagePath = state.PackagePath;
-                var targetLabel = state.TargetVersion is not null ? $" for version {state.TargetVersion}" : "";
-                PendingText.Text = $"A pending update ({state.Status}){targetLabel} was found from a previous session.";
-                PendingText.Visibility = Visibility.Visible;
-                DismissButton.Visibility = Visibility.Visible;
-                InstallButton.Visibility = Visibility.Visible;
-                if (installError is null)
-                {
-                    StatusText.Text = "A verified package is staged and ready to install.";
-                    DetailText.Text = $"Package: {state.PackagePath}";
-                    DetailText.Visibility = Visibility.Visible;
-                }
+                StatusText.Text = "A verified package is staged and ready to install.";
+                DetailText.Text = $"Package: {pending.PackagePath}";
+                DetailText.Visibility = Visibility.Visible;
             }
         }
 
-        if (await _stateStore.HasPendingUpdateAsync() == false
-            && UpdateService.FindRollbackCopy() is not null)
+        if (result.Pending is null && UpdateService.FindRollbackCopy() is not null)
         {
             RollbackButton.Visibility = Visibility.Visible;
         }
-    }
-
-    /// <summary>Records the success of an update whose process was terminated
-    /// mid-deployment (MSIX ForceApplicationShutdown) before it could log its own
-    /// Activity entry. Best-effort: history is diagnostic, never authoritative.</summary>
-    private static async Task RecordCompletedInstallAsync(UpdateState state, bool isAutomatic)
-    {
-        try
-        {
-            await new ActivityStore().AddAsync(new ActivityEntry(
-                DateTimeOffset.UtcNow,
-                isAutomatic ? "Automatic Update" : "Manual Update",
-                $"Update installed successfully: {Path.GetFileName(state.PackagePath)}."));
-        }
-        catch { /* activity history is best-effort */ }
-        UpdateService.CleanupRollbackCopy();
     }
 
     /// <summary>Clears the leftover staged package (state + downloaded file) and
