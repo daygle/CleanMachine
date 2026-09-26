@@ -428,7 +428,7 @@ public sealed partial class WindowsCleanupPage : Page
             ReportPanel.Children.Add(BuildReportRow(item.Category, item.Category.Group, item));
     }
 
-    /// <summary>Updates the summary chip values; a null value shows an em dash.</summary>
+    /// <summary>Updates the summary chip values; a null value shows a dash.</summary>
     private void SetChips(string? size, string? mid, string? right)
     {
         ChipSizeValue.Text = size ?? "-";

@@ -496,9 +496,9 @@ public sealed partial class AppCleanupPage : Page
 
     private void SetChips(string? bytes, string? files, string? items)
     {
-        ChipSizeValue.Text = bytes ?? "\u2014";
-        ChipFilesValue.Text = files ?? "\u2014";
-        ChipItemsValue.Text = items ?? "\u2014";
+        ChipSizeValue.Text = bytes ?? "-";
+        ChipFilesValue.Text = files ?? "-";
+        ChipItemsValue.Text = items ?? "-";
     }
 
     /// <summary>Framed muted message used when a list has nothing to show, so the
