@@ -1245,19 +1245,54 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
-    public void MsixUpdateHelperCommandRoundTripsThroughEncodedScript()
+    public void MsixUpdateHelperCommandReferencesScriptFileWithinSchtasksLimit()
     {
         var script = UpdateService.BuildMsixUpdateScript(@"C:\p.msix", "Fam_x", relaunchBackground: false);
-        var command = UpdateService.BuildMsixUpdateHelperCommand(script);
+        var command = UpdateService.BuildMsixUpdateHelperCommand(@"C:\Users\glen\AppData\Local\Temp\CleanMachine\Updates\update-helper.ps1");
 
-        Assert.Contains("-EncodedCommand", command);
         Assert.Contains("powershell.exe", command);
-        // The raw script never appears on the command line - it only travels encoded,
-        // so schtasks' quoting cannot corrupt the package path or shell: URI.
+        // -File, not -EncodedCommand: an inline base64 payload runs to ~3 KB and
+        // schtasks rejects any /TR action over 261 characters with an error the app
+        // used to swallow, silently falling back to the in-process deploy that hangs.
+        Assert.Contains("-File", command);
+        Assert.DoesNotContain("-EncodedCommand", command);
+        // The raw script never appears on the command line, so schtasks' quoting
+        // cannot corrupt the package path or shell: URI.
         Assert.DoesNotContain("Add-AppxPackage", command);
+        Assert.DoesNotContain("exit 0", command);
 
-        var encoded = command.Split(" -EncodedCommand ")[^1];
-        Assert.Equal(script, System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(encoded)));
+        // The regression that matters: a realistic path must fit Windows' limit.
+        Assert.True(command.Length <= UpdateService.MaxHelperActionLength,
+            $"Helper action is {command.Length} chars; schtasks allows at most {UpdateService.MaxHelperActionLength}.");
+    }
+
+    /// <summary>The staged helper script must stay runnable from disk: the app writes
+    /// it next to the staged package and the task invokes it with -File, so the
+    /// payload's PowerShell syntax has to survive a file round-trip (and a temp path
+    /// with an apostrophe in it must not break the single-quoted literals).</summary>
+    [Fact]
+    public void MsixUpdateHelperScriptSurvivesFileRoundTrip()
+    {
+        var script = UpdateService.BuildMsixUpdateScript(@"C:\o'p.msix", "Fam_x", relaunchBackground: true);
+        var directory = Path.Combine(Path.GetTempPath(), "CleanMachine-HelperScriptTest");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "update-helper.ps1");
+        try
+        {
+            File.WriteAllText(path, script);
+            var written = File.ReadAllText(path);
+
+            Assert.Equal(script, written);
+            Assert.Contains("$pkg='C:\\o''p.msix';", written);
+            Assert.Contains("Add-AppxPackage -Path $pkg", written);
+            // Self-cleanup: the staging folder is swept with the package, but the
+            // script should not linger as a stale installer between runs.
+            Assert.Contains("Remove-Item -LiteralPath $PSCommandPath", written);
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch { }
+        }
     }
 
     /// <summary>The in-repo version defaults (RELEASE.md checklist step 1) must stay

@@ -311,27 +311,69 @@ public sealed class UpdateService
             (errorPath is null ? "" :
                 "if($err -ne '' -and $errFile){ try{ Set-Content -LiteralPath $errFile -Value $err -Encoding UTF8 -ErrorAction Stop }catch{ } };") +
             "$tail=''; if($bg){ $tail=' --background' };" +
+            // The helper script lives in the staging folder only for this run. Remove
+            // it once the deploy is done so a stale installer script is never left
+            // behind; failures are ignored, the next attempt overwrites it anyway.
+            "try{ if($PSCommandPath){ Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue } }catch{ };" +
             "& cmd.exe /c ('start \"\" \"shell:AppsFolder\\' + $fam + '!App\"' + $tail)";
     }
 
+    /// <summary>schtasks.exe refuses a <c>/TR</c> action longer than this many
+    /// characters: "ERROR: Value for '/TR' option cannot be more than 261
+    /// character(s)." The limit counts the stored action, not the command line, so
+    /// it is a hard ceiling the helper command has to stay under.</summary>
+    internal const int MaxHelperActionLength = 261;
+
+    /// <summary>Name of the helper script written next to the staged package. Fixed
+    /// rather than unique so a retry overwrites the previous attempt instead of
+    /// littering the staging folder.</summary>
+    private const string HelperScriptFileName = "update-helper.ps1";
+
     /// <summary>Builds the powershell.exe command line for the helper task. The script
-    /// travels base64-encoded (-EncodedCommand) so package paths, quotes and the
-    /// shell: URI survive schtasks' quoting layers untouched.</summary>
-    internal static string BuildMsixUpdateHelperCommand(string script)
+    /// lives in a file and is referenced with <c>-File</c>: it cannot travel inline
+    /// as <c>-EncodedCommand</c> because base64-encoding it produces a ~3 KB action,
+    /// far past the <see cref="MaxHelperActionLength"/> ceiling above. That oversize
+    /// action is exactly why /Create used to fail and every update fell back to the
+    /// in-process deployment that hangs. The command is still passed through
+    /// schtasks' quoting, so the paths' quotes are escaped by the caller.</summary>
+    internal static string BuildMsixUpdateHelperCommand(string scriptPath)
     {
-        var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
         var powerShell = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-        return $"\"{powerShell}\" -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand {encoded}";
+        // -ExecutionPolicy Bypass is required: the default policy on a Windows client
+        // is Restricted, which blocks running any .ps1 from disk.
+        return $"\"{powerShell}\" -NoProfile -NonInteractive -WindowStyle Hidden " +
+               $"-ExecutionPolicy Bypass -File \"{scriptPath}\"";
     }
 
-    /// <summary>Creates, fires, and removes the one-shot Task Scheduler task that runs
-    /// the update helper. Launching through the scheduler instead of as a child process
+    /// <summary>Writes the helper script beside the staged package - the staging
+    /// folder is already the app's own scratch space and is swept with the package -
+    /// and returns its path. Throws rather than returning an over-long action: a
+    /// clear failure here is recoverable, whereas an action silently rejected by
+    /// /Create is what made this bug invisible for so long.</summary>
+    private static string WriteMsixUpdateHelperScript(string script, string stagedPackagePath)
+    {
+        var directory = Path.GetDirectoryName(stagedPackagePath);
+        if (string.IsNullOrEmpty(directory)) throw new InvalidOperationException("The staged update path has no directory.");
+        var path = Path.Combine(directory, HelperScriptFileName);
+        // A BOM is required, not cosmetic: Windows PowerShell 5.1 reads a .ps1 with no
+        // BOM as ANSI, so a non-ASCII package path (an accented user name, a localized
+        // temp folder) would be mangled and Add-AppxPackage would fail on a path that
+        // exists. The old inline -EncodedCommand was UTF-16 and immune to this, so the
+        // file form has to carry the marker explicitly.
+        File.WriteAllText(path, script, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        return path;
+    }
+
+    /// <summary>Creates and fires the one-shot Task Scheduler task that runs the
+    /// update helper. Launching through the scheduler instead of as a child process
     /// is deliberate: a child of this app would inherit the package identity and then
     /// be unable to Add-AppxPackage over the very package it belongs to, while a
-    /// scheduler-launched process has a plain user token. Returns false when the task
-    /// could not be started, so the caller can fall back to in-process deployment.</summary>
+    /// scheduler-launched process has a plain user token. The task definition is
+    /// deliberately left behind rather than deleted once fired - see below. Returns
+    /// false when the task could not be started, so the caller can report the
+    /// failure instead of deploying in-process.</summary>
     internal static async Task<bool> StartMsixUpdateHelperAsync(
         string packagePath,
         string familyName,
@@ -340,7 +382,16 @@ public sealed class UpdateService
         CancellationToken token = default)
     {
         var script = BuildMsixUpdateScript(packagePath, familyName, relaunchBackground, errorPath);
-        var command = BuildMsixUpdateHelperCommand(script).Replace("\"", "\\\"");
+        var scriptPath = WriteMsixUpdateHelperScript(script, packagePath);
+        var action = BuildMsixUpdateHelperCommand(scriptPath);
+        if (action.Length > MaxHelperActionLength)
+        {
+            TryDelete(scriptPath);
+            throw new InvalidOperationException(
+                $"The update helper command is {action.Length} characters, over the " +
+                $"{MaxHelperActionLength}-character limit Windows allows for a scheduled task action.");
+        }
+        var command = action.Replace("\"", "\\\"");
         // /ST only has to be a valid future time: /Run fires the task immediately
         // regardless of the schedule. The definition is deliberately NOT deleted
         // after /Run: deleting a scheduled task that is still executing terminates
