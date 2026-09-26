@@ -84,25 +84,32 @@ jobs:
       # The publisher is left at the checked-in default - stamping the Partner
       # Center identity is the release workflow's job, and it does not affect
       # whether packaging succeeds.
+      #
+      # AppxSymbolPackageEnabled is deliberately NOT set. It needs mspdbcmf.exe,
+      # a Visual Studio component absent from a GitHub windows-latest runner, and
+      # fails the build with MSB6011 before any bundle is produced. A symbol
+      # package is optional for Store submission - it only affects de-minifying
+      # crash dumps - so it is not worth a toolchain dependency to produce.
+      #
+      # AppxPackageDir is also left alone: the project pins it under bin/, and
+      # the Publish targets stage the .msixupload under bin/.../Upload/ anyway.
       - name: Build the Store bundle
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $out = Join-Path $env:RUNNER_TEMP "storepkg"
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
           dotnet msbuild $env:PROJECT /t:Publish `
             /p:Configuration=Release /p:Platform=x64 `
             /p:UapAppxPackageBuildMode=StoreUpload `
             /p:AppxPackageSigningEnabled=false `
-            /p:AppxSymbolPackageEnabled=true /p:GenerateAppxPackageOnBuild=true `
-            "/p:AppxPackageDir=$out" "/p:ApplicationDisplayVersion=0.0.1"
+            /p:GenerateAppxPackageOnBuild=true `
+            "/p:ApplicationDisplayVersion=0.0.1"
           if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }
-          $upload = Get-ChildItem $out -Recurse -Filter *.msixupload | Select-Object -First 1
+          $upload = Get-ChildItem CleanMachine.Windows/bin -Recurse -Filter *.msixupload | Select-Object -First 1
           if ($null -eq $upload) {
-            Write-Host "Produced instead:"; Get-ChildItem $out -Recurse | Select-Object -ExpandProperty Name
+            Write-Host "Produced instead:"; Get-ChildItem CleanMachine.Windows/bin -Recurse -Include *.msix,*.msixbundle | Select-Object -ExpandProperty Name
             throw "No .msixupload was produced."
           }
-          Write-Host "Built $($upload.Name) ($($upload.Length) bytes)"
+          Write-Host "Built $($upload.FullName) ($($upload.Length) bytes)"
 
       # A bundle that silently drops an architecture still "succeeds", so assert
       # the contents rather than trusting the exit code.
@@ -110,10 +117,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $upload = Get-ChildItem (Join-Path $env:RUNNER_TEMP "storepkg") -Recurse -Filter *.msixupload | Select-Object -First 1
+          $upload = Get-ChildItem CleanMachine.Windows/bin -Recurse -Filter *.msixupload | Select-Object -First 1
           $work = Join-Path $env:RUNNER_TEMP "upload-expanded"
           Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
-          # A .msixupload is a zip of per-architecture packages plus symbols.
+          # A .msixupload is a zip of per-architecture packages.
           Expand-Archive -Path $upload.FullName -DestinationPath $work -Force
           $names = Get-ChildItem $work -Recurse -File | Select-Object -ExpandProperty Name
           Write-Host "Bundle contents: $($names -join ', ')"

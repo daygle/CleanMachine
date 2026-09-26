@@ -115,12 +115,17 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $out = Join-Path $env:RUNNER_TEMP "storepkg"
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          # StoreUpload emits the .msixupload (package + crash symbols) Partner
-          # Center accepts; SideloadOnly produces a bare .msix the Store will
-          # not take. AppxBundle/AppxBundlePlatforms come from the project file
-          # (one x64|arm64 bundle) so there is a single source of truth for them.
+          # StoreUpload emits the .msixupload Partner Center accepts; SideloadOnly
+          # produces a bare .msix the Store will not take. AppxBundle and
+          # AppxBundlePlatforms come from the project file (one x64|arm64 bundle)
+          # so there is a single source of truth for them - that pair is verified
+          # to build both architectures on every push by the package-smoke CI job.
+          #
+          # AppxSymbolPackageEnabled is deliberately NOT set: it requires
+          # mspdbcmf.exe, a Visual Studio component not present on a GitHub
+          # windows-latest runner, and fails the build with MSB6011. A symbol
+          # package is optional for Store submission - it only affects
+          # de-minifying crash dumps.
           $signArgs = @("/p:AppxPackageSigningEnabled=false")
           if ("$env:SIGN_PACKAGE" -eq "true") {
             $signArgs = @("/p:AppxPackageSigningEnabled=true", "/p:PackageCertificateThumbprint=$env:STORE_THUMBPRINT")
@@ -128,12 +133,17 @@ jobs:
           dotnet msbuild $env:PROJECT /t:Publish `
             /p:Configuration=Release /p:Platform=x64 `
             /p:UapAppxPackageBuildMode=StoreUpload `
-            "/p:AppxPackageDir=$out" "/p:ApplicationDisplayVersion=$env:VERSION3" `
-            /p:AppxSymbolPackageEnabled=true /p:GenerateAppxPackageOnBuild=true `
+            "/p:ApplicationDisplayVersion=$env:VERSION3" `
+            /p:GenerateAppxPackageOnBuild=true `
             @signArgs
           if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }
-          $upload = Get-ChildItem $out -Recurse -Filter *.msixupload | Select-Object -First 1
-          if ($null -eq $upload) { throw "No .msixupload was produced." }
+          # The Publish targets stage the .msixupload under bin/.../Upload/,
+          # which is not the AppxPackageDir, so search the whole bin tree.
+          $upload = Get-ChildItem CleanMachine.Windows/bin -Recurse -Filter *.msixupload | Select-Object -First 1
+          if ($null -eq $upload) {
+            Write-Host "Produced instead:"; Get-ChildItem CleanMachine.Windows/bin -Recurse -Include *.msix,*.msixbundle | Select-Object -ExpandProperty Name
+            throw "No .msixupload was produced."
+          }
           Copy-Item $upload.FullName "CleanMachine-StoreUpload.msixupload"
           Write-Host "Upload package: $((Get-Item 'CleanMachine-StoreUpload.msixupload').Length) bytes"
 
