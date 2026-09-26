@@ -29,14 +29,21 @@ public sealed partial class UpdatesPage : Page
         if (installError is not null)
         {
             StatusText.Text = "The last update did not install.";
-            // The detached helper's raw PowerShell error is opaque. When Smart App
-            // Control is enforcing it is almost always the cause - it blocks this
-            // app's self-signed MSIX outright, which is what it did on the machine
-            // that reported it - so lead with the reason and what to do about it
-            // rather than making the user decode an Add-AppxPackage stack.
-            DetailText.Text = UpdateService.IsSmartAppControlEnforcing
+            // The detached helper's raw PowerShell error is opaque, so decide what to
+            // show from evidence rather than from the registry. A Code Integrity
+            // refusal naming this app's own binary is a confirmed Smart App Control
+            // block and gets the full guidance. A registry value alone is only a
+            // hint - it can be stale, and on the machine that reported this it read
+            // "active" minutes after SAC was switched off - so it is offered as a
+            // possibility, never as the explanation.
+            var confirmed = UpdateService.HasRecentSmartAppControlBlock();
+            var suspected = !confirmed && UpdateService.IsSmartAppControlActive;
+            DetailText.Text = confirmed
                 ? UpdateService.SmartAppControlGuidance
-                : installError;
+                : suspected
+                    ? $"{installError} Smart App Control is on and may be blocking the update; " +
+                      "if so, see Windows Security > App & browser control."
+                    : installError;
             DetailText.Visibility = Visibility.Visible;
         }
 

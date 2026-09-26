@@ -253,19 +253,25 @@ public sealed class ScheduleService
     [DllImport("powrprof.dll", SetLastError = true)]
     private static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
 
-    /// <summary>Result of running a helper process, carrying the reason it failed.
-    /// The captured output is the point: schtasks.exe explains a refusal on
-    /// stderr ("Value for '/TR' option cannot be more than 261 character(s)"),
-    /// and throwing that away is exactly how an unschedulable update task went
-    /// unnoticed for five releases and six user-visible hangs.</summary>
-    internal readonly record struct ProcessOutcome(bool Success, int ExitCode, string? Reason)
+    /// <summary>Result of running a helper process, carrying its output and, on
+    /// failure, the reason. The captured output is the point: schtasks.exe explains
+    /// a refusal on stderr ("Value for '/TR' option cannot be more than 261
+    /// character(s)"), and throwing that away is exactly how an unschedulable update
+    /// task went unnoticed for five releases and six user-visible hangs.
+    /// <see cref="Output"/> is capped: a log query can return tens of kilobytes and
+    /// the only callers read it to search for a substring.</summary>
+    internal readonly record struct ProcessOutcome(bool Success, int ExitCode, string? Reason, string Output)
     {
-        internal static ProcessOutcome Failed(string? reason) => new(false, -1, reason);
+        /// <summary>Upper bound on captured stdout, to keep an unexpectedly chatty
+        /// child from parking a large string in memory for the life of the process.</summary>
+        internal const int MaxOutputLength = 128 * 1024;
+
+        internal static ProcessOutcome Failed(string? reason) => new(false, -1, reason, string.Empty);
     }
 
-    /// <summary>Runs a helper process to completion. Returns the exit status plus the
-    /// first meaningful output line on failure, so callers can report *why* rather
-    /// than only that something went wrong.</summary>
+    /// <summary>Runs a helper process to completion. Returns the exit status, its
+    /// stdout, and the first meaningful output line on failure, so callers can both
+    /// report *why* and inspect what the tool actually said.</summary>
     internal static async Task<ProcessOutcome> RunProcessAsync(string fileName, string arguments, CancellationToken token)
     {
         var psi = new ProcessStartInfo(fileName, arguments)
@@ -286,12 +292,13 @@ public sealed class ScheduleService
         string outText = string.Empty, errText = string.Empty;
         try { await Task.WhenAll(stdout, stderr); outText = stdout.Result; errText = stderr.Result; }
         catch { /* a partially read stream still leaves a usable exit code */ }
-        if (process.ExitCode == 0) return new ProcessOutcome(true, 0, null);
+        if (outText.Length > ProcessOutcome.MaxOutputLength) outText = outText[..ProcessOutcome.MaxOutputLength];
+        if (process.ExitCode == 0) return new ProcessOutcome(true, 0, null, outText);
         // schtasks writes its refusal to stderr, but not every tool does, so fall
         // back to stdout before giving up and reporting the bare exit code.
         var reason = FirstLine(errText) ?? FirstLine(outText)
             ?? $"{Path.GetFileName(fileName)} exited with code {process.ExitCode}.";
-        return new ProcessOutcome(false, process.ExitCode, reason);
+        return new ProcessOutcome(false, process.ExitCode, reason, outText);
     }
 
     /// <summary>First non-blank line of captured tool output, trimmed of the trailing

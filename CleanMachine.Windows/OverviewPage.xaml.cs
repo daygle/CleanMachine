@@ -190,15 +190,7 @@ public sealed partial class OverviewPage : Page
         {
             Title = manifest is not null ? $"Update to version {manifest.Version}?" : "Update now?",
             Content = (manifest is not null && !string.IsNullOrWhiteSpace(manifest.ReleaseNotes) ? manifest.ReleaseNotes + "\n\n" : "")
-                + "CleanMachine will download, verify and install the update, then restart. Windows may ask for administrator permission."
-                // Warn before the attempt, not after. Smart App Control blocks this
-                // app's self-signed MSIX exactly as it blocks the installer, and the
-                // failure otherwise surfaces only on the next launch as an opaque
-                // helper error - by which point the user has usually concluded the
-                // update silently did nothing.
-                + (UpdateService.IsSmartAppControlEnforcing
-                    ? "\n\nHeads up: " + UpdateService.SmartAppControlGuidance
-                    : ""),
+                + "CleanMachine will download, verify and install the update, then restart. Windows may ask for administrator permission.",
             PrimaryButtonText = "Update Now",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -19,12 +20,100 @@ public sealed class UpdateService
     /// <summary>True when running inside an MSIX package; false for standalone .exe installs.</summary>
     public static bool IsInstalledAsMsix { get; } = TryGetIsMsix();
 
-    /// <summary>True when Windows Smart App Control is in enforcement mode (HKLM
-    /// CI policy state 1). SAC blocks executables without cloud-verified reputation
-    /// from starting - including freshly downloaded, correctly signed installers -
-    /// and offers no "Run anyway" override, which surfaces as a Win32Exception at
-    /// Process.Start with a message the user cannot act on.</summary>
-    public static bool IsSmartAppControlEnforcing { get; } = QuerySmartAppControlEnforcing();
+    /// <summary>True when Windows Smart App Control is not switched off (HKLM CI
+    /// policy state is anything other than 0).
+    ///
+    /// Deliberately not a finer-grained "is it enforcing" test. Published sources
+    /// disagree about whether 1 means On and 2 means Evaluation, or the reverse, but
+    /// they agree that 0 is Off - and both live states block unsigned or
+    /// self-signed binaries. Only the distinction the app actually needs is
+    /// "is SAC off", which no mapping ambiguity can invalidate.
+    ///
+    /// This is a weak signal and must never be used to *predict* a block. The
+    /// registry is not a reliable live indicator: on the machine that reported this,
+    /// the value still read 1 minutes after Smart App Control was switched off and
+    /// the app was demonstrably running. Use
+    /// <see cref="HasRecentSmartAppControlBlock"/> for an actual verdict.</summary>
+    public static bool IsSmartAppControlActive { get; } = QuerySmartAppControlState();
+
+    /// <summary>True when Windows Code Integrity logged a refusal to load *this
+    /// application's own binary* in the recent past - the ground truth for a Smart
+    /// App Control block, and the only signal that can be trusted to name one.
+    ///
+    /// SAC refuses a self-signed binary with a 3033/3077 event naming the exact
+    /// file, so this answers "did that just happen" rather than "might it". Used to
+    /// explain a failed update instead of speculating from a registry value that
+    /// may be stale. Best-effort throughout: a log that is missing, empty or
+    /// unreadable yields false, never an exception.</summary>
+    public static bool HasRecentSmartAppControlBlock(TimeSpan? window = null)
+    {
+        try
+        {
+            var executable = Path.GetFileName(Environment.ProcessPath);
+            if (string.IsNullOrEmpty(executable)) return false;
+            var since = DateTimeOffset.UtcNow - (window ?? TimeSpan.FromMinutes(30));
+            // wevtutil's qe verb has no time filter, so the tail is fetched newest
+            // first and filtered afterwards. /c bounds the work and the output.
+            var outcome = ScheduleService.RunProcessAsync("wevtutil.exe",
+                "qe \"Microsoft-Windows-CodeIntegrity/Operational\" /c:80 /rd:true /f:text",
+                CancellationToken.None).GetAwaiter().GetResult();
+            if (!outcome.Success) return false;
+            return ContainsSmartAppControlBlock(outcome.Output, executable, since);
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Decides whether a wevtutil dump of the Code Integrity log records a
+    /// Smart App Control refusal of <paramref name="executable"/> at or after
+    /// <paramref name="since"/>. Pure so the matching rules can be tested against a
+    /// captured log instead of whatever the machine happens to have recorded.
+    ///
+    /// Each record is its own block - "Event[0] ... Event ID: ... Message: ..." - and
+    /// the id, the timestamp and the file name sit on different lines, so the block,
+    /// never a single line, is the unit that has to be matched on. Matching per line
+    /// was the first implementation and it silently matched nothing.</summary>
+    internal static bool ContainsSmartAppControlBlock(string logOutput, string executable, DateTimeOffset since)
+    {
+        if (string.IsNullOrEmpty(logOutput) || string.IsNullOrEmpty(executable)) return false;
+        foreach (var block in logOutput.Split("Event[", StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!block.Contains(executable, StringComparison.OrdinalIgnoreCase)) continue;
+            // Only the refusal ids count. Code Integrity logs many other events that
+            // name a file without having blocked it, and treating those as a block
+            // would put the false alarm straight back.
+            if (!TryReadField(block, "Event ID:", out var id) || id.Trim() is not ("3033" or "3077")) continue;
+            if (!TryReadField(block, "Date:", out var stamp)) continue;
+            if (!DateTimeOffset.TryParse(stamp.Trim(), CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var when))
+                continue;
+            if (when >= since) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Reads a "Label: value" field out of a wevtutil text event block.
+    /// wevtutil is not localizable for these headers, but a missing field must not
+    /// throw, so anything unparseable comes back as null.</summary>
+    private static bool TryReadField(string block, string label, out string value)
+    {
+        value = string.Empty;
+        var index = block.IndexOf(label, StringComparison.Ordinal);
+        if (index < 0) return false;
+        var lineEnd = block.IndexOfAny(new[] { '\r', '\n' }, index);
+        value = lineEnd < 0 ? block[(index + label.Length)..] : block[(index + label.Length)..lineEnd];
+        return true;
+    }
+
+    private static bool QuerySmartAppControlState()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\CI\Policy");
+            // Anything present but non-zero means Smart App Control is not off.
+            return key?.GetValue("VerifiedAndReputablePolicyState") is int state && state != 0;
+        }
+        catch { return false; }
+    }
 
     /// <summary>Guidance shown when Smart App Control is the reason an update failed.
     /// Shared by both install paths because SAC treats them identically: it blocks
@@ -43,15 +132,7 @@ public sealed class UpdateService
         "Windows), or install the update from the releases page on a machine where it " +
         "is off.";
 
-    private static bool QuerySmartAppControlEnforcing()
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\CI\Policy");
-            return key?.GetValue("VerifiedAndReputablePolicyState") is int state && state == 1;
-        }
-        catch { return false; }
-    }
+
 
     private static bool TryGetIsMsix()
     {
@@ -263,7 +344,7 @@ public sealed class UpdateService
                     // UAC prompt - keep the package staged (no rollback) and report a
                     // cancellation so the retry path stays available.
                     await _stateStore.MarkAsync("staged", packagePath, null, cancellationToken);
-                    var reason = IsSmartAppControlEnforcing
+                    var reason = IsSmartAppControlActive
                         ? SmartAppControlGuidance
                         : "Your antivirus or security software may have quarantined the downloaded installer, or the download is damaged. Check your antivirus protection history, then retry the update or install manually from the releases page.";
                     throw new OperationCanceledException($"Windows refused to start the update installer (error {ex.NativeErrorCode}). {reason}", ex);

@@ -1454,6 +1454,108 @@ public sealed class ManifestAndSafetyTests
         Assert.Contains("Windows Security", guidance, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Field extraction from a wevtutil text event block. The id, the
+    /// timestamp and the file name sit on different lines, so the block is the unit
+    /// that has to be parsed; these cases pin that shape, including the truncated
+    /// last line and the missing-field path that must not throw.</summary>
+    [Theory]
+    [InlineData("1]\r\n  Event ID: 3033\r\n  Message: x", "Event ID:", "3033")]
+    [InlineData("1]\n  Event ID: 3077\n  Message: x", "Event ID:", "3077")]
+    [InlineData("1]\r\n  Date: 2026-09-26T16:29:04.1800000Z\r\n", "Date:", "2026-09-26T16:29:04.1800000Z")]
+    [InlineData("1]\r\n  Event ID: 3033", "Event ID:", "3033")]
+    [InlineData("1]\r\n  Message: no id here", "Event ID:", "")]
+    public void WevtUtilBlockFieldIsRead(string block, string label, string expected)
+    {
+        var found = ReadWevtField(block, label, out var value);
+        if (expected.Length == 0) Assert.False(found);
+        else { Assert.True(found); Assert.Equal(expected, value.Trim()); }
+    }
+
+    /// <summary>Reflection shim so the parsing rules are tested directly. The method is
+    /// private because nothing in the app calls it; these cases exist because the
+    /// first implementation matched per line and silently found nothing, since the
+    /// event id and the file name are never on the same line.</summary>
+    private static bool ReadWevtField(string block, string label, out string value)
+    {
+        var method = typeof(UpdateService).GetMethod(
+            "TryReadField",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+        var args = new object?[] { block, label, null };
+        var result = (bool)method!.Invoke(null, args)!;
+        value = args[2] as string ?? string.Empty;
+        return result;
+    }
+
+    /// <summary>A real Code Integrity record captured from the machine that reported
+    /// the problem, verbatim apart from line endings: the 3077 that refused to load
+    /// CleanMachine 1.0.46. The message names the file on a line far from the event
+    /// id, which is exactly why the first, per-line implementation found nothing.</summary>
+    private const string RealBlockRecord =
+        "0]\r\n" +
+        "  Log Name: Microsoft-Windows-CodeIntegrity/Operational\r\n" +
+        "  Source: Microsoft-Windows-CodeIntegrity\r\n" +
+        "  Date: 2026-09-26T16:29:04.1800000Z\r\n" +
+        "  Event ID: 3077\r\n" +
+        "  Level: Error\r\n" +
+        "  Description: \r\n" +
+        "Code Integrity determined that a process (\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe) " +
+        "attempted to load \\Device\\HarddiskVolume3\\Program Files\\WindowsApps\\" +
+        "CleanMachine_1.0.46.0_x64__0rhf3bpmxpsre\\CleanMachine.exe that did not meet the " +
+        "Enterprise signing level requirements or violated code integrity policy " +
+        "(Policy ID:{0283ac0f-fff1-49ae-ada1-8a933130cad6}).\r\n";
+
+    [Fact]
+    public void SmartAppControlBlockIsDetectedFromARealRecord()
+    {
+        var justBefore = new DateTimeOffset(2026, 9, 26, 16, 29, 4, TimeSpan.Zero);
+
+        Assert.True(UpdateService.ContainsSmartAppControlBlock(
+            RealBlockRecord, "CleanMachine.exe", justBefore - TimeSpan.FromMinutes(5)));
+        // 3033 is the paired refusal id and must count too.
+        Assert.True(UpdateService.ContainsSmartAppControlBlock(
+            RealBlockRecord.Replace("Event ID: 3077", "Event ID: 3033"),
+            "CleanMachine.exe", justBefore - TimeSpan.FromMinutes(5)));
+    }
+
+    /// <summary>The whole point of the change: a block that did not just happen must
+    /// not be reported. Without the time filter the app would re-explain a block from
+    /// hours ago on every failed update, which is the false alarm being fixed.</summary>
+    [Fact]
+    public void OldSmartAppControlBlockIsNotReported()
+    {
+        Assert.False(UpdateService.ContainsSmartAppControlBlock(
+            RealBlockRecord, "CleanMachine.exe", new DateTimeOffset(2026, 9, 26, 16, 35, 0, TimeSpan.Zero)));
+    }
+
+    /// <summary>Code Integrity logs plenty of events that mention a file without
+    /// blocking it. Treating any of those as a Smart App Control refusal would put the
+    /// false alarm straight back, so only 3033/3077 may match.</summary>
+    [Fact]
+    public void NonRefusalEventMentioningTheBinaryIsNotABlock()
+    {
+        var informational = RealBlockRecord
+            .Replace("Event ID: 3077", "Event ID: 3102")
+            .Replace("Level: Error", "Level: Information")
+            .Replace("did not meet the Enterprise signing level requirements or violated code integrity policy",
+                     "was catalogued for signing");
+
+        Assert.False(UpdateService.ContainsSmartAppControlBlock(
+            informational, "CleanMachine.exe", new DateTimeOffset(2026, 9, 26, 16, 0, 0, TimeSpan.Zero)));
+    }
+
+    /// <summary>Another binary's block is not ours, and an empty log is not a block.</summary>
+    [Fact]
+    public void UnrelatedOrEmptyLogIsNotABlock()
+    {
+        var since = new DateTimeOffset(2026, 9, 26, 16, 0, 0, TimeSpan.Zero);
+        var other = RealBlockRecord.Replace("CleanMachine.exe", "SomeOtherApp.exe");
+
+        Assert.False(UpdateService.ContainsSmartAppControlBlock(other, "CleanMachine.exe", since));
+        Assert.False(UpdateService.ContainsSmartAppControlBlock("", "CleanMachine.exe", since));
+        Assert.False(UpdateService.ContainsSmartAppControlBlock(RealBlockRecord, "", since));
+    }
+
     /// <summary>Walks up from the test output directory (bin/&lt;config&gt;/&lt;tfm&gt;,
     /// any platform) to the checkout that contains the app project.</summary>
     private static string? FindRepoRoot()
