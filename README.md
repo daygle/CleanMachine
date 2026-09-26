@@ -222,12 +222,12 @@ CleanMachine releases include signed MSIX packages for x64 and ARM64 Windows dev
 3. Choose **Current User** for your account, or **Local Machine** for all users (administrator approval required).
 4. Select **Place all certificates in the following store**, choose **Browse**, select **Trusted People**, and finish the wizard.
 5. If Windows blocks the package, open **Settings > Apps > Advanced app settings > Install apps from unknown sources** and enable sideloaded applications.
-6. Open the downloaded package, such as `CleanMachine-x64-v1.0.45.msix`, and select **Install**.
+6. Open the downloaded package, such as `CleanMachine-x64-v1.0.46.msix`, and select **Install**.
 
 Verify the package before installing it with PowerShell:
 
 ```powershell
-Get-AuthenticodeSignature .\CleanMachine-x64-v1.0.45.msix |
+Get-AuthenticodeSignature .\CleanMachine-x64-v1.0.46.msix |
   Format-List Status,SignerCertificate
 ```
 
