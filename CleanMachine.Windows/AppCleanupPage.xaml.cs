@@ -687,9 +687,6 @@ public sealed partial class AppCleanupPage : Page
         StatusText.Text = $"Cleaning in progress: preparing {selected.Length:N0} selected item(s)...";
         try
         {
-            var secureDelete = SecureDeleteCheck.IsChecked == true
-                ? new SecureDeleteOptions(_settings.SecureDeleteMethod, _settings.CustomWipePasses)
-                : null;
             var progress = new Progress<CleanupProgress>(p =>
             {
                 Progress.IsIndeterminate = p.Total == 0;
@@ -698,7 +695,7 @@ public sealed partial class AppCleanupPage : Page
                     ? $"{p.Phase}..."
                     : $"Cleaning in progress: {p.Phase} ({p.Completed:N0}/{p.Total:N0})";
             });
-            var report = await _service.CleanAsync(selected, secureDelete, progress: progress, token: default);
+            var report = await _service.CleanAsync(selected, progress: progress, token: default);
             await RecordManualCleanupAsync(selected, beforeScan, report);
             var completion = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
                              $"{WindowsCleanupPage.FormatBytes(report.Result.BytesRecovered)} recovered, " +

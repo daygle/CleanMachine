@@ -26,7 +26,6 @@ public sealed class AppCleanupService
     /// <summary>Cleans the selected app temp items. Returns files removed and bytes recovered.</summary>
     public async Task<CleanupReport> CleanAsync(
         IEnumerable<(string AppId, int ItemIndex)> selection,
-        SecureDeleteOptions? secureDelete = null,
         CancellationToken token = default,
         IProgress<CleanupProgress>? progress = null)
     {
@@ -44,10 +43,10 @@ public sealed class AppCleanupService
             .GroupBy(s => s.AppId)
             .ToDictionary(g => g.Key, g => g.Select(s => s.ItemIndex).ToHashSet());
 
-        // Deleting (and optionally multi-pass overwriting) every temp file is
-        // long-running disk work; keep it off the caller's (UI) thread. The page
-        // awaits this directly, so the deletion loop must not run synchronously.
-        await Task.Run(async () =>
+        // Deleting every temp file is long-running disk work; keep it off the
+        // caller's (UI) thread. The page awaits this directly, so the deletion
+        // loop must not run synchronously.
+        await Task.Run(() =>
         {
         foreach (var (appId, indices) in byApp)
         {
@@ -77,13 +76,7 @@ public sealed class AppCleanupService
                                 var info = new FileInfo(file);
                                 if (info.IsReadOnly) { skipped.Add(new(file, "Read-only")); continue; }
                                 var len = info.Length;
-                                if (secureDelete is not null
-                                    && !await SecureDeleteService.SecureDeleteFileAsync(file, secureDelete, token))
-                                {
-                                    skipped.Add(new(file, "Protected, locked, or empty - not securely deleted"));
-                                    continue;
-                                }
-                                if (secureDelete is null) File.Delete(file);
+                                File.Delete(file);
                                 removed++;
                                 bytes += len;
                                 cleanedPaths.Add(file);
@@ -104,13 +97,7 @@ public sealed class AppCleanupService
                         var info = new FileInfo(item.FullPath);
                         if (info.IsReadOnly) { skipped.Add(new(item.FullPath, "Read-only")); continue; }
                         var len = info.Length;
-                        if (secureDelete is not null
-                            && !await SecureDeleteService.SecureDeleteFileAsync(item.FullPath, secureDelete, token))
-                        {
-                            skipped.Add(new(item.FullPath, "Protected, locked, or empty - not securely deleted"));
-                            continue;
-                        }
-                        if (secureDelete is null) File.Delete(item.FullPath);
+                        File.Delete(item.FullPath);
                         removed++;
                         bytes += len;
                         cleanedPaths.Add(item.FullPath);

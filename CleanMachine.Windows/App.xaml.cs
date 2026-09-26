@@ -9,9 +9,6 @@ public partial class App : Application
     private Task? _agentTask;
     private int _agentGeneration;
     private readonly object _agentLock = new();
-    private static readonly object AutomaticUpdateLock = new();
-    private static DateTimeOffset? _automaticUpdateLastRun;
-    private static readonly UpdateAutoInstaller AutomaticUpdateInstaller = new();
     private Mutex? _instanceMutex;
     private InstanceEvents? _instanceEvents;
     private Thread? _instanceEventsThread;
@@ -40,10 +37,10 @@ public partial class App : Application
             return;
         }
 
-        // The installer/uninstaller launches the app with --shutdown to ask a running
-        // copy to exit before replacing or deleting its files. This process never
-        // becomes a GUI instance; it just delivers the request and force-kills as a
-        // last resort, so Setup can immediately proceed.
+        // The in-app uninstaller launches the app with --shutdown to ask a running
+        // copy to exit before its package is removed. This process never becomes a
+        // GUI instance; it just delivers the request and force-kills as a last
+        // resort, so the removal can immediately proceed.
         if (HasShutdownArgument(Environment.GetCommandLineArgs()))
         {
             SingleInstance.HandleShutdownArgument();
@@ -60,10 +57,6 @@ public partial class App : Application
             return;
         }
         _instanceMutex = instanceMutex;
-        // A handed-off MSIX update must exit this process so the helper can replace
-        // the package with no live window for Windows to freeze mid-deployment (the
-        // "Stopped responding and was closed" hang reports on every update).
-        UpdateService.MsixHandoff += ExitForMsixUpdate;
         // A logon autostart launches with --background; open to the tray, not the desktop.
         LaunchedAtLogon = Environment.GetCommandLineArgs()
             .Any(a => a.Equals("--background", StringComparison.OrdinalIgnoreCase));
@@ -76,19 +69,7 @@ public partial class App : Application
         AppNotifications.Register();
         StartInstanceEventsListener();
 
-        // Sweep leftover update staging files from the install directory before
-        // anything update-related can run (see CleanupUpdateArtifacts).
-        UpdateService.CleanupUpdateArtifacts(Path.GetDirectoryName(Environment.ProcessPath));
-        // A rollback master copy under %LOCALAPPDATA% only ever serves .exe installs;
-        // MSIX never stages one, so any leftover (e.g. from an older build) is garbage.
-        if (UpdateService.IsInstalledAsMsix) UpdateService.CleanupRollbackCopy();
-
         var settings = await AppSettings.LoadAsync();
-        // Retire update state left by a previous session before anything reads it.
-        // An MSIX install kills the app mid-deployment, so a finished update used to
-        // look pending until the Updates page happened to be opened - and the
-        // Overview page would offer an update that was already installed.
-        _ = UpdateStateStore.ReconcileAsync();
         // Run startup cleanup before enabling periodic/background cleanup so the two
         // paths cannot mutate the same files concurrently on first launch.
         if (settings.CleanAtStartup)
@@ -103,7 +84,7 @@ public partial class App : Application
         arguments.Any(a => a.Equals("--shutdown", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Starts the background thread that waits on the named shutdown and
-    /// activate events (owned by this instance) so the installer - or a second app
+    /// activate events (owned by this instance) so the uninstaller - or a second app
     /// launch - can reach a running copy that is sitting in the tray with no window.</summary>
     private void StartInstanceEventsListener()
     {
@@ -257,48 +238,6 @@ public partial class App : Application
         _agentTask = Task.Run(() => _agent.RunAsync(_agentCts.Token));
     }
 
-    /// <summary>Handed-off MSIX update: shut the app down cleanly now, so the helper
-    /// waits for a graceful exit instead of Windows having to freeze and kill a live
-    /// window mid-deployment. <see cref="MainWindow.RequestExit"/> marshals itself.</summary>
-    private void ExitForMsixUpdate()
-    {
-        StopBackgroundAgent();
-        if (MainWindow is MainWindow window) window.RequestExit();
-        else Exit();
-    }
-
-    internal static bool TryReserveAutomaticUpdateCheck()
-    {
-        lock (AutomaticUpdateLock)
-        {
-            if (_automaticUpdateLastRun is { } last
-                && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(6))
-                return false;
-            _automaticUpdateLastRun = DateTimeOffset.UtcNow;
-            return true;
-        }
-    }
-
-    private static async Task AutomaticUpdateTickAsync(AppSettings settings, CancellationToken token)
-    {
-        if (!settings.CheckForUpdatesAutomatically || !TryReserveAutomaticUpdateCheck()) return;
-
-        try
-        {
-            var result = await new UpdateService().CheckAsync(token);
-            if (settings.AutoInstallUpdates && result.Available)
-                _ = AutomaticUpdateInstaller.TryInstallWhenIdleAsync(result, token);
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            // A transient update-check failure must not terminate the cleanup agent.
-        }
-    }
-
     /// <summary>Runs the configured after-exit action for one specific browser.
     /// Only that browser's targets are cleaned, and only if monitoring for it
     /// is enabled and an action is selected.</summary>
@@ -333,7 +272,7 @@ public partial class App : Application
                 await Task.Delay(TimeSpan.FromSeconds(2), token);
                 report = await cleanup.CleanItemsAsync(
                     itemIds.Select(id => (browser, id)),
-                    secureDelete: null, token, requireBrowsersClosed: false);
+                    token, requireBrowsersClosed: false);
                 if (report.Result.ItemsRemoved > 0 || report.Skipped.Count == 0 || ++attempt >= 2) break;
             }
             await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
@@ -362,7 +301,6 @@ public partial class App : Application
         AppSettings settings;
         try { settings = await AppSettings.LoadAsync(token); }
         catch { return; }
-        await AutomaticUpdateTickAsync(settings, token);
         await SystemMonitorTickAsync(settings, token);
         await IdleCleanTickAsync(settings, token);
         await RecycleBinTickAsync(settings, token);
@@ -456,8 +394,8 @@ public partial class App : Application
         catch { /* best-effort */ }
     }
 
-    // Idle time since the last keyboard/mouse input. Internal so the update
-    // auto-installer can wait for a silent-install idle window too.
+    // Idle time since the last keyboard/mouse input, used to gate automatic
+    // cleanups until the user has been away long enough.
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct LastInputInfo { public uint Size; public uint Time; }
 

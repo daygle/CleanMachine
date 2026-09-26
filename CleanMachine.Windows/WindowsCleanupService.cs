@@ -24,7 +24,7 @@ public sealed record CleanupFileDetail(string Path, long Bytes);
 public sealed record CleanupPreviewItem(string Category, string Description, long Bytes);
 public sealed record CleanupPreview(IReadOnlyList<CleanupPreviewItem> Items, int TotalItems);
 
-public sealed record WindowsCleanupOptions(bool ConfirmReviewCategories = false, IReadOnlySet<string>? ExcludedPaths = null, bool SecureDelete = false, SecureDeleteOptions? SecureDeleteOptions = null);
+public sealed record WindowsCleanupOptions(bool ConfirmReviewCategories = false, IReadOnlySet<string>? ExcludedPaths = null);
 
 public sealed class WindowsCleanupService
 {
@@ -141,7 +141,7 @@ public sealed class WindowsCleanupService
             // Deleting thousands of files (and registry values) is long-running disk
             // work; the UI pages await this directly, so run the whole pass on a
             // worker thread and only the progress callbacks hop back to the UI.
-            return await Task.Run(() => CleanSelectedCoreAsync(categories, options, progress, cancellationToken), cancellationToken);
+            return await Task.Run(() => CleanSelectedCore(categories, options, progress, cancellationToken), cancellationToken);
         }
         finally
         {
@@ -149,7 +149,7 @@ public sealed class WindowsCleanupService
         }
     }
 
-    private async Task<CleanupReport> CleanSelectedCoreAsync(IEnumerable<CleanupCategory> categories, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress, CancellationToken cancellationToken)
+    private CleanupReport CleanSelectedCore(IEnumerable<CleanupCategory> categories, WindowsCleanupOptions options, IProgress<CleanupProgress>? progress, CancellationToken cancellationToken)
     {
         var requested = categories.ToArray();
         var catalogById = Catalog.ToDictionary(c => c.Id, StringComparer.OrdinalIgnoreCase);
@@ -190,13 +190,11 @@ public sealed class WindowsCleanupService
                 try
                 {
                     var length = new FileInfo(file).Length;
-                    var deleted = true;
-                    if (options.SecureDelete && options.SecureDeleteOptions is not null)
-                        deleted = await SecureDeleteService.SecureDeleteFileAsync(file, options.SecureDeleteOptions, cancellationToken);
-                    else
-                        File.Delete(file);
-                    if (deleted) { removed++; recovered += length; categoryRemoved++; categoryBytes += length; }
-                    else issues.Add(new(file, "Protected, locked, or empty - not securely deleted"));
+                    File.Delete(file);
+                    removed++;
+                    recovered += length;
+                    categoryRemoved++;
+                    categoryBytes += length;
                 }
                 catch (IOException) { issues.Add(new(file, "Locked or unavailable")); }
                 catch (UnauthorizedAccessException) { issues.Add(new(file, "Access denied (administrator may be required)")); }

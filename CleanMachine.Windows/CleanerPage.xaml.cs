@@ -591,10 +591,7 @@ public sealed partial class CleanerPage : Page
         var beforeScan = _scans;
         try
         {
-            var secureDelete = SecureDeleteCheck.IsChecked == true
-                ? new SecureDeleteOptions(_settings.SecureDeleteMethod, _settings.CustomWipePasses)
-                : null;
-            var report = await _service.CleanItemsAsync(selected, secureDelete);
+            var report = await _service.CleanItemsAsync(selected);
             await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered);
             var details = selected
                 .Where(selection => report.CleanedPaths?.Contains($"{selection.BrowserId}:{selection.ItemId}") == true)

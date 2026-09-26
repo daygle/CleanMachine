@@ -49,10 +49,6 @@ public sealed class CleanupSchedule
 
     public ScheduleAction AfterClean { get; set; } = ScheduleAction.Nothing;
 
-    /// <summary>When true, files are overwritten before deletion using the
-    /// method from AppSettings.SecureDeleteMethod.</summary>
-    public bool SecureDelete { get; set; }
-
     /// <summary>When true, Windows wakes the computer from sleep to run this task
     /// (timed triggers only). Depends on the machine's power settings allowing wake
     /// timers; Windows ignores it otherwise.</summary>
@@ -75,10 +71,6 @@ public static class ScheduledTask
     /// <summary>All CleanMachine tasks live under this folder, so they are easy to
     /// find (and clean up) in Task Scheduler.</summary>
     public const string Folder = "CleanMachine";
-
-    /// <summary>One-shot task used for the MSIX update hand-off: it is created,
-    /// run immediately, and deleted again, so no update task ever lingers.</summary>
-    public const string UpdateHelperTaskName = Folder + @"\UpdateHelper";
 
     public static string TaskName(string scheduleId)
     {

@@ -90,16 +90,6 @@ public sealed class ScheduleService
         var items = 0;
         long bytes = 0;
 
-        // Build secure delete options once; null when the schedule doesn't use it.
-        SecureDeleteOptions? secureDelete = schedule.SecureDelete
-            // Enabling Secure Delete in a saved schedule is the unattended equivalent
-            // of the SSD acknowledgement: the user explicitly opted into the
-            // destructive schedule action in the editor. Keep the service-level guard
-            // in place for every other caller.
-            ? new SecureDeleteOptions(settings.SecureDeleteMethod, settings.CustomWipePasses,
-                ConfirmSolidStateDriveWarning: true)
-            : null;
-
         try
         {
             var categories = WindowsCleanupService.Catalog
@@ -115,9 +105,7 @@ public sealed class ScheduleService
                         // confirmation. Without this, Review/Advanced categories
                         // (Recycle Bin, Downloads, Prefetch...) silently clean nothing.
                         ConfirmReviewCategories: true,
-                        ExcludedPaths: settings.ExcludedPaths,
-                        SecureDelete: schedule.SecureDelete,
-                        SecureDeleteOptions: secureDelete),
+                        ExcludedPaths: settings.ExcludedPaths),
                     cancellationToken: token);
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;
@@ -138,7 +126,7 @@ public sealed class ScheduleService
                 var targets = await service.ScanAsync(settings.ProtectedBrowsers, excludedPaths: settings.ExcludedPaths, token: token);
                 var report = await service.CleanWithReportAsync(
                     targets,
-                    new BrowserCleanupOptions(settings.ExcludedPaths, RequireBrowsersClosed: false, SecureDelete: secureDelete),
+                    new BrowserCleanupOptions(settings.ExcludedPaths, RequireBrowsersClosed: false),
                     token: token);
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;
@@ -165,7 +153,7 @@ public sealed class ScheduleService
                 if (selection.Count > 0)
                 {
                     var report = await Task.Run(
-                        () => appService.CleanAsync(selection, secureDelete, token), token);
+                        () => appService.CleanAsync(selection, token), token);
                     items += report.Result.ItemsRemoved;
                     bytes += report.Result.BytesRecovered;
                     issues.AddRange(report.Skipped.Select(s => $"{s.Path}: {s.Reason}"));

@@ -12,22 +12,6 @@ namespace CleanMachine.Windows.Tests;
 [Collection("Cleaning")]
 public sealed class ManifestAndSafetyTests
 {
-    [Theory]
-    [InlineData(WipeMethod.SimpleZeroFill, 1)]
-    [InlineData(WipeMethod.Dod522022M, 3)]
-    [InlineData(WipeMethod.Dod522022MEce, 7)]
-    [InlineData(WipeMethod.PeterGutmann, 35)]
-    [InlineData(WipeMethod.Custom, 35)]
-    public void WipeMethodsHaveExpectedPassBounds(WipeMethod method, int expected)
-        => Assert.Equal(expected, new SecureDeleteOptions(method, 99, true).Passes);
-
-    [Fact]
-    public void CustomPassesAreClampedToSafeRange()
-    {
-        Assert.Equal(1, new SecureDeleteOptions(WipeMethod.Custom, 0, true).Passes);
-        Assert.Equal(35, new SecureDeleteOptions(WipeMethod.Custom, 100, true).Passes);
-    }
-
     [Fact]
     public void InvalidAndProtectedPathsAreRejected()
     {
@@ -90,39 +74,6 @@ public sealed class ManifestAndSafetyTests
                 delayAsync: () => throw new InvalidOperationException("delay must never run")));
 
         Assert.Equal(1, calls);
-    }
-
-    [Fact]
-    public void CleanupUpdateArtifactsRemovesStagingFilesAndProbeButNothingElse()
-    {
-        var directory = Path.Combine(Path.GetTempPath(), "cm-update-artifacts-" + Guid.NewGuid().ToString("N"));
-        try
-        {
-            Directory.CreateDirectory(directory);
-            File.WriteAllText(Path.Combine(directory, "CleanMachine.exe.restore"), "staged");
-            File.WriteAllText(Path.Combine(directory, "CleanMachine.exe.failed"), "backup");
-            File.WriteAllText(Path.Combine(directory, ".update-write-probe"), "probe");
-            File.WriteAllText(Path.Combine(directory, "CleanMachine.exe"), "the real app");
-
-            UpdateService.CleanupUpdateArtifacts(directory);
-
-            Assert.False(File.Exists(Path.Combine(directory, "CleanMachine.exe.restore")));
-            Assert.False(File.Exists(Path.Combine(directory, "CleanMachine.exe.failed")));
-            Assert.False(File.Exists(Path.Combine(directory, ".update-write-probe")));
-            Assert.True(File.Exists(Path.Combine(directory, "CleanMachine.exe")));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public void CleanupUpdateArtifactsToleratesMissingDirectoryAndNull()
-    {
-        UpdateService.CleanupUpdateArtifacts(null);
-        UpdateService.CleanupUpdateArtifacts("");
-        UpdateService.CleanupUpdateArtifacts(Path.Combine(Path.GetTempPath(), "cm-missing-" + Guid.NewGuid().ToString("N")));
     }
 
     [Fact]
@@ -224,26 +175,6 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
-    public async Task SecureDeleteOptionsRequiresSsdAcknowledgement()
-    {
-        var options = new SecureDeleteOptions(WipeMethod.SimpleZeroFill, 1, false);
-        Assert.False(options.ConfirmSolidStateDriveWarning);
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new SecureDeleteService().DeleteAsync(
-                new[] { "/tmp/test" },
-                options));
-    }
-
-    [Fact]
-    public void UpdateStateTransitionsAreTracked()
-    {
-        var state = new UpdateState("staged", "/tmp/pkg.msix", null, DateTimeOffset.UtcNow);
-        Assert.Equal("staged", state.Status);
-        Assert.NotNull(state.PackagePath);
-        Assert.Null(state.RollbackPath);
-    }
-
-    [Fact]
     public void BrowserCleanupOptionsDefaultsAreReasonable()
     {
         var options = new BrowserCleanupOptions();
@@ -277,36 +208,8 @@ public sealed class ManifestAndSafetyTests
         // The background agent has no standalone flag; it is required whenever a
         // service that needs it is enabled - browser-exit cleaning is on by default.
         Assert.True(settings.RequiresBackgroundAgent);
-        Assert.True(settings.CheckForUpdatesAutomatically);
-        Assert.Equal(WipeMethod.SimpleZeroFill, settings.SecureDeleteMethod);
         Assert.Contains("chrome", settings.ProtectedBrowsers);
         Assert.Empty(settings.ExcludedPaths);
-    }
-
-    [Fact]
-    public void AutomaticUpdateChecksKeepTheBackgroundAgentRunning()
-    {
-        var settings = new AppSettings
-        {
-            CleanOnBrowserExit = false,
-            SystemMonitoringEnabled = false,
-            IdleCleanEnabled = false,
-            RecycleBinAutoEmptyEnabled = false,
-            CheckForUpdatesAutomatically = true,
-            AutoInstallUpdates = false
-        };
-
-        Assert.True(settings.RequiresBackgroundAgent);
-        Assert.True(settings.ShouldStartWithWindows);
-
-        settings.CheckForUpdatesAutomatically = false;
-        Assert.False(settings.RequiresBackgroundAgent);
-        Assert.False(settings.ShouldStartWithWindows);
-
-        // Auto-install cannot run without automatic checks, so it does not start
-        // the agent by itself.
-        settings.AutoInstallUpdates = true;
-        Assert.False(settings.RequiresBackgroundAgent);
     }
 
     [Fact]
@@ -418,98 +321,6 @@ public sealed class ManifestAndSafetyTests
 
         Assert.Equal(0, report.Result.ItemsRemoved);
         Assert.Contains(report.Skipped, issue => issue.Path == unknown.Id);
-    }
-
-    [Fact]
-    public async Task UpdateManifestParsesThePublishedCamelCaseFormat()
-    {
-        // The release workflow publishes the manifest with camelCase keys; UpdateService
-        // reads it case-insensitively. This guards the field binding from regressing.
-        const string json = """
-            {
-              "version": "1.2.3",
-              "releaseNotes": "See the GitHub release notes.",
-              "packages": {
-                "x64": {
-                  "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.2.3/CleanMachine-x64-v1.2.3.msix",
-                  "sha256": "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
-                  "architecture": "x64",
-                  "publisher": "CN=CleanMachine Publisher"
-                }
-              },
-              "installer": {
-                "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v1.2.3/CleanMachine-Setup-1.2.3.exe",
-                "sha256": "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF",
-                "architecture": "x64"
-              }
-            }
-            """;
-
-        await using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
-        var manifest = await UpdateService.ParseManifestAsync(stream);
-
-        Assert.NotNull(manifest);
-        Assert.Equal("1.2.3", manifest.Version);
-        Assert.Equal("See the GitHub release notes.", manifest.ReleaseNotes);
-        Assert.NotNull(manifest.Packages);
-        Assert.True(manifest.Packages.ContainsKey("x64"));
-        Assert.Equal("x64", manifest.Packages["x64"].Architecture);
-        Assert.Equal("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789", manifest.Packages["x64"].Sha256);
-        // Installer section is optional; when present it should parse correctly.
-        Assert.NotNull(manifest.Installer);
-        Assert.Contains(".exe", manifest.Installer!.PackageUrl);
-        Assert.Equal("x64", manifest.Installer.Architecture);
-        Assert.Equal("1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF", manifest.Installer.Sha256);
-    }
-
-    [Fact]
-    public void CurrentVersionFallsBackToAssemblyVersionNotHardcoded()
-    {
-        // The unpackaged (installer) build has no MSIX identity, so CurrentVersion
-        // must fall back to the assembly version stamped from the release tag -
-        // never a hardcoded constant, which made every release look like an update.
-        // The test assembly itself is stamped 1.0.0.0 by default; the contract under
-        // test is that the fallback is derived from the assembly, and that a manifest
-        // at the same version is not offered as an update.
-        var current = UpdateService.CurrentVersion();
-        Assert.Equal(typeof(UpdateService).Assembly.GetName().Version!.Major, current.Major);
-        Assert.Equal(typeof(UpdateService).Assembly.GetName().Version!.Minor, current.Minor);
-        Assert.Equal(typeof(UpdateService).Assembly.GetName().Version!.Build, current.Build);
-    }
-
-    [Fact]
-    public void IsNewerOffersOnlyStrictlyNewerVersions()
-    {
-        // The released build must never be offered as an "update" to itself.
-        var current = UpdateService.CurrentVersion();
-        Assert.False(UpdateService.IsNewer($"{current.Major}.{current.Minor}.{current.Build}")); // same version
-        Assert.True(UpdateService.IsNewer($"{current.Major + 1}.0.0"));          // strictly newer
-        Assert.False(UpdateService.IsNewer("0.0.1"));                            // older
-    }
-
-    [Fact]
-    public void InstallNeedsElevationFollowsDirectoryWritability()
-    {
-        // A writable directory (a per-user install under %LOCALAPPDATA%) needs no
-        // elevation; a nonexistent directory defaults to elevation (fail safe).
-        using var writable = new TempDirectory();
-        Assert.False(UpdateService.InstallNeedsElevation(Path.Combine(writable.Path, "CleanMachine.exe")));
-        Assert.True(UpdateService.InstallNeedsElevation(
-            Path.Combine(Path.GetTempPath(), "cleanmachine-missing-dir-test", "CleanMachine.exe")));
-    }
-
-    /// <summary>A self-cleaning temp directory so a failed test never leaves litter.</summary>
-    private sealed class TempDirectory : IDisposable
-    {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "cleanmachine-tests-" + Guid.NewGuid().ToString("N"));
-
-        public TempDirectory() => Directory.CreateDirectory(Path);
-
-        public void Dispose()
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { }
-        }
     }
 
     [Fact]
@@ -998,110 +809,6 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
-    public void IsInstalledAsMsixIsConsistentWithCurrentVersion()
-    {
-        // When running as MSIX, CurrentVersion reads from Package.Current.Id.Version;
-        // when standalone, it falls back to the assembly version. The IsInstalledAsMsix
-        // flag must agree with whichever path succeeded.
-        var isMsix = UpdateService.IsInstalledAsMsix;
-        var currentVersion = UpdateService.CurrentVersion();
-        // Both paths always return a version; the flag just tells us which source it came from.
-        Assert.NotNull(currentVersion);
-        // The flag should be false in the test runner (no MSIX identity).
-        Assert.False(isMsix);
-    }
-
-    [Fact]
-    public async Task ManifestWithInstallerSectionParsesInstaller()
-    {
-        const string json = """
-            {
-              "version": "2.0.0",
-              "releaseNotes": "Installer update.",
-              "installer": {
-                "packageUrl": "https://github.com/daygle/CleanMachine/releases/download/v2.0.0/CleanMachine-Setup-2.0.0.exe",
-                "sha256": "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
-                "architecture": "x64"
-              }
-            }
-            """;
-
-        await using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
-        var manifest = await UpdateService.ParseManifestAsync(stream);
-
-        Assert.NotNull(manifest);
-        Assert.NotNull(manifest!.Installer);
-        Assert.Contains(".exe", manifest.Installer!.PackageUrl);
-        Assert.Equal("x64", manifest.Installer.Architecture);
-        // packages can be null when only an installer is present.
-        Assert.Null(manifest.Packages);
-    }
-
-    [Fact]
-    public async Task ManifestWithoutInstallerSectionHasNullInstaller()
-    {
-        const string json = """
-            {
-              "version": "2.0.0",
-              "releaseNotes": "MSIX only."
-            }
-            """;
-
-        await using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
-        var manifest = await UpdateService.ParseManifestAsync(stream);
-
-        Assert.NotNull(manifest);
-        Assert.Null(manifest!.Installer);
-    }
-
-    [Fact]
-    public void CleanupScheduleSecureDeleteDefaultsOffAndRoundTrips()
-    {
-        Assert.False(new CleanupSchedule().SecureDelete);
-
-        var settings = new AppSettings
-        {
-            Schedules =
-            [
-                new CleanupSchedule
-                {
-                    Id = "sd1",
-                    Name = "Secure nightly",
-                    SecureDelete = true,
-                    WindowsCategoryIds = ["system-temp"]
-                }
-            ]
-        };
-
-        var json = System.Text.Json.JsonSerializer.Serialize(settings);
-        var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
-
-        Assert.NotNull(clone);
-        Assert.True(clone!.Schedules[0].SecureDelete);
-    }
-
-    [Fact]
-    public async Task SecureDeleteFileAsyncOverwritesAndDeletesFile()
-    {
-        var tempFile = Path.Combine(Path.GetTempPath(), $"cm-sd-test-{Guid.NewGuid():N}.txt");
-        try
-        {
-            await File.WriteAllTextAsync(tempFile, "This is test content for secure delete.");
-            Assert.True(File.Exists(tempFile));
-
-            var options = new SecureDeleteOptions(WipeMethod.SimpleZeroFill, 1, true);
-            var result = await SecureDeleteService.SecureDeleteFileAsync(tempFile, options);
-
-            Assert.True(result);
-            Assert.False(File.Exists(tempFile));
-        }
-        finally
-        {
-            try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
-        }
-    }
-
-    [Fact]
     public void AppCatalogCoversDesktopAndStoreApps()
     {
         var defs = AppCatalog.Definitions;
@@ -1167,56 +874,6 @@ public sealed class ManifestAndSafetyTests
         Assert.False(clone.TrayCleaningAnimation);
     }
 
-    [Fact]
-    public void MsixUpdateScriptWaitsForExitInstallsAndRelaunches()
-    {
-        var script = UpdateService.BuildMsixUpdateScript(
-            @"C:\Temp\Clean Machine\Pkg.msix", "Pkg_abc123", relaunchBackground: true);
-
-        // Waits for the handing-off app to exit before touching the package...
-        Assert.Contains("Get-Process", script);
-        Assert.Contains("Start-Sleep", script);
-        Assert.Contains("Add-AppxPackage", script);
-        // ...carries the exact package path and family...
-        Assert.Contains(@"C:\Temp\Clean Machine\Pkg.msix", script);
-        Assert.Contains("shell:AppsFolder", script);
-        Assert.Contains("Pkg_abc123", script);
-        // ...and relaunches into the tray after an automatic (idle) update.
-        Assert.Contains("$bg=$true", script);
-        Assert.Contains("--background", script);
-    }
-
-    /// <summary>The first Add-AppxPackage attempt routinely loses the race with the
-    /// just-exited process, so a single silent failure looked to users exactly like
-    /// "the update did nothing". The helper must retry, and must leave a note when
-    /// every attempt fails.</summary>
-    [Fact]
-    public void MsixUpdateScriptRetriesTheInstallAndReportsFailure()
-    {
-        var script = UpdateService.BuildMsixUpdateScript(
-            @"C:\p.msix", "Fam_x", relaunchBackground: false, errorPath: @"C:\data\install-error.txt");
-
-        Assert.Contains("for($i=0;$i -lt 5;$i++)", script);
-        Assert.Contains("Start-Sleep -Seconds 2", script);
-        // The failure reason is recorded where the Updates page can show it...
-        Assert.Contains(@"$errFile='C:\data\install-error.txt';", script);
-        Assert.Contains("Set-Content -LiteralPath $errFile", script);
-        // ...and a stale note from an earlier attempt is cleared before retrying.
-        Assert.Contains("Remove-Item -LiteralPath $errFile", script);
-        // The relaunch must happen whether or not the deploy succeeded, so the
-        // user is never left with no running app at all.
-        Assert.True(script.IndexOf("Add-AppxPackage", StringComparison.Ordinal)
-            < script.IndexOf("shell:AppsFolder", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void MsixUpdateScriptOmitsErrorReportingWhenNoPathIsGiven()
-    {
-        var script = UpdateService.BuildMsixUpdateScript(@"C:\p.msix", "Fam_x", relaunchBackground: false);
-        Assert.DoesNotContain("$errFile", script);
-        Assert.DoesNotContain("Set-Content", script);
-    }
-
     /// <summary>The desktop shortcut must target the package identity, not the
     /// version-stamped WindowsApps executable: the folder an exe-targeting link
     /// points at is deleted on the next update, which is what broke the user's
@@ -1232,67 +889,6 @@ public sealed class ManifestAndSafetyTests
         Assert.DoesNotContain("WindowsApps", target, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(".exe", target, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(@"\", target[(target.IndexOf('\\') + 1)..], StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void MsixUpdateScriptQuotesEmbeddedSingleQuotes()
-    {
-        var script = UpdateService.BuildMsixUpdateScript("C:\\o'x.msix", "Fam", relaunchBackground: false);
-        // A PowerShell single-quoted literal escapes ' by doubling it; without that,
-        // an apostrophe in the path would truncate the literal and break the helper.
-        Assert.Contains("$pkg='C:\\o''x.msix';", script);
-        Assert.Contains("$bg=$false", script);
-    }
-
-    [Fact]
-    public void MsixUpdateHelperCommandReferencesScriptFileWithinSchtasksLimit()
-    {
-        var script = UpdateService.BuildMsixUpdateScript(@"C:\p.msix", "Fam_x", relaunchBackground: false);
-        var command = UpdateService.BuildMsixUpdateHelperCommand(@"C:\Users\glen\AppData\Local\Temp\CleanMachine\Updates\update-helper.ps1");
-
-        Assert.Contains("powershell.exe", command);
-        // -File, not -EncodedCommand: an inline base64 payload runs to ~3 KB and
-        // schtasks rejects any /TR action over 261 characters with an error the app
-        // used to swallow, silently falling back to the in-process deploy that hangs.
-        Assert.Contains("-File", command);
-        Assert.DoesNotContain("-EncodedCommand", command);
-        // The raw script never appears on the command line, so schtasks' quoting
-        // cannot corrupt the package path or shell: URI.
-        Assert.DoesNotContain("Add-AppxPackage", command);
-        Assert.DoesNotContain("exit 0", command);
-
-        // The regression that matters: a realistic path must fit Windows' limit.
-        Assert.True(command.Length <= UpdateService.MaxHelperActionLength,
-            $"Helper action is {command.Length} chars; schtasks allows at most {UpdateService.MaxHelperActionLength}.");
-    }
-
-    /// <summary>The staged helper script must stay runnable from disk: the app writes
-    /// it next to the staged package and the task invokes it with -File, so the
-    /// payload's PowerShell syntax has to survive a file round-trip (and a temp path
-    /// with an apostrophe in it must not break the single-quoted literals).</summary>
-    [Fact]
-    public void MsixUpdateHelperScriptSurvivesFileRoundTrip()
-    {
-        var script = UpdateService.BuildMsixUpdateScript(@"C:\o'p.msix", "Fam_x", relaunchBackground: true);
-        var directory = Path.Combine(Path.GetTempPath(), "CleanMachine-HelperScriptTest");
-        Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, "update-helper.ps1");
-        try
-        {
-            File.WriteAllText(path, script);
-            var written = File.ReadAllText(path);
-
-            Assert.Equal(script, written);
-            Assert.Contains("$pkg='C:\\o''p.msix';", written);
-            Assert.Contains("Add-AppxPackage -Path $pkg", written);
-            // Self-cleanup: the staging folder is swept with the package, but the
-            // script should not linger as a stale installer between runs.
-            Assert.Contains("Remove-Item -LiteralPath $PSCommandPath", written);
-        }
-        finally
-        {
-            try { Directory.Delete(directory, recursive: true); } catch { }
-        }
     }
 
     /// <summary>The in-repo version defaults (RELEASE.md checklist step 1) must stay
@@ -1327,22 +923,74 @@ public sealed class ManifestAndSafetyTests
         Assert.Equal(packageVersion, assemblyVersion);
     }
 
-    /// <summary>The helper-failure message is rendered in a single-line banner and in
-    /// the activity log. An earlier version ran to a sentence and a half and was
-    /// clipped mid-word on the Overview page, hiding the part that explained the
-    /// failure, so the length is pinned rather than left to prose.</summary>
+    /// <summary>Partner Center requires a written justification for every restricted
+    /// capability, and the justification in RELEASE.md covers exactly one of them.
+    /// A newly added restricted capability silently ships without a justification
+    /// and fails certification, so the set is pinned here.</summary>
     [Fact]
-    public void UpdateHelperFailureMessageFitsASingleLine()
+    public void PackageDeclaresOnlyTheJustifiedRestrictedCapability()
     {
-        const int singleLineBudget = 160;
-        var message = UpdateService.HelperUnavailableMessage;
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
 
-        Assert.True(message.Length <= singleLineBudget,
-            $"Helper failure message is {message.Length} chars; budget is {singleLineBudget}.");
-        Assert.DoesNotContain("\n", message);
-        Assert.DoesNotContain("\r", message);
-        // It must still say what to do, not just what went wrong.
-        Assert.Contains("retry", message, StringComparison.OrdinalIgnoreCase);
+        var appx = XDocument.Load(Path.Combine(root!, "CleanMachine.Windows", "Package.appxmanifest"));
+        var restricted = appx.Descendants()
+            .Where(e => e.Name.LocalName == "Capability")
+            .Select(e => e.Attribute("Name")?.Value)
+            .OfType<string>()
+            .ToArray();
+
+        // runFullTrust is required by the desktop:Extension full-trust entry that
+        // backs the WinUI 3 app; the justification in RELEASE.md explains why.
+        Assert.Equal(new[] { "runFullTrust" }, restricted);
+    }
+
+    /// <summary>The manifest Description is the public Store listing copy. Developer-
+    /// internal wording shipped there once ("Private, review-first...") and read badly
+    /// in a public listing, so the phrasing is pinned to something customer-facing.</summary>
+    [Fact]
+    public void PackageListingCopyIsCustomerFacing()
+    {
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
+
+        var appx = XDocument.Load(Path.Combine(root!, "CleanMachine.Windows", "Package.appxmanifest"));
+        var description = appx.Descendants().FirstOrDefault(e => e.Name.LocalName == "Description")?.Value;
+        var visual = appx.Descendants().FirstOrDefault(e => e.Name.LocalName == "VisualElements")?
+            .Attribute("Description")?.Value;
+
+        Assert.False(string.IsNullOrWhiteSpace(description));
+        Assert.Equal(description, visual);
+        Assert.DoesNotContain("Private", description, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("internal", description, StringComparison.OrdinalIgnoreCase);
+        Assert.True(description!.Length > 40, "Listing description is too short to describe the app.");
+    }
+
+    /// <summary>Secure Delete and Drive Wiper were removed from the product. A page or
+    /// checkbox reintroduced without the surrounding removal of the service would be
+    /// dead UI at best, and a Store certification risk at worst, so the shipped markup
+    /// is checked for the names directly.</summary>
+    [Fact]
+    public void RemovedDestructiveToolsAreAbsentFromTheShippedUi()
+    {
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
+
+        var projectDir = Path.Combine(root!, "CleanMachine.Windows");
+        // Skip build output: only the hand-written page markup is under test.
+        var pages = Directory.EnumerateFiles(projectDir, "*.xaml", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                        && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
+        var offenders = new List<string>();
+        foreach (var page in pages)
+        {
+            var markup = File.ReadAllText(page);
+            foreach (var removed in new[] { "SecureDelete", "Secure Delete", "DriveWiper", "Drive Wiper", "wipe" })
+                if (markup.Contains(removed, StringComparison.OrdinalIgnoreCase))
+                    offenders.Add($"{Path.GetFileName(page)}: {removed}");
+        }
+
+        Assert.True(offenders.Count == 0, "Removed features still referenced in markup: " + string.Join(", ", offenders));
     }
 
     /// <summary>schtasks writes the reason it refused a task to stderr. Keeping the
@@ -1390,32 +1038,34 @@ public sealed class ManifestAndSafetyTests
         Assert.Null(outcome.Reason);
     }
 
-    /// <summary>End-to-end proof that a helper task can actually be scheduled and
-    /// run on this machine - the one thing no pure unit test can show, and the gap
-    /// that let an unschedulable helper ship unnoticed. It creates a real scheduled
-    /// task, so it is opt-in: set CLEANMACHINE_RUN_SCHEDULED_TESTS=1. CI enables it
-    /// because its runners are ephemeral, which is where this coverage belongs.</summary>
+    /// <summary>End-to-end proof that a cleanup task can actually be scheduled and
+    /// run on this machine - the one thing no pure unit test can show. It creates a
+    /// real scheduled task, so it is opt-in: set CLEANMACHINE_RUN_SCHEDULED_TESTS=1.
+    /// CI enables it because its runners are ephemeral, which is where this coverage
+    /// belongs.</summary>
     [Fact]
     [Trait("Category", "ScheduledTask")]
-    public async Task MsixUpdateHelperTaskCanBeScheduledAndRuns()
+    public async Task ScheduledTaskCanBeScheduledAndRuns()
     {
         if (Environment.GetEnvironmentVariable("CLEANMACHINE_RUN_SCHEDULED_TESTS") != "1") return;
 
-        const string taskName = @"\CleanMachine\TestsHelperSelfTest";
-        var directory = Path.Combine(Path.GetTempPath(), "CleanMachine-HelperSelfTest");
+        const string taskName = @"\CleanMachine\TestsTaskSelfTest";
+        var directory = Path.Combine(Path.GetTempPath(), "CleanMachine-TaskSelfTest");
         var marker = Path.Combine(directory, "ran.txt");
-        var scriptPath = Path.Combine(directory, "update-helper.ps1");
+        var scriptPath = Path.Combine(directory, "task-action.ps1");
         Directory.CreateDirectory(directory);
         try
         {
-            // A harmless stand-in with the real script's shape, including an apostrophe
-            // in the value it echoes: that is the quoting this path has to survive.
+            // A harmless stand-in for a real task action, including an apostrophe in
+            // the value it echoes: that is the quoting this path has to survive.
             await File.WriteAllTextAsync(scriptPath,
                 $"Set-Content -LiteralPath '{marker}' -Value 'ran'\n");
 
-            var action = UpdateService.BuildMsixUpdateHelperCommand(scriptPath);
-            Assert.True(action.Length <= UpdateService.MaxHelperActionLength,
-                $"Helper action is {action.Length} chars; schtasks allows at most {UpdateService.MaxHelperActionLength}.");
+            var action = $"powershell.exe -NoProfile -NonInteractive -File \"{scriptPath}\"";
+            // schtasks rejects any /TR action over 261 characters outright.
+            const int schtasksActionLimit = 261;
+            Assert.True(action.Length <= schtasksActionLimit,
+                $"Task action is {action.Length} chars; schtasks allows at most {schtasksActionLimit}.");
 
             var escaped = action.Replace("\"", "\\\"");
             var created = await ScheduleService.RunProcessAsync("schtasks.exe",
@@ -1428,132 +1078,13 @@ public sealed class ManifestAndSafetyTests
 
             // The task is fire-and-forget, so poll for the marker rather than guessing.
             for (var i = 0; i < 40 && !File.Exists(marker); i++) await Task.Delay(500);
-            Assert.True(File.Exists(marker), "The helper task ran but the script never executed.");
+            Assert.True(File.Exists(marker), "The task ran but the script never executed.");
         }
         finally
         {
             await ScheduleService.RunProcessAsync("schtasks.exe", $"/Delete /TN \"{taskName}\" /F", default);
             try { Directory.Delete(directory, recursive: true); } catch { }
         }
-    }
-
-    /// <summary>Smart App Control guidance is shown in the confirm dialog, the Updates
-    /// page and the installer-failure path, so it must not contain a hard line break -
-    /// one truncates the banner it is meant to explain. It must also name a concrete
-    /// next step, since the whole point is that "it didn't update" is not actionable.</summary>
-    [Fact]
-    public void SmartAppControlGuidanceIsSingleLineAndActionable()
-    {
-        var guidance = UpdateService.SmartAppControlGuidance;
-
-        Assert.DoesNotContain("\n", guidance);
-        Assert.DoesNotContain("\r", guidance);
-        Assert.Contains("Smart App Control", guidance, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("self-signed", guidance, StringComparison.OrdinalIgnoreCase);
-        // The point of the message is an action the user can actually take.
-        Assert.Contains("Windows Security", guidance, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>Field extraction from a wevtutil text event block. The id, the
-    /// timestamp and the file name sit on different lines, so the block is the unit
-    /// that has to be parsed; these cases pin that shape, including the truncated
-    /// last line and the missing-field path that must not throw.</summary>
-    [Theory]
-    [InlineData("1]\r\n  Event ID: 3033\r\n  Message: x", "Event ID:", "3033")]
-    [InlineData("1]\n  Event ID: 3077\n  Message: x", "Event ID:", "3077")]
-    [InlineData("1]\r\n  Date: 2026-09-26T16:29:04.1800000Z\r\n", "Date:", "2026-09-26T16:29:04.1800000Z")]
-    [InlineData("1]\r\n  Event ID: 3033", "Event ID:", "3033")]
-    [InlineData("1]\r\n  Message: no id here", "Event ID:", "")]
-    public void WevtUtilBlockFieldIsRead(string block, string label, string expected)
-    {
-        var found = ReadWevtField(block, label, out var value);
-        if (expected.Length == 0) Assert.False(found);
-        else { Assert.True(found); Assert.Equal(expected, value.Trim()); }
-    }
-
-    /// <summary>Reflection shim so the parsing rules are tested directly. The method is
-    /// private because nothing in the app calls it; these cases exist because the
-    /// first implementation matched per line and silently found nothing, since the
-    /// event id and the file name are never on the same line.</summary>
-    private static bool ReadWevtField(string block, string label, out string value)
-    {
-        var method = typeof(UpdateService).GetMethod(
-            "TryReadField",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-        Assert.NotNull(method);
-        var args = new object?[] { block, label, null };
-        var result = (bool)method!.Invoke(null, args)!;
-        value = args[2] as string ?? string.Empty;
-        return result;
-    }
-
-    /// <summary>A real Code Integrity record captured from the machine that reported
-    /// the problem, verbatim apart from line endings: the 3077 that refused to load
-    /// CleanMachine 1.0.46. The message names the file on a line far from the event
-    /// id, which is exactly why the first, per-line implementation found nothing.</summary>
-    private const string RealBlockRecord =
-        "0]\r\n" +
-        "  Log Name: Microsoft-Windows-CodeIntegrity/Operational\r\n" +
-        "  Source: Microsoft-Windows-CodeIntegrity\r\n" +
-        "  Date: 2026-09-26T16:29:04.1800000Z\r\n" +
-        "  Event ID: 3077\r\n" +
-        "  Level: Error\r\n" +
-        "  Description: \r\n" +
-        "Code Integrity determined that a process (\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe) " +
-        "attempted to load \\Device\\HarddiskVolume3\\Program Files\\WindowsApps\\" +
-        "CleanMachine_1.0.46.0_x64__0rhf3bpmxpsre\\CleanMachine.exe that did not meet the " +
-        "Enterprise signing level requirements or violated code integrity policy " +
-        "(Policy ID:{0283ac0f-fff1-49ae-ada1-8a933130cad6}).\r\n";
-
-    [Fact]
-    public void SmartAppControlBlockIsDetectedFromARealRecord()
-    {
-        var justBefore = new DateTimeOffset(2026, 9, 26, 16, 29, 4, TimeSpan.Zero);
-
-        Assert.True(UpdateService.ContainsSmartAppControlBlock(
-            RealBlockRecord, "CleanMachine.exe", justBefore - TimeSpan.FromMinutes(5)));
-        // 3033 is the paired refusal id and must count too.
-        Assert.True(UpdateService.ContainsSmartAppControlBlock(
-            RealBlockRecord.Replace("Event ID: 3077", "Event ID: 3033"),
-            "CleanMachine.exe", justBefore - TimeSpan.FromMinutes(5)));
-    }
-
-    /// <summary>The whole point of the change: a block that did not just happen must
-    /// not be reported. Without the time filter the app would re-explain a block from
-    /// hours ago on every failed update, which is the false alarm being fixed.</summary>
-    [Fact]
-    public void OldSmartAppControlBlockIsNotReported()
-    {
-        Assert.False(UpdateService.ContainsSmartAppControlBlock(
-            RealBlockRecord, "CleanMachine.exe", new DateTimeOffset(2026, 9, 26, 16, 35, 0, TimeSpan.Zero)));
-    }
-
-    /// <summary>Code Integrity logs plenty of events that mention a file without
-    /// blocking it. Treating any of those as a Smart App Control refusal would put the
-    /// false alarm straight back, so only 3033/3077 may match.</summary>
-    [Fact]
-    public void NonRefusalEventMentioningTheBinaryIsNotABlock()
-    {
-        var informational = RealBlockRecord
-            .Replace("Event ID: 3077", "Event ID: 3102")
-            .Replace("Level: Error", "Level: Information")
-            .Replace("did not meet the Enterprise signing level requirements or violated code integrity policy",
-                     "was catalogued for signing");
-
-        Assert.False(UpdateService.ContainsSmartAppControlBlock(
-            informational, "CleanMachine.exe", new DateTimeOffset(2026, 9, 26, 16, 0, 0, TimeSpan.Zero)));
-    }
-
-    /// <summary>Another binary's block is not ours, and an empty log is not a block.</summary>
-    [Fact]
-    public void UnrelatedOrEmptyLogIsNotABlock()
-    {
-        var since = new DateTimeOffset(2026, 9, 26, 16, 0, 0, TimeSpan.Zero);
-        var other = RealBlockRecord.Replace("CleanMachine.exe", "SomeOtherApp.exe");
-
-        Assert.False(UpdateService.ContainsSmartAppControlBlock(other, "CleanMachine.exe", since));
-        Assert.False(UpdateService.ContainsSmartAppControlBlock("", "CleanMachine.exe", since));
-        Assert.False(UpdateService.ContainsSmartAppControlBlock(RealBlockRecord, "", since));
     }
 
     /// <summary>Walks up from the test output directory (bin/&lt;config&gt;/&lt;tfm&gt;,

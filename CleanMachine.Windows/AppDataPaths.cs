@@ -1,12 +1,12 @@
 namespace CleanMachine.Windows;
 
 /// <summary>Single source of truth for CleanMachine's per-user data folder
-/// (settings, statistics, activity history, update state, registry backups).
+/// (settings, statistics, activity history, registry backups).
 ///
-/// Both install flavors use %LOCALAPPDATA%\CleanMachine so a reinstall - or
-/// switching flavors - picks up where the user left off, and so an uninstall can
-/// honor the installer's promise to keep the data unless the user says
-/// otherwise. Under MSIX, Environment.GetFolderPath(LocalApplicationData)
+/// The folder is %LOCALAPPDATA%\CleanMachine rather than the package-local one
+/// so a reinstall picks up where the user left off, and so uninstalling can
+/// honor the promise to keep the data unless the user says otherwise. Under
+/// MSIX, Environment.GetFolderPath(LocalApplicationData)
 /// resolves INTO the package (...\Packages\&lt;family&gt;\LocalCache\...), which
 /// Windows deletes whenever the package is removed - silently and without
 /// asking. <see cref="Root"/> therefore strips the redirection and one-time

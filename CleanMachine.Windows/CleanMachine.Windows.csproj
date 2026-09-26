@@ -26,7 +26,12 @@
          a drive root (e.g. D:\AppPackages). Keep it inside bin where CI globs for it. -->
     <AppxPackageDir>$(MSBuildProjectDirectory)\bin\AppPackages\</AppxPackageDir>
     <AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
-    <AppxBundle>Never</AppxBundle>
+    <!-- The Microsoft Store is the only distribution channel, and Partner Center
+         prefers one multi-architecture bundle over per-architecture packages. A
+         bundle is produced unsigned: the Store signs it on ingestion, so no
+         code-signing certificate has to be purchased or configured. -->
+    <AppxBundle>Always</AppxBundle>
+    <AppxBundlePlatforms>x64|arm64</AppxBundlePlatforms>
     <AppxManifest>Package.appxmanifest</AppxManifest>
     <EnableDefaultApplicationDefinitionItems>true</EnableDefaultApplicationDefinitionItems>
     <Nullable>enable</Nullable>

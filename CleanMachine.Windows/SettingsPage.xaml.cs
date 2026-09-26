@@ -18,7 +18,7 @@ public sealed partial class SettingsPage : Page
         InitializeComponent();
         // The in-app uninstall flow exists only for MSIX: the .exe flavor's
         // uninstaller already closes the app, cleans up, and asks about data.
-        if (UpdateService.IsInstalledAsMsix) UninstallSection.Visibility = Visibility.Visible;
+        if (ScheduleService.IsMsix) UninstallSection.Visibility = Visibility.Visible;
         Loaded += async (_, _) => await LoadAsync();
     }
 
@@ -27,9 +27,6 @@ public sealed partial class SettingsPage : Page
         _loading = true;
         _settings = await AppSettings.LoadAsync();
 
-        UpdateCheckToggle.IsChecked = _settings.CheckForUpdatesAutomatically;
-        SkipUpdateConfirmToggle.IsChecked = _settings.SkipUpdateConfirmation;
-        AutoInstallUpdatesToggle.IsChecked = _settings.AutoInstallUpdates;
         StartWithWindowsToggle.IsChecked = _settings.StartWithWindows;
         ShowInTaskbarToggle.IsChecked = _settings.ShowInTaskbar;
         StartMinimizedToTrayToggle.IsChecked = _settings.StartMinimizedToTray;
@@ -37,14 +34,6 @@ public sealed partial class SettingsPage : Page
         MinimizeToTrayToggle.IsChecked = _settings.MinimizeToTray;
         AlwaysShowTrayToggle.IsChecked = _settings.AlwaysShowTray;
         TrayCleaningAnimationToggle.IsChecked = _settings.TrayCleaningAnimation;
-        WipeMethodCombo.SelectedIndex = _settings.SecureDeleteMethod switch
-        {
-            WipeMethod.Dod522022M => 1,
-            WipeMethod.Dod522022MEce => 2,
-            WipeMethod.PeterGutmann => 3,
-            WipeMethod.Custom => 4,
-            _ => 0
-        };
         ExclusionsBox.Text = string.Join("\n", _settings.ExcludedPaths);
         _loading = false;
     }
@@ -53,16 +42,12 @@ public sealed partial class SettingsPage : Page
     // Save button. Populating the controls (load / restore defaults) sets _loading
     // to suppress these.
     private void Setting_Changed(object sender, RoutedEventArgs e) { if (!_loading) _ = PersistAsync(); }
-    private void Setting_ComboChanged(object sender, SelectionChangedEventArgs e) { if (!_loading) _ = PersistAsync(); }
     private void Setting_LostFocus(object sender, RoutedEventArgs e) { if (!_loading) _ = PersistAsync(); }
 
     /// <summary>Reads every control into settings, persists, and applies side
     /// effects. Called on any change (instant save) and by Restore Defaults.</summary>
     private async Task PersistAsync()
     {
-        _settings.CheckForUpdatesAutomatically = UpdateCheckToggle.IsChecked == true;
-        _settings.SkipUpdateConfirmation = SkipUpdateConfirmToggle.IsChecked == true;
-        _settings.AutoInstallUpdates = AutoInstallUpdatesToggle.IsChecked == true;
         _settings.StartWithWindows = StartWithWindowsToggle.IsChecked == true;
         _settings.ShowInTaskbar = ShowInTaskbarToggle.IsChecked == true;
         _settings.StartMinimizedToTray = StartMinimizedToTrayToggle.IsChecked == true;
@@ -70,14 +55,6 @@ public sealed partial class SettingsPage : Page
         _settings.MinimizeToTray = MinimizeToTrayToggle.IsChecked == true;
         _settings.AlwaysShowTray = AlwaysShowTrayToggle.IsChecked == true;
         _settings.TrayCleaningAnimation = TrayCleaningAnimationToggle.IsChecked == true;
-        _settings.SecureDeleteMethod = WipeMethodCombo.SelectedIndex switch
-        {
-            1 => WipeMethod.Dod522022M,
-            2 => WipeMethod.Dod522022MEce,
-            3 => WipeMethod.PeterGutmann,
-            4 => WipeMethod.Custom,
-            _ => WipeMethod.SimpleZeroFill
-        };
         _settings.ExcludedPaths = ExclusionsBox.Text
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -105,9 +82,6 @@ public sealed partial class SettingsPage : Page
         // Populate the controls with defaults without firing a save per control,
         // then persist once at the end.
         _loading = true;
-        UpdateCheckToggle.IsChecked = defaults.CheckForUpdatesAutomatically;
-        SkipUpdateConfirmToggle.IsChecked = defaults.SkipUpdateConfirmation;
-        AutoInstallUpdatesToggle.IsChecked = defaults.AutoInstallUpdates;
         StartWithWindowsToggle.IsChecked = defaults.StartWithWindows;
         ShowInTaskbarToggle.IsChecked = defaults.ShowInTaskbar;
         StartMinimizedToTrayToggle.IsChecked = defaults.StartMinimizedToTray;
@@ -115,7 +89,6 @@ public sealed partial class SettingsPage : Page
         MinimizeToTrayToggle.IsChecked = defaults.MinimizeToTray;
         AlwaysShowTrayToggle.IsChecked = defaults.AlwaysShowTray;
         TrayCleaningAnimationToggle.IsChecked = defaults.TrayCleaningAnimation;
-        WipeMethodCombo.SelectedIndex = 0;
         ExclusionsBox.Text = "";
         _loading = false;
 

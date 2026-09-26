@@ -1,42 +1,52 @@
 name: Release Windows app
 
+# The Microsoft Store is the only distribution channel (see RELEASE.md). This
+# workflow therefore builds exactly one artifact: the .msixupload that Partner
+# Center accepts. There is no self-signed certificate, no Inno Setup installer
+# and no GitHub release - the Store installs and updates the app.
+#
+# No code-signing certificate is required. Partner Center accepts an UNSIGNED
+# .msixupload and signs it with Microsoft's own certificate as part of
+# ingestion. Signing it yourself is optional and only useful if you want the
+# package to be verifiable before it reaches the Store; set
+# STORE_CERT_BASE64/STORE_CERT_PASSWORD and the job will sign and then verify
+# the signature chains to a trusted root.
+
 on:
   push:
     tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   PROJECT: CleanMachine.Windows/CleanMachine.Windows.csproj
   TESTS: CleanMachine.Windows.Tests/CleanMachine.Windows.Tests.csproj
-  # Default publisher for the stable self-signed certificate used by private releases.
-  # Must be a valid X.500 name and must match the certificate subject.
-  DEFAULT_PUBLISHER: "CN=CleanMachine Publisher"
 
 jobs:
-  build:
+  store-package:
+    name: Build Microsoft Store submission package
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: x64
-            runtime: win-x64
-          - platform: ARM64
-            runtime: win-arm64
+    env:
+      # The exact Publisher string reserved for this app in Partner Center
+      # (Product > Identity). Deliberately not defaulted: a guessed publisher
+      # produces a package that uploads cleanly and then fails certification.
+      STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+      # Optional. Leave unset to submit an unsigned package (the Store signs it).
+      STORE_CERT_BASE64: ${{ secrets.STORE_SIGNING_CERTIFICATE_BASE64 }}
+      STORE_CERT_PASSWORD: ${{ secrets.STORE_SIGNING_CERTIFICATE_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      - name: Resolve version and publisher
+
+      - name: Resolve version
         shell: pwsh
-        env:
-          WINDOWS_PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
         run: |
           $ref = "${env:GITHUB_REF_NAME}"
           $isTag = "${env:GITHUB_REF}".StartsWith("refs/tags/")
@@ -45,490 +55,31 @@ jobs:
           }
           elseif ($isTag) {
             # The push trigger (v*.*.*) also matches tags like v1.0.0.1 or v1.2.3-rc1.
-            # Refuse to publish a release stamped with a placeholder version.
-            throw "Tag '$ref' is not a valid vMAJOR.MINOR.PATCH version; refusing to publish a mis-versioned release."
+            # Refuse to build a submission stamped with a placeholder version.
+            throw "Tag '$ref' is not a valid vMAJOR.MINOR.PATCH version; refusing to build a mis-versioned package."
           }
           else {
-            $version = "0.0.1"; Write-Host "Ref '$ref' is not a version tag; using placeholder version $version for this manual build."
+            $version = "0.0.1"; Write-Host "Ref '$ref' is not a version tag; using placeholder version $version."
           }
-          $publisher = if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PUBLISHER)) { $env:DEFAULT_PUBLISHER } else { $env:WINDOWS_PUBLISHER }
-          $safeTag = ($ref -replace '[^A-Za-z0-9._-]', '-')
-          "VERSION3=$version"        | Out-File -FilePath $env:GITHUB_ENV -Append
-          "VERSION4=$version.0"      | Out-File -FilePath $env:GITHUB_ENV -Append
-          "PUBLISHER=$publisher"     | Out-File -FilePath $env:GITHUB_ENV -Append
-          "SAFE_TAG=$safeTag"        | Out-File -FilePath $env:GITHUB_ENV -Append
-          "MSIX_NAME=CleanMachine-${{ matrix.platform }}-$safeTag" | Out-File -FilePath $env:GITHUB_ENV -Append
+          if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER)) {
+            throw "Set the STORE_PUBLISHER repository variable to the Publisher string reserved for this app in Partner Center (Product > Identity). Refusing to build a package with a guessed publisher."
+          }
+          "VERSION3=$version"   | Out-File $env:GITHUB_ENV -Append
+          "VERSION4=$version.0" | Out-File $env:GITHUB_ENV -Append
+
       - name: Restore
         shell: pwsh
         run: |
           dotnet restore $env:PROJECT
           dotnet restore $env:TESTS
+
+      # Tests run before packaging so a broken build never produces a submission
+      # artifact. The scheduled-task test is safe on an ephemeral runner.
       - name: Run tests
         shell: pwsh
+        env:
+          CLEANMACHINE_RUN_SCHEDULED_TESTS: "1"
         run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore
-      - name: Sign and package MSIX
-        shell: pwsh
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          # Stamp the package identity so the publisher matches the signing certificate
-          # and the version matches the release tag (required for update detection).
-          $manifestPath = "CleanMachine.Windows/Package.appxmanifest"
-          [xml]$manifest = Get-Content $manifestPath
-          $manifest.Package.Identity.Publisher = $env:PUBLISHER
-          $manifest.Package.Identity.Version = $env:VERSION4
-          $manifest.Save((Resolve-Path $manifestPath))
-
-          # app.manifest's Win32 assembly identity is never stamped elsewhere; keep it
-          # on the tag version too so every embedded version in the MSIX agrees.
-          $appManifestPath = "CleanMachine.Windows/app.manifest"
-          $stampedAppManifest = (Get-Content $appManifestPath -Raw) `
-            -replace 'assemblyIdentity version="\d+\.\d+\.\d+\.\d+"', "assemblyIdentity version=`"$env:VERSION4`""
-          if ($stampedAppManifest -notmatch [regex]::Escape("assemblyIdentity version=`"$env:VERSION4`"")) { throw "app.manifest assemblyIdentity version was not stamped." }
-          Set-Content -NoNewline -Path $appManifestPath -Value $stampedAppManifest
-          Write-Host "Stamped app.manifest with $env:VERSION4."
-
-          New-Item -ItemType Directory -Force -Path signing | Out-Null
-          $pfx = Join-Path $pwd "signing/CleanMachine.pfx"
-
-          if (-not [string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
-            if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required for every tagged release, including self-signed certificates." }
-            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
-            $password = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
-            Write-Host "Importing the provided production certificate."
-          }
-          else {
-            # Manual builds may use a temporary certificate for local validation, but a
-            # tagged release must use the stable certificate so the published .cer and
-            # every architecture package share the same signer.
-            if ($isTag) { throw "Tagged releases require WINDOWS_SIGNING_CERTIFICATE_BASE64 and WINDOWS_SIGNING_CERTIFICATE_PASSWORD. The certificate may be self-signed; keep one stable PFX in GitHub Secrets." }
-            $rawPassword = [Guid]::NewGuid().ToString('N')
-            Write-Host "::add-mask::$rawPassword"
-            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $env:PUBLISHER `
-              -KeyUsage DigitalSignature -FriendlyName "CleanMachine self-signed" `
-              -CertStoreLocation "Cert:\CurrentUser\My" `
-              -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3")
-            $password = ConvertTo-SecureString $rawPassword -AsPlainText -Force
-            Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $password | Out-Null
-            Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force
-            Write-Host "Minted a self-signed certificate for $env:PUBLISHER."
-          }
-
-          # Import the PFX into the user store and sign by thumbprint.
-          # MSBuild's direct PFX key-file import (PackageCertificateKeyFile) fails on
-          # hosted runners with APPX0105/APPX0107; importing explicitly and passing
-          # PackageCertificateThumbprint is the reliable path.
-          $signCert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password |
-            Where-Object HasPrivateKey | Select-Object -First 1
-          if ($null -eq $signCert) { throw "Signing certificate could not be imported from the PFX (no private key)." }
-          Write-Host "Signing with certificate $($signCert.Thumbprint) [$($signCert.Subject)]."
-
-          dotnet msbuild $env:PROJECT /t:Publish `
-            /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:RuntimeIdentifier=${{ matrix.runtime }} `
-            /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundle=Never `
-            /p:AppxPackageSigningEnabled=true "/p:PackageCertificateThumbprint=$($signCert.Thumbprint)" `
-            "/p:ApplicationDisplayVersion=$env:VERSION3" `
-            /p:GenerateAppxPackageOnBuild=true
-            # GenerateAppxPackageOnBuild is what actually invokes MakeAppx; without it
-            # /t:Publish only lays out the publish folder and the *.msix search below fails.
-
-          $package = Get-ChildItem -Path CleanMachine.Windows/bin -Recurse -Filter *.msix | Select-Object -First 1
-          if ($null -eq $package) { throw "MSIX package was not generated." }
-          Copy-Item $package.FullName "$env:MSIX_NAME.msix"
-          Remove-Item "Cert:\CurrentUser\My\$($signCert.Thumbprint)" -Force
-          Remove-Item $pfx -Force
-          Write-Host "MSIX package created: $env:MSIX_NAME.msix"
-      - name: Validate signature and publisher
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $package = Resolve-Path "$env:MSIX_NAME.msix"
-          $signature = Get-AuthenticodeSignature $package
-          # Self-signed certificates chain to an untrusted root on the runner, which reports
-          # NotTrusted/UnknownError; accept those while still rejecting genuinely broken
-          # signatures (HashMismatch, NotSigned, etc.).
-          if ($signature.Status -notin @('Valid', 'UnknownError', 'NotTrusted')) { throw "Invalid Authenticode signature: $($signature.Status)" }
-          if ($null -eq $signature.SignerCertificate) { throw "The MSIX package is not signed." }
-          if (-not $signature.SignerCertificate.Subject.Contains($env:PUBLISHER, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Unexpected package publisher: $($signature.SignerCertificate.Subject)"
-          }
-          Write-Host "Publisher validation passed for $env:PUBLISHER."
-      - name: Hash package
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          (Get-FileHash "$env:MSIX_NAME.msix" -Algorithm SHA256).Hash | Out-File -NoNewline "$env:MSIX_NAME.sha256"
-          Write-Host "Hash created."
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: CleanMachine-${{ matrix.platform }}
-          path: |
-            ${{ env.MSIX_NAME }}.msix
-            ${{ env.MSIX_NAME }}.sha256
-
-  certificate:
-    name: Publish public signing certificate
-    runs-on: windows-latest
-    steps:
-      - name: Export public signing certificate
-        shell: pwsh
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if ([string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
-            throw "A tagged release requires WINDOWS_SIGNING_CERTIFICATE_BASE64. The certificate may be self-signed; keep one stable PFX in GitHub Secrets so the published .cer matches every signed package."
-          }
-          if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required for every tagged release, including self-signed certificates." }
-          $pfx = Join-Path $pwd "CleanMachine-signing-export.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
-          $password = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
-          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password |
-            Where-Object HasPrivateKey | Select-Object -First 1
-          if ($null -eq $cert) { throw "Signing certificate could not be imported from the PFX (no private key)." }
-          Export-Certificate -Cert $cert -FilePath "CleanMachine-signing.cer" | Out-Null
-          $exported = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("CleanMachine-signing.cer")
-          if ($exported.Thumbprint -ne $cert.Thumbprint) { throw "Exported public certificate thumbprint does not match the signing certificate." }
-          Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force -ErrorAction SilentlyContinue
-          Remove-Item $pfx -Force
-      - name: Upload public certificate
-        uses: actions/upload-artifact@v7
-        with:
-          name: CleanMachine-signing-certificate
-          path: CleanMachine-signing.cer
-          if-no-files-found: error
-
-  installer:
-    # The classic setup exe: friendlier than sideloading an MSIX for users who
-    # do not want to trust a self-signed certificate first. Built from the same
-    # self-contained publish output the MSIX packs, stamped with the tag version.
-    name: Build installer (x64)
-    runs-on: windows-latest
-    needs: build
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: "10.0.x"
-      - name: Resolve version
-        shell: pwsh
-        run: |
-          $ref = "${env:GITHUB_REF_NAME}"
-          if ($ref -match '^v(\d+)\.(\d+)\.(\d+)$') {
-            $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
-          } else {
-            $version = "0.0.1"
-            Write-Host "Ref '$ref' is not a version tag; using placeholder version."
-          }
-          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Stamp app.manifest version from tag
-        shell: pwsh
-        run: |
-          # The exe's assembly version comes from ApplicationDisplayVersion in the
-          # publish step below; the Win32 assembly identity in app.manifest must be
-          # stamped from the tag too, so the installer's embedded manifest agrees
-          # with every other version surface.
-          $path = "CleanMachine.Windows/app.manifest"
-          $version4 = $env:VERSION + ".0"
-          $stamped = (Get-Content $path -Raw) `
-            -replace 'assemblyIdentity version="\d+\.\d+\.\d+\.\d+"', "assemblyIdentity version=`"$version4`""
-          if ($stamped -notmatch [regex]::Escape("assemblyIdentity version=`"$version4`"")) { throw "app.manifest assemblyIdentity version was not stamped." }
-          Set-Content -NoNewline -Path $path -Value $stamped
-          Write-Host "Stamped app.manifest with $version4."
-      - name: Restore
-        shell: pwsh
-        run: dotnet restore $env:PROJECT
-      - name: Publish self-contained app (x64)
-        shell: pwsh
-        run: |
-          dotnet publish $env:PROJECT -c Release -p:Platform=x64 -p:PublishProfile=win-x64 `
-            "/p:ApplicationDisplayVersion=$env:VERSION"
-      - name: Sign app executable
-        # An unsigned, downloaded exe is what triggers the "Windows protected your
-        # PC" SmartScreen warning. Sign the app binary before Inno embeds it so
-        # first runs and UAC prompts attribute to the publisher. Skipped with a
-        # warning when no certificate secret is configured.
-        shell: pwsh
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if ([string]::IsNullOrEmpty($env:CERTIFICATE_BASE64)) {
-            if ("${env:GITHUB_REF}".StartsWith("refs/tags/")) {
-              throw "Tagged releases require WINDOWS_SIGNING_CERTIFICATE_BASE64 and WINDOWS_SIGNING_CERTIFICATE_PASSWORD. The certificate may be self-signed; keep one stable PFX in GitHub Secrets."
-            }
-            Write-Host "::warning::No code-signing certificate configured: this manual installer build is unsigned."
-            exit 0
-          }
-          if ([string]::IsNullOrEmpty($env:CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required for every tagged release, including self-signed certificates." }
-          New-Item -ItemType Directory -Force -Path signing | Out-Null
-          $pfx = Join-Path $pwd "signing/CleanMachine-installer.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
-          $password = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
-          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password |
-            Where-Object HasPrivateKey | Select-Object -First 1
-          if ($null -eq $cert) { throw "Signing certificate could not be imported from the PFX (no private key)." }
-          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
-            Where-Object { $_.Directory.Name -eq 'x64' } |
-            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $signtool) { throw "signtool.exe was not found on the runner." }
-          # Resolve via glob so a future TFM bump cannot silently break signing again
-          # (the hardcoded net8.0 path did exactly that).
-          $exe = Get-ChildItem "CleanMachine.Windows/bin/x64/Release" -Directory |
-            Where-Object { Test-Path (Join-Path $_.FullName "win-x64/publish/CleanMachine.exe") } |
-            Sort-Object Name -Descending | Select-Object -First 1
-          if ($null -eq $exe) { throw "Published app executable was not found under CleanMachine.Windows/bin/x64/Release." }
-          $exe = Join-Path $exe.FullName "win-x64/publish/CleanMachine.exe"
-          Write-Host "Signing $exe"
-          & $signtool sign /fd sha256 /td sha256 /tr http://timestamp.digicert.com $exe
-          if ($LASTEXITCODE -ne 0) { throw "signtool failed for the app exe (exit $LASTEXITCODE)." }
-          $signature = Get-AuthenticodeSignature $exe
-          if ($signature.Status -notin @('Valid', 'NotTrusted', 'UnknownError')) { throw "Invalid Authenticode signature on the app exe: $($signature.Status)" }
-          Write-Host "App exe signature: $($signature.Status) [$($signature.SignerCertificate.Subject)]"
-          "SIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Build Inno Setup installer
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
-          if (-not $iscc) {
-            foreach ($p in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
-              if ($p -and (Test-Path $p)) { $iscc = $p; break }
-            }
-          }
-          if (-not $iscc) { throw 'Inno Setup 6 (ISCC.exe) was not found on this runner.' }
-          # Pass the tag version into the script via /D (double quotes so PowerShell expands the variable).
-          & $iscc "/DAppVersion=$env:VERSION" 'CleanMachine.Windows\installer\cleanmachine.iss'
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
-          $setup = Get-ChildItem 'CleanMachine.Windows/bin/installer/CleanMachine-Setup-*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -eq $setup) { throw 'Installer exe was not produced by ISCC.' }
-          $stamped = "CleanMachine-Setup-$env:VERSION.exe"
-          Copy-Item $setup.FullName $stamped
-          Write-Host "Installer created: $stamped ($([math]::Round((Get-Item $stamped).Length/1MB,1)) MB)"
-      - name: Sign installer
-        # The setup exe users download is the artifact SmartScreen judges; sign it
-        # after ISCC and before upload so the release asset (and the sha256 the
-        # release job computes from it) belongs to the signed file.
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $stamped = "CleanMachine-Setup-$env:VERSION.exe"
-          if ([string]::IsNullOrEmpty($env:SIGN_THUMBPRINT)) { Write-Host "Skipping installer signing (no certificate configured)."; exit 0 }
-          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
-            Where-Object { $_.Directory.Name -eq 'x64' } |
-            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $signtool) { throw "signtool.exe was not found on the runner." }
-          & $signtool sign /fd sha256 /td sha256 /tr http://timestamp.digicert.com /sha1 $env:SIGN_THUMBPRINT $stamped
-          if ($LASTEXITCODE -ne 0) { throw "signtool failed for $stamped (exit $LASTEXITCODE)." }
-          $signature = Get-AuthenticodeSignature $stamped
-          if ($signature.Status -notin @('Valid', 'NotTrusted', 'UnknownError')) { throw "Invalid Authenticode signature on installer: $($signature.Status)" }
-          if ($null -eq $signature.SignerCertificate) { throw "The installer is not signed." }
-          Write-Host "Installer signature: $($signature.Status) [$($signature.SignerCertificate.Subject)]"
-          Remove-Item signing/CleanMachine-installer.pfx -Force -ErrorAction SilentlyContinue
-          Remove-Item "Cert:\CurrentUser\My\$env:SIGN_THUMBPRINT" -Force -ErrorAction SilentlyContinue
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: CleanMachine-Setup
-          path: CleanMachine-Setup-*.exe
-          if-no-files-found: error
-
-  release:
-    needs: [build, installer, certificate]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: release
-      - name: Build and validate release manifest
-        shell: bash
-        env:
-          PUBLISHER: ${{ vars.WINDOWS_PUBLISHER }}
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          publisher="${PUBLISHER:-CN=CleanMachine Publisher}"
-          x64_hash=$(tr -d '[:space:]' < "release/CleanMachine-x64/CleanMachine-x64-${GITHUB_REF_NAME}.sha256")
-          arm64_hash=$(tr -d '[:space:]' < "release/CleanMachine-ARM64/CleanMachine-ARM64-${GITHUB_REF_NAME}.sha256")
-          test "${#x64_hash}" -eq 64
-          test "${#arm64_hash}" -eq 64
-          # Compute the installer .exe hash for the .exe install path.
-          setup_exe=$(ls release/CleanMachine-Setup/CleanMachine-Setup-*.exe 2>/dev/null | head -1)
-          if [ -n "$setup_exe" ]; then
-            setup_hash=$(sha256sum "$setup_exe" | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]')
-          else
-            setup_hash=""
-          fi
-          export version x64_hash arm64_hash publisher setup_hash
-          python3 - <<'PY'
-          import json, os
-          tag = os.environ['GITHUB_REF_NAME']
-          publisher = os.environ['publisher']
-          setup_hash = os.environ.get('setup_hash', '')
-          data = {
-            'version': os.environ['version'],
-            'releaseNotes': 'See the GitHub release notes.',
-            'packages': {
-              'x64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-x64-{tag}.msix', 'sha256': os.environ['x64_hash'], 'architecture': 'x64', 'publisher': publisher},
-              'ARM64': {'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-ARM64-{tag}.msix', 'sha256': os.environ['arm64_hash'], 'architecture': 'ARM64', 'publisher': publisher}
-            }
-          }
-          if setup_hash and len(setup_hash) == 64:
-            data['installer'] = {
-              'packageUrl': f'https://github.com/daygle/CleanMachine/releases/download/{tag}/CleanMachine-Setup-{os.environ["version"]}.exe',
-              'sha256': setup_hash,
-              'architecture': 'x64',
-              'publisher': publisher
-            }
-          with open('update-manifest.json', 'w', encoding='utf-8') as handle: json.dump(data, handle, indent=2)
-          PY
-          python3 -m json.tool update-manifest.json >/dev/null
-      - name: Publish GitHub release
-        # The maintainer typically creates the release from the GitHub UI with a
-        # hand-written description (which already contains the auto-generated
-        # "Full Changelog" line). softprops/action-gh-release with
-        # generate_release_notes: true regenerated notes on update and appended a
-        # second Full Changelog to that body. With the gh CLI the semantics are
-        # explicit: if the release exists, upload assets only and never touch the
-        # body; if not, create it once with generated notes.
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          files=(
-            release/CleanMachine-x64/*.msix
-            release/CleanMachine-x64/*.sha256
-            release/CleanMachine-ARM64/*.msix
-            release/CleanMachine-ARM64/*.sha256
-            release/CleanMachine-Setup/*.exe
-            release/CleanMachine-signing-certificate/CleanMachine-signing.cer
-            update-manifest.json
-          )
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "Release $tag already exists; uploading assets without touching the description."
-            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
-          else
-            echo "Release $tag does not exist; creating it with auto-generated notes."
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes "${files[@]}"
-          fi
-      - name: Checkout main
-        # The tag is the only version a maintainer ever types. Artifacts were
-        # stamped from it in the build jobs; this checkout lets the next step
-        # commit the same bump back to main. The workspace wipe is harmless -
-        # the release assets were already published above.
-        uses: actions/checkout@v7
-        with:
-          ref: main
-      - name: Sync checked-in version defaults on main
-        # Keeps Package.appxmanifest, app.manifest, and the README examples
-        # tracking the release tag with zero manual edits. The commit is pushed
-        # with the default GITHUB_TOKEN, which never re-triggers workflows;
-        # [skip ci] documents that intent (and silences any tooling that would
-        # still react). A push race must not fail an already-published release.
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          VERSION="${version}" python3 - <<'PY'
-          import os, pathlib, re
-
-          version = os.environ["VERSION"]
-          v4 = version + ".0"
-
-          def patch(path, pattern, repl, minimum=1):
-              file = pathlib.Path(path)
-              with open(file, "r", encoding="utf-8", newline="") as handle:
-                  text = handle.read()
-              text, count = re.subn(pattern, repl, text)
-              if count < minimum:
-                  raise SystemExit(f"{path}: version stamp matched {count} time(s), expected at least {minimum}")
-              with open(file, "w", encoding="utf-8", newline="") as handle:
-                  handle.write(text)
-              print(f"{path}: {count} version stamp(s) updated")
-
-          # Anchor on the Identity element: Package.appxmanifest also carries
-          # MinVersion/MaxVersionTested four-part versions that must not change.
-          patch("CleanMachine.Windows/Package.appxmanifest",
-                r'(<Identity\b[^>]*?Version=")[0-9]+(?:\.[0-9]+){3}("[^>]*?/>)',
-                rf'\g<1>{v4}\g<2>')
-          patch("CleanMachine.Windows/app.manifest",
-                r'(assemblyIdentity\s+version=")[0-9]+(?:\.[0-9]+){3}(" )',
-                rf'\g<1>{v4}\g<2>')
-          patch("README.md",
-                r'(CleanMachine-(?:x64|ARM64)-v)[0-9]+\.[0-9]+\.[0-9]+(\.msix)',
-                rf'\g<1>{version}\g<2>', minimum=0)
-          PY
-          git add CleanMachine.Windows/Package.appxmanifest CleanMachine.Windows/app.manifest README.md
-          if git diff --cached --quiet; then
-            echo "Checked-in version defaults already at ${version}; nothing to commit."
-            exit 0
-          fi
-          git commit -m "Bump version defaults to ${version} [skip ci]"
-          if ! git push origin HEAD:main; then
-            echo "::warning::Could not push the version-default bump to main (concurrent update?). Released artifacts are unaffected."
-          fi
-
-  # ------------------------------------------------------------------
-  # Microsoft Store submission package (.msixupload)
-  #
-  # Manual only. Never triggered by a tag push, so the private, self-signed
-  # release above is completely unaffected by anything here.
-  #
-  # A Store submission needs a different artifact from the private release:
-  #   - a .msixupload (package + crash symbols) rather than a bare .msix
-  #   - UapAppxPackageBuildMode=StoreUpload rather than SideloadOnly
-  #   - a certificate chaining to a CA in the Microsoft Trusted Root Program.
-  #     The self-signed PFX used above is NOT accepted by the Store.
-  #
-  # The Publisher must be an identity reserved in Partner Center, supplied as the
-  # STORE_PUBLISHER repository variable. It is deliberately not defaulted: guessing
-  # a publisher would produce a package that uploads and then fails certification.
-  # ------------------------------------------------------------------
-  store-package:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
-    permissions:
-      contents: read
-    env:
-      STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
-      STORE_CERT_BASE64: ${{ secrets.STORE_SIGNING_CERTIFICATE_BASE64 }}
-      STORE_CERT_PASSWORD: ${{ secrets.STORE_SIGNING_CERTIFICATE_PASSWORD }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Require a reserved Store identity and a trusted certificate
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER)) {
-            throw "Set the STORE_PUBLISHER repository variable to the Publisher string reserved for this app in Partner Center (Product > Identity). Refusing to build a package with a guessed publisher."
-          }
-          if ([string]::IsNullOrWhiteSpace($env:STORE_CERT_BASE64) -or [string]::IsNullOrWhiteSpace($env:STORE_CERT_PASSWORD)) {
-            throw "Set STORE_SIGNING_CERTIFICATE_BASE64 and STORE_SIGNING_CERTIFICATE_PASSWORD. The Store requires a certificate chaining to a CA in the Microsoft Trusted Root Program; the self-signed certificate used for private releases is rejected."
-          }
-          $version3 = '0.0.1'
-          $ref = $env:GITHUB_REF_NAME
-          if ($ref -match '^v(\d+)\.(\d+)\.(\d+)$') { $version3 = "$($Matches[1]).$($Matches[2]).$($Matches[3])" }
-          "VERSION3=$version3"       | Out-File $env:GITHUB_ENV -Append
-          "VERSION4=$version3.0"     | Out-File $env:GITHUB_ENV -Append
 
       - name: Stamp the manifest with the reserved identity
         shell: pwsh
@@ -539,12 +90,17 @@ jobs:
           $manifest.Package.Identity.Publisher = $env:STORE_PUBLISHER
           $manifest.Package.Identity.Version = $env:VERSION4
           $manifest.Save((Resolve-Path $manifestPath))
-          Write-Host "Stamped publisher: $env:STORE_PUBLISHER"
+          Write-Host "Stamped publisher: $env:STORE_PUBLISHER; version: $env:VERSION4"
 
-      - name: Import the Store signing certificate
+      - name: Import the optional signing certificate
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:STORE_CERT_BASE64) -or [string]::IsNullOrWhiteSpace($env:STORE_CERT_PASSWORD)) {
+            Write-Host "No Store signing certificate configured - building an UNSIGNED package. The Store signs it on ingestion."
+            "SIGN_PACKAGE=false" | Out-File $env:GITHUB_ENV -Append
+            return
+          }
           $pfx = Join-Path $env:RUNNER_TEMP "store.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:STORE_CERT_BASE64))
           $password = ConvertTo-SecureString $env:STORE_CERT_PASSWORD -AsPlainText -Force
@@ -552,39 +108,49 @@ jobs:
             Where-Object HasPrivateKey | Select-Object -First 1
           if ($null -eq $cert) { throw "Store certificate could not be imported (no private key)." }
           Write-Host "Signing with $($cert.Subject) [$($cert.Thumbprint)]"
+          "SIGN_PACKAGE=true"                     | Out-File $env:GITHUB_ENV -Append
           "STORE_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append
 
-      - name: Build the .msixupload
+      - name: Build the .msixupload bundle
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:RUNNER_TEMP "storepkg"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          # StoreUpload emits the .msixupload (package + symbols) that Partner Center
-          # accepts. SideloadOnly/AppxBundle=Never - what the private release uses -
-          # produces a bare .msix that the Store will not take.
+          # StoreUpload emits the .msixupload (package + crash symbols) Partner
+          # Center accepts; SideloadOnly produces a bare .msix the Store will
+          # not take. AppxBundle/AppxBundlePlatforms come from the project file
+          # (one x64|arm64 bundle) so there is a single source of truth for them.
+          $signArgs = @("/p:AppxPackageSigningEnabled=false")
+          if ("$env:SIGN_PACKAGE" -eq "true") {
+            $signArgs = @("/p:AppxPackageSigningEnabled=true", "/p:PackageCertificateThumbprint=$env:STORE_THUMBPRINT")
+          }
           dotnet msbuild $env:PROJECT /t:Publish `
-            /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 `
-            /p:UapAppxPackageBuildMode=StoreUpload /p:AppxBundle=Never `
-            /p:AppxPackageSigningEnabled=true "/p:PackageCertificateThumbprint=$env:STORE_THUMBPRINT" `
+            /p:Configuration=Release /p:Platform=x64 `
+            /p:UapAppxPackageBuildMode=StoreUpload `
+            "/p:AppxPackageDir=$out" "/p:ApplicationDisplayVersion=$env:VERSION3" `
             /p:AppxSymbolPackageEnabled=true /p:GenerateAppxPackageOnBuild=true `
-            "/p:AppxPackageDir=$out" "/p:ApplicationDisplayVersion=$env:VERSION3"
+            @signArgs
           if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }
           $upload = Get-ChildItem $out -Recurse -Filter *.msixupload | Select-Object -First 1
           if ($null -eq $upload) { throw "No .msixupload was produced." }
           Copy-Item $upload.FullName "CleanMachine-StoreUpload.msixupload"
           Write-Host "Upload package: $((Get-Item 'CleanMachine-StoreUpload.msixupload').Length) bytes"
 
-      - name: Verify the signature chains to a trusted root
+      - name: Verify the submission package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # A self-signed package reports NotTrusted here. That is the exact failure the
-          # Store would reject, so it is caught here rather than at upload time.
+          Add-AppxPackageManifest -Path "CleanMachine-StoreUpload.msixupload" -ErrorAction Stop | Out-Null
+          Write-Host "Package manifest is well formed."
           $sig = Get-AuthenticodeSignature "CleanMachine-StoreUpload.msixupload"
-          Write-Host "Signature status: $($sig.Status); subject: $($sig.SignerCertificate.Subject)"
-          if ($sig.Status -ne 'Valid') {
-            throw "Store upload package is not validly signed ($($sig.Status)). The Store requires a certificate chaining to a CA in the Microsoft Trusted Root Program."
+          Write-Host "Signature status: $($sig.Status)"
+          if ("$env:SIGN_PACKAGE" -eq "true") {
+            # Only meaningful when a certificate was actually configured: a
+            # self-signed one reports NotTrusted, which the Store would reject.
+            if ($sig.Status -ne 'Valid') {
+              throw "Store package is not validly signed ($($sig.Status)). A signed submission must chain to a CA in the Microsoft Trusted Root Program - or unset the certificate secrets to submit unsigned."
+            }
           }
 
       - name: Upload the submission package

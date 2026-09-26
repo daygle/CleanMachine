@@ -480,11 +480,9 @@ public sealed partial class WindowsCleanupPage : Page
                     ? $"{p.Phase}..."
                     : $"Cleaning {p.Phase}: {p.Completed}/{p.Total}";
             });
-            var useSecureDelete = SecureDeleteCheck.IsChecked == true;
-            var secureDeleteOpts = useSecureDelete ? new SecureDeleteOptions(_settings.SecureDeleteMethod, _settings.CustomWipePasses) : null;
             var result = await _service.CleanSelectedAsync(
                 enabled,
-                new WindowsCleanupOptions(ConfirmReviewCategories: true, ExcludedPaths: _settings.ExcludedPaths, SecureDelete: useSecureDelete, SecureDeleteOptions: secureDeleteOpts),
+                new WindowsCleanupOptions(ConfirmReviewCategories: true, ExcludedPaths: _settings.ExcludedPaths),
                 progress,
                 _cancel.Token);
 

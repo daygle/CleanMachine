@@ -108,18 +108,6 @@
                 <TextBlock Text="Installed Applications" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
-            <Button x:Name="NavSecureDelete" Style="{StaticResource NavButton}" Click="SecureDeleteNav_Click">
-              <StackPanel Orientation="Horizontal" Spacing="10">
-                <FontIcon Glyph="&#xE7C3;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
-                <TextBlock Text="Secure Delete" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
-            <Button x:Name="NavDriveWiper" Style="{StaticResource NavButton}" Click="DriveWiper_Click">
-              <StackPanel Orientation="Horizontal" Spacing="10">
-                <FontIcon Glyph="&#xEDA2;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
-                <TextBlock Text="Drive Wiper" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
             <Button x:Name="NavActivity" Style="{StaticResource NavButton}" Click="Activity_Click">
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <FontIcon Glyph="&#xE81C;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
@@ -141,12 +129,6 @@
             <StackPanel Orientation="Horizontal" Spacing="10">
               <FontIcon Glyph="&#xE713;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
               <TextBlock Text="Settings" VerticalAlignment="Center"/>
-            </StackPanel>
-          </Button>
-          <Button x:Name="NavUpdates" Style="{StaticResource NavButton}" Click="CheckUpdates_Click">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-              <FontIcon Glyph="&#xE896;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
-              <TextBlock Text="Updates" VerticalAlignment="Center"/>
             </StackPanel>
           </Button>
         </StackPanel>

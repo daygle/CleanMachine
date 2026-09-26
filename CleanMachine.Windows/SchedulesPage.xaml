@@ -94,10 +94,6 @@
               <TextBlock x:Name="AfterWarning" Foreground="#C7775D" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed"
                          Text="The PC will power off 60 seconds after a successful clean. Run 'shutdown /a' to abort."/>
 
-              <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete (overwrite files before removal)" Checked="SecureDelete_Changed" Unchecked="SecureDelete_Changed"/>
-              <TextBlock x:Name="SecureDeleteHint" Foreground="#89958F" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed"
-                         Text="Uses the wipe method from Settings > Secure Delete. Slower but makes data harder to recover."/>
-
               <CheckBox x:Name="WakeCheck" Content="Wake the computer to run this task" Checked="Wake_Changed" Unchecked="Wake_Changed"/>
               <TextBlock x:Name="WakeHint" Foreground="#89958F" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed"
                          Text="Wakes the PC from sleep at the scheduled time. Requires your Windows power settings to allow wake timers, otherwise it is ignored."/>

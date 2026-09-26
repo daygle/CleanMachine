@@ -171,8 +171,6 @@ public sealed partial class SchedulesPage : Page
         DayOfWeekCombo.SelectedIndex = (int)schedule.DayOfWeek;
         DayOfMonthBox.Value = schedule.DayOfMonth;
         AfterCombo.SelectedIndex = (int)schedule.AfterClean;
-        SecureDeleteCheck.IsChecked = schedule.SecureDelete;
-        SecureDeleteHint.Visibility = schedule.SecureDelete ? Visibility.Visible : Visibility.Collapsed;
         WakeCheck.IsChecked = schedule.WakeToRun;
 
         _loadingItems = true;
@@ -222,9 +220,6 @@ public sealed partial class SchedulesPage : Page
             ? Visibility.Visible
             : Visibility.Collapsed;
 
-    private void SecureDelete_Changed(object sender, RoutedEventArgs e)
-        => SecureDeleteHint.Visibility = SecureDeleteCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-
     private void After_Changed(object sender, SelectionChangedEventArgs e) => UpdateAfterWarning();
 
     private void UpdateAfterWarning()
@@ -253,7 +248,6 @@ public sealed partial class SchedulesPage : Page
             DayOfWeek = (DayOfWeek)Math.Max(0, DayOfWeekCombo.SelectedIndex),
             DayOfMonth = double.IsNaN(DayOfMonthBox.Value) ? 1 : (int)Math.Clamp(DayOfMonthBox.Value, 1, 31),
             AfterClean = (ScheduleAction)Math.Max(0, AfterCombo.SelectedIndex),
-            SecureDelete = SecureDeleteCheck.IsChecked == true,
             WakeToRun = WakeCheck.IsChecked == true && TriggerCombo.SelectedIndex != (int)ScheduleTrigger.AtLogon,
             CleanBrowserCache = _itemBoxes.Any(b => b.Key == "browser" && b.Box.IsChecked == true),
             CleanAppTempFiles = _itemBoxes.Any(b => b.Key == "apps" && b.Box.IsChecked == true),

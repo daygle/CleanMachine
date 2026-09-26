@@ -43,11 +43,10 @@ public sealed class CleanupService
     public async Task<CleanupReport> CleanBrowserTargetsAsync(
         IEnumerable<BrowserCleanupTarget> targets,
         IProgress<CleanupProgress>? progress = null,
-        SecureDeleteOptions? secureDelete = null,
         CancellationToken cancellationToken = default)
-        // Deleting (and securely overwriting) every cache file is long-running;
-        // keep it off the caller's (UI) thread for the whole pass.
-        => await Task.Run(async () =>
+        // Deleting every cache file is long-running; keep it off the caller's
+        // (UI) thread for the whole pass.
+        => await Task.Run(() =>
         {
         var allowed = targets
             .Where(t => t.Selected
@@ -74,13 +73,9 @@ public sealed class CleanupService
                     skipped.Add(new(path, "Recently modified"));
                     continue;
                 }
-                var deleted = true;
-                if (secureDelete is not null)
-                    deleted = await SecureDeleteService.SecureDeleteFileAsync(path, secureDelete, cancellationToken);
-                else
-                    File.Delete(path);
-                if (deleted) { removed++; recovered += info.Length; }
-                else skipped.Add(new(path, "Protected, locked, or empty - not securely deleted"));
+                File.Delete(path);
+                removed++;
+                recovered += info.Length;
             }
             catch (IOException) { skipped.Add(new(path, "File is locked or unavailable")); }
             catch (UnauthorizedAccessException) { skipped.Add(new(path, "Access denied")); }

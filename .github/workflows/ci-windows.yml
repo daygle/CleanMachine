@@ -1,11 +1,15 @@
 name: Windows CI
 
-# CI only verifies that the app compiles and the test suite passes on every
-# push/PR. Distributable artifacts (.msix packages and the setup .exe) are
-# built exclusively by the release workflow (release-windows.yml), which runs
-# on v*.*.* tags (and manual workflow_dispatch) - see RELEASE.md. A plain
-# `dotnet build` here produces no package: the packaging targets only run with
-# GenerateAppxPackageOnBuild, which is deliberately not set in CI.
+# CI verifies that the app compiles, that the test suite passes, and that the
+# Microsoft Store packaging still produces a valid multi-architecture submission
+# bundle on every push/PR.
+#
+# The distributable artifact itself is built exclusively by the release workflow
+# (release-windows.yml), which runs on v*.*.* tags (and manual workflow_dispatch)
+# - see RELEASE.md. The build-and-test job produces no package: the packaging
+# targets only run with GenerateAppxPackageOnBuild, which that job does not set.
+# The package-smoke job below does set it, on a placeholder version and the
+# checked-in publisher, purely to prove the packaging path is not broken.
 
 on:
   push:
@@ -43,12 +47,79 @@ jobs:
         run: dotnet build $env:PROJECT -c Release -p:Platform=x64 --no-restore
 
       # CLEANMACHINE_RUN_SCHEDULED_TESTS=1 enables the one test that creates and runs
-      # a real scheduled task. It is the only coverage that can catch a helper task
-      # Windows refuses to schedule - the failure that shipped unnoticed for five
-      # releases - and it is safe here because the runner is ephemeral. The flag is
-      # not set for local runs, so `dotnet test` on a developer machine stays inert.
+      # a real scheduled task. It is the only coverage that can catch a task Windows
+      # refuses to schedule - a failure mode that has shipped unnoticed before - and
+      # it is safe here because the runner is ephemeral. The flag is not set for
+      # local runs, so `dotnet test` on a developer machine stays inert.
       - name: Run tests (x64)
         shell: pwsh
         env:
           CLEANMACHINE_RUN_SCHEDULED_TESTS: "1"
         run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore
+
+  # The Store submission is now the only artifact, and it is built by MSBuild
+  # properties (UapAppxPackageBuildMode=StoreUpload, AppxBundle=Always,
+  # AppxBundlePlatforms) that no compile or test exercises. Without this job a
+  # broken bundle - a bad manifest, a missing tile, a bundling setting that stops
+  # resolving - would only surface when a version tag is pushed, i.e. at the moment
+  # of release. This runs the real packaging path on every PR instead.
+  package-smoke:
+    name: Store bundle packaging smoke check
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore $env:PROJECT
+
+      # Unsigned on purpose: the Store signs submissions, so this is the exact
+      # configuration a real submission uses and needs no certificate secret.
+      # The publisher is left at the checked-in default - stamping the Partner
+      # Center identity is the release workflow's job, and it does not affect
+      # whether packaging succeeds.
+      - name: Build the Store bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP "storepkg"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          dotnet msbuild $env:PROJECT /t:Publish `
+            /p:Configuration=Release /p:Platform=x64 `
+            /p:UapAppxPackageBuildMode=StoreUpload `
+            /p:AppxPackageSigningEnabled=false `
+            /p:AppxSymbolPackageEnabled=true /p:GenerateAppxPackageOnBuild=true `
+            "/p:AppxPackageDir=$out" "/p:ApplicationDisplayVersion=0.0.1"
+          if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }
+          $upload = Get-ChildItem $out -Recurse -Filter *.msixupload | Select-Object -First 1
+          if ($null -eq $upload) {
+            Write-Host "Produced instead:"; Get-ChildItem $out -Recurse | Select-Object -ExpandProperty Name
+            throw "No .msixupload was produced."
+          }
+          Write-Host "Built $($upload.Name) ($($upload.Length) bytes)"
+
+      # A bundle that silently drops an architecture still "succeeds", so assert
+      # the contents rather than trusting the exit code.
+      - name: Verify the bundle contains both architectures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $upload = Get-ChildItem (Join-Path $env:RUNNER_TEMP "storepkg") -Recurse -Filter *.msixupload | Select-Object -First 1
+          $work = Join-Path $env:RUNNER_TEMP "upload-expanded"
+          Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
+          # A .msixupload is a zip of per-architecture packages plus symbols.
+          Expand-Archive -Path $upload.FullName -DestinationPath $work -Force
+          $names = Get-ChildItem $work -Recurse -File | Select-Object -ExpandProperty Name
+          Write-Host "Bundle contents: $($names -join ', ')"
+          foreach ($arch in @("x64", "arm64")) {
+            if (-not ($names | Where-Object { $_ -match $arch })) {
+              throw "The submission bundle contains no $arch package."
+            }
+          }
+

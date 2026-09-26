@@ -3,8 +3,8 @@
   <Identity Name="CleanMachine" Publisher="CN=CleanMachine Publisher" Version="1.0.46.0" />
   <Properties>
     <DisplayName>CleanMachine</DisplayName>
-    <PublisherDisplayName>CleanMachine contributors</PublisherDisplayName>
-    <Description>Private, review-first Windows cleanup utility.</Description>
+    <PublisherDisplayName>CleanMachine</PublisherDisplayName>
+    <Description>Review-first cleanup for your PC: browser caches, temporary files, app leftovers, and a read-only look at registry clutter - all shown to you before anything is removed.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   <Resources><Resource Language="en-us" /></Resources>
@@ -13,7 +13,7 @@
   </Dependencies>
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements AppListEntry="default" DisplayName="CleanMachine" Description="Private, review-first Windows cleanup utility." Square44x44Logo="Assets\Square44x44Logo.png" Square150x150Logo="Assets\Square150x150Logo.png" BackgroundColor="#173C35" />
+      <uap:VisualElements AppListEntry="default" DisplayName="CleanMachine" Description="Review-first cleanup for your PC: browser caches, temporary files, app leftovers, and a read-only look at registry clutter - all shown to you before anything is removed." Square44x44Logo="Assets\Square44x44Logo.png" Square150x150Logo="Assets\Square150x150Logo.png" BackgroundColor="#173C35" />
       <Extensions>
         <desktop:Extension Category="windows.fullTrustProcess" Executable="CleanMachine.exe" />
         <desktop:Extension Category="windows.toastNotificationActivation">

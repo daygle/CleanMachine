@@ -18,13 +18,3 @@ public sealed record CleanupReport(
     IReadOnlyList<CleanupIssue> Skipped,
     IReadOnlyList<CleanupCategoryResult>? Breakdown = null,
     IReadOnlySet<string>? CleanedPaths = null);
-public sealed record UpdateState(
-    string Status,
-    string? PackagePath,
-    string? RollbackPath,
-    DateTimeOffset UpdatedAt,
-    string? ExpectedSha256 = null,
-    string? ExpectedPublisher = null,
-    string? TargetVersion = null,
-    string? Source = null,
-    string? Error = null);

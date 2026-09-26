@@ -12,16 +12,8 @@
                  FontSize="12" Foreground="#89958F" TextWrapping="Wrap"/>
 
       <TextBlock Text="UPDATES" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
-      <CheckBox x:Name="UpdateCheckToggle" Content="Check for updates automatically"
-                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
-      <CheckBox x:Name="SkipUpdateConfirmToggle" Content="Install updates without asking me to confirm first"
-                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
-      <TextBlock Text="Windows still shows its administrator-permission prompt for each update; this only skips CleanMachine's own confirmation step."
-                 FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
-      <CheckBox x:Name="AutoInstallUpdatesToggle" Content="Install updates automatically while my PC is idle"
-                Checked="Setting_Changed" Unchecked="Setting_Changed"/>
-      <TextBlock Text="After an automatic check finds an update, CleanMachine waits until you have been away for 30 minutes, then downloads and installs it silently. Never used for installs that would pop an administrator prompt (a per-machine install in Program Files), while a Secure Delete or drive wipe is running, or for manual checks; you get a notification the first time."
-                 FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
+      <TextBlock Text="CleanMachine is distributed through the Microsoft Store, which installs and updates it for you. New versions arrive through the Store automatically."
+                 FontSize="12" Foreground="#89958F" TextWrapping="Wrap"/>
 
       <TextBlock Text="WINDOW" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
       <CheckBox x:Name="StartWithWindowsToggle" Content="Start CleanMachine when I sign in to Windows"
@@ -42,26 +34,14 @@
       <CheckBox x:Name="TrayCleaningAnimationToggle" Content="Animate the tray icon while cleaning (spinning arc)"
                 Checked="Setting_Changed" Unchecked="Setting_Changed"/>
 
-      <TextBlock Text="SECURE DELETE" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
-      <StackPanel Spacing="4">
-        <TextBlock Text="Default wipe method" FontSize="12" Foreground="#53635B"/>
-        <ComboBox x:Name="WipeMethodCombo" SelectedIndex="0" Width="300" SelectionChanged="Setting_ComboChanged">
-          <ComboBoxItem Content="Simple zero-fill (1 pass)"/>
-          <ComboBoxItem Content="US DoD 5220.22-M (3 passes)"/>
-          <ComboBoxItem Content="US DoD 5220.22-M ECE (7 passes)"/>
-          <ComboBoxItem Content="Peter Gutmann (35 passes)"/>
-          <ComboBoxItem Content="Custom"/>
-        </ComboBox>
-      </StackPanel>
-
       <TextBlock Text="EXCLUSIONS" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
       <TextBlock Text="Add folder paths to exclude from cleanup (one per line):"
                  FontSize="12" Foreground="#53635B"/>
       <TextBox x:Name="ExclusionsBox" AcceptsReturn="True" Height="80"
                TextWrapping="Wrap" FontSize="12" Padding="8" LostFocus="Setting_LostFocus"/>
 
-      <!-- MSIX-only: the .exe flavor's Inno uninstaller already closes the app,
-           cleans up, and asks about data; Windows' MSIX removal does none of it. -->
+      <!-- Windows' own package removal cannot ask first, so CleanMachine offers a
+           confirmation that offers to clean up and keep the data. -->
       <StackPanel x:Name="UninstallSection" Spacing="6" Visibility="Collapsed">
         <TextBlock Text="UNINSTALL" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
         <TextBlock Text="Windows' own MSIX uninstall can't ask first and leaves the desktop shortcut behind. This removes CleanMachine completely - desktop shortcut, scheduled tasks, startup entry - and lets you decide what happens to your data."

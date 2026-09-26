@@ -138,7 +138,6 @@
                   Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
-        <CheckBox x:Name="SecureDeleteCheck" Content="Secure Delete" VerticalAlignment="Center"/>
         <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False" Padding="18,10"/>
         <Button x:Name="CleanButton" Content="Clean" Click="Clean_Click"
                 Background="#286E58" Foreground="White" Padding="26,10"/>

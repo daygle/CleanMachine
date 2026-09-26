@@ -7,8 +7,7 @@ namespace CleanMachine.Windows;
 public sealed record BrowserCleanupOptions(
     IReadOnlySet<string>? ExcludedPaths = null,
     IReadOnlyList<string>? AdditionalProfileRoots = null,
-    bool RequireBrowsersClosed = true,
-    SecureDeleteOptions? SecureDelete = null);
+    bool RequireBrowsersClosed = true);
 
 public sealed record BrowserCleanupState(
     string OperationId,
@@ -69,7 +68,7 @@ public sealed class BrowserCleanupService
             await SaveInterruptedStateAsync(
                 new BrowserCleanupState(operationId, files, 0, 0, DateTimeOffset.UtcNow), token);
 
-            var report = await _cleanup.CleanBrowserTargetsAsync(allowed, progress, options.SecureDelete, token);
+            var report = await _cleanup.CleanBrowserTargetsAsync(allowed, progress, token);
             await ClearStateAsync(token);
             return report;
         }
@@ -255,7 +254,6 @@ public sealed class BrowserCleanupService
     /// it and are not touched). One item failing never aborts the rest.</summary>
     public async Task<CleanupReport> CleanItemsAsync(
         IEnumerable<(string BrowserId, string ItemId)> selection,
-        SecureDeleteOptions? secureDelete = null,
         CancellationToken token = default,
         bool requireBrowsersClosed = true)
     {
@@ -268,9 +266,9 @@ public sealed class BrowserCleanupService
                 throw new InvalidOperationException(
                     $"Close these browsers before cleaning: {string.Join(", ", running)}.");
 
-            // Deleting (and optionally multi-pass overwriting) the selected items is
-            // long-running disk work; keep it off the caller's (UI) thread.
-            return await Task.Run(async () =>
+            // Deleting the selected items is long-running disk work; keep it off
+            // the caller's (UI) thread.
+            return await Task.Run(() =>
             {
                 var removed = 0;
                 long bytes = 0;
@@ -298,7 +296,7 @@ public sealed class BrowserCleanupService
 
                     foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
                     {
-                        var result = await DeletePathAsync(path, secureDelete, token);
+                        var result = DeletePath(path);
                         removed += result.Removed;
                         bytes += result.Bytes;
                         skipped.AddRange(result.Skipped);
@@ -376,8 +374,7 @@ public sealed class BrowserCleanupService
         return files;
     }
 
-    private static async Task<(int Removed, long Bytes, List<CleanupIssue> Skipped)> DeletePathAsync(
-        string path, SecureDeleteOptions? secureDelete = null, CancellationToken token = default)
+    private static (int Removed, long Bytes, List<CleanupIssue> Skipped) DeletePath(string path)
     {
         var removed = 0;
         long bytes = 0;
@@ -387,13 +384,7 @@ public sealed class BrowserCleanupService
             if (File.Exists(path))
             {
                 var length = new FileInfo(path).Length;
-                if (secureDelete is not null
-                    && !await SecureDeleteService.SecureDeleteFileAsync(path, secureDelete, token))
-                {
-                    skipped.Add(new CleanupIssue(path, "Protected, locked, or empty - not securely deleted"));
-                    return (0, 0, skipped);
-                }
-                if (secureDelete is null) File.Delete(path);
+                File.Delete(path);
                 return (1, length, skipped);
             }
             if (!Directory.Exists(path)) return (0, 0, skipped);
@@ -403,13 +394,7 @@ public sealed class BrowserCleanupService
                 try
                 {
                     var length = new FileInfo(file).Length;
-                    if (secureDelete is not null
-                        && !await SecureDeleteService.SecureDeleteFileAsync(file, secureDelete, token))
-                    {
-                        skipped.Add(new CleanupIssue(file, "Protected, locked, or empty - not securely deleted"));
-                        continue;
-                    }
-                    if (secureDelete is null) File.Delete(file);
+                    File.Delete(file);
                     removed++;
                     bytes += length;
                 }

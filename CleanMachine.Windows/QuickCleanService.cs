@@ -124,7 +124,7 @@ public static class QuickCleanService
             .SelectMany(s => s.Items.Select((_, index) => (s.Id, index)))
             .ToList();
         if (selection.Count == 0) return new QuickCleanResult(0, 0, [], "Nothing to clean.");
-        var report = await new AppCleanupService().CleanAsync(selection, secureDelete: null, token);
+        var report = await new AppCleanupService().CleanAsync(selection, token);
         return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped));
     }
 
