@@ -121,14 +121,16 @@ jobs:
           # so there is a single source of truth for them - that pair is verified
           # to build both architectures on every push by the package-smoke CI job.
           #
-          # AppxSymbolPackageEnabled is deliberately NOT set: it requires
-          # mspdbcmf.exe, a Visual Studio component not present on a GitHub
-          # windows-latest runner, and fails the build with MSB6011. A symbol
-          # package is optional for Store submission - it only affects
-          # de-minifying crash dumps.
-          $signArgs = @("/p:AppxPackageSigningEnabled=false")
+          # AppxSymbolPackageEnabled is turned OFF explicitly. It DEFAULTS TO TRUE
+          # (Microsoft.Windows.SDK.BuildTools.MSIX.Packaging.targets), so omitting
+          # it leaves it on. When on it requires mspdbcmf.exe, a Visual Studio
+          # component that is not on a GitHub windows-latest runner, and fails the
+          # build with MSB6011 in WinAppSdkCheckFastlinkPdb. A symbol package is
+          # optional for Store submission - it only affects de-minifying crash
+          # dumps - so it is not worth a toolchain dependency to produce.
+          $signArgs = @("/p:AppxPackageSigningEnabled=false", "/p:AppxSymbolPackageEnabled=false")
           if ("$env:SIGN_PACKAGE" -eq "true") {
-            $signArgs = @("/p:AppxPackageSigningEnabled=true", "/p:PackageCertificateThumbprint=$env:STORE_THUMBPRINT")
+            $signArgs = @("/p:AppxPackageSigningEnabled=true", "/p:PackageCertificateThumbprint=$env:STORE_THUMBPRINT", "/p:AppxSymbolPackageEnabled=false")
           }
           dotnet msbuild $env:PROJECT /t:Publish `
             /p:Configuration=Release /p:Platform=x64 `
@@ -137,8 +139,8 @@ jobs:
             /p:GenerateAppxPackageOnBuild=true `
             @signArgs
           if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }
-          # The Publish targets stage the .msixupload under bin/.../Upload/,
-          # which is not the AppxPackageDir, so search the whole bin tree.
+          # The Publish targets stage the .msixupload under bin/AppPackages/,
+          # which is the AppxPackageDir the project pins, so search the bin tree.
           $upload = Get-ChildItem CleanMachine.Windows/bin -Recurse -Filter *.msixupload | Select-Object -First 1
           if ($null -eq $upload) {
             Write-Host "Produced instead:"; Get-ChildItem CleanMachine.Windows/bin -Recurse -Include *.msix,*.msixbundle | Select-Object -ExpandProperty Name
