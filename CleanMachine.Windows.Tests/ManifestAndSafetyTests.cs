@@ -1437,6 +1437,23 @@ public sealed class ManifestAndSafetyTests
         }
     }
 
+    /// <summary>Smart App Control guidance is shown in the confirm dialog, the Updates
+    /// page and the installer-failure path, so it must not contain a hard line break -
+    /// one truncates the banner it is meant to explain. It must also name a concrete
+    /// next step, since the whole point is that "it didn't update" is not actionable.</summary>
+    [Fact]
+    public void SmartAppControlGuidanceIsSingleLineAndActionable()
+    {
+        var guidance = UpdateService.SmartAppControlGuidance;
+
+        Assert.DoesNotContain("\n", guidance);
+        Assert.DoesNotContain("\r", guidance);
+        Assert.Contains("Smart App Control", guidance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("self-signed", guidance, StringComparison.OrdinalIgnoreCase);
+        // The point of the message is an action the user can actually take.
+        Assert.Contains("Windows Security", guidance, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>Walks up from the test output directory (bin/&lt;config&gt;/&lt;tfm&gt;,
     /// any platform) to the checkout that contains the app project.</summary>
     private static string? FindRepoRoot()

@@ -29,7 +29,14 @@ public sealed partial class UpdatesPage : Page
         if (installError is not null)
         {
             StatusText.Text = "The last update did not install.";
-            DetailText.Text = installError;
+            // The detached helper's raw PowerShell error is opaque. When Smart App
+            // Control is enforcing it is almost always the cause - it blocks this
+            // app's self-signed MSIX outright, which is what it did on the machine
+            // that reported it - so lead with the reason and what to do about it
+            // rather than making the user decode an Add-AppxPackage stack.
+            DetailText.Text = UpdateService.IsSmartAppControlEnforcing
+                ? UpdateService.SmartAppControlGuidance
+                : installError;
             DetailText.Visibility = Visibility.Visible;
         }
 

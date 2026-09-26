@@ -26,6 +26,23 @@ public sealed class UpdateService
     /// Process.Start with a message the user cannot act on.</summary>
     public static bool IsSmartAppControlEnforcing { get; } = QuerySmartAppControlEnforcing();
 
+    /// <summary>Guidance shown when Smart App Control is the reason an update failed.
+    /// Shared by both install paths because SAC treats them identically: it blocks
+    /// anything without a cloud-verified reputation, and this app ships with a
+    /// long-lived self-signed certificate, so the MSIX payload is blocked exactly
+    /// like the installer. The previous wording only ever appeared on the .exe path
+    /// and told the user to "download the installer from the releases page" - advice
+    /// that cannot work here, because the MSIX is blocked the same way.</summary>
+    internal const string SmartAppControlGuidance =
+        "Smart App Control is ON in Windows Security and is blocking the update. " +
+        "CleanMachine is signed with a self-signed certificate that Windows has not " +
+        "yet given cloud reputation, and SAC blocks anything without it - the MSIX and " +
+        "the installer alike - with no \"Run anyway\" option. New certificates earn " +
+        "reputation over time. To update now, turn Smart App Control off in " +
+        "Windows Security > App & browser control (this is permanent unless you reset " +
+        "Windows), or install the update from the releases page on a machine where it " +
+        "is off.";
+
     private static bool QuerySmartAppControlEnforcing()
     {
         try
@@ -247,7 +264,7 @@ public sealed class UpdateService
                     // cancellation so the retry path stays available.
                     await _stateStore.MarkAsync("staged", packagePath, null, cancellationToken);
                     var reason = IsSmartAppControlEnforcing
-                        ? "Smart App Control is ON in Windows Security and has not built a trust reputation for this download yet (new certificates earn it over time). To update now, download the installer from the releases page, allow it in your security software's protection history if it was blocked, or turn Smart App Control off in Windows Security > App & browser control (turning it off is permanent without resetting Windows)."
+                        ? SmartAppControlGuidance
                         : "Your antivirus or security software may have quarantined the downloaded installer, or the download is damaged. Check your antivirus protection history, then retry the update or install manually from the releases page.";
                     throw new OperationCanceledException($"Windows refused to start the update installer (error {ex.NativeErrorCode}). {reason}", ex);
                 }
