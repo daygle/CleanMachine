@@ -182,16 +182,25 @@ public sealed class UpdateService
                     MsixHandoff.Invoke();
                     return;
                 }
-                // Helper unavailable: keep the previous in-process deployment.
-                var uri = new Uri(packagePath, UriKind.Absolute);
-                var manager = new global::Windows.Management.Deployment.PackageManager();
-                // ForceApplicationShutdown replaces the running package and
-                // terminates this process mid-deployment, so the await typically
-                // never resumes and the "installed" bookkeeping below is best-effort
-                // only. The install itself runs server-side (AppXDeploymentServer)
-                // and completes regardless; the update's success is recorded when
-                // the app next starts (see UpdatesPage stale-state reconciliation).
-                await manager.AddPackageAsync(uri, null, global::Windows.Management.Deployment.DeploymentOptions.ForceApplicationShutdown);
+                // Helper unavailable. Deploying in-process is NOT a safe fallback,
+                // and never was: PackageManager can only replace the package that owns
+                // this process from the outside, so it must pass ForceApplicationShutdown,
+                // which freezes the window and terminates the app mid-deployment. That
+                // is precisely the AppHang ("Stopped responding and was closed") this
+                // hand-off exists to prevent, and it is what the event log recorded on
+                // every MSIX update before the helper was added - the user just sees the
+                // app die. A visible, retryable failure beats a frozen app.
+                //
+                // Handle it exactly like the .exe branch's "nothing was installed"
+                // cases: keep the package staged so a retry needs no re-download, and
+                // report a clean cancellation so the outer handler does not demand a
+                // rollback that has nothing to roll back. The Updates page shows the
+                // message; the idle auto-installer leaves the update pending.
+                await _stateStore.MarkAsync("staged", packagePath, null, cancellationToken);
+                throw new OperationCanceledException(
+                    "Windows would not start the background update helper, and installing the " +
+                    "update from inside the running app would freeze and close CleanMachine. " +
+                    "The verified update is still staged - install it again to retry.");
             }
             else
             {
