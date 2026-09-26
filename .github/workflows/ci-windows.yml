@@ -116,6 +116,10 @@ jobs:
 
       # A bundle that silently drops an architecture still "succeeds", so assert
       # the contents rather than trusting the exit code.
+      # Assert on the per-architecture .msix files INSIDE the bundle, not on the
+      # bundle's own name: the bundle is called "..._x64_arm64.msixbundle", so a
+      # substring match on it would pass even if only one architecture was in
+      # there. A bundle that silently drops an architecture still exits 0.
       - name: Verify the bundle contains both architectures
         shell: pwsh
         run: |
@@ -123,13 +127,27 @@ jobs:
           $upload = Get-ChildItem CleanMachine.Windows/bin -Recurse -Filter *.msixupload | Select-Object -First 1
           $work = Join-Path $env:RUNNER_TEMP "upload-expanded"
           Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
-          # A .msixupload is a zip of per-architecture packages.
+          # A .msixupload is a zip holding a .msixbundle (or loose .msix files).
           Expand-Archive -Path $upload.FullName -DestinationPath $work -Force
-          $names = Get-ChildItem $work -Recurse -File | Select-Object -ExpandProperty Name
-          Write-Host "Bundle contents: $($names -join ', ')"
+          $inner = Join-Path $work "bundle"
+          $bundle = Get-ChildItem $work -Recurse -Filter *.msixbundle | Select-Object -First 1
+          if ($null -ne $bundle) {
+            Expand-Archive -Path $bundle.FullName -DestinationPath $inner -Force
+          }
+          else {
+            $inner = $work
+          }
+          $packages = Get-ChildItem $inner -Recurse -File -Filter *.msix
+          Write-Host "Per-architecture packages: $($packages.Name -join ', ')"
+          if ($packages.Count -eq 0) {
+            throw "The submission bundle contains no .msix package at all."
+          }
           foreach ($arch in @("x64", "arm64")) {
-            if (-not ($names | Where-Object { $_ -match $arch })) {
+            # "..._x64.msix" / "..._arm64.msix" - anchored so _arm64.msix can
+            # never satisfy the x64 check.
+            if (-not ($packages | Where-Object { $_.Name -like "*_${arch}.msix" -or $_.Name -like "*_${arch}_*.msix" })) {
               throw "The submission bundle contains no $arch package."
             }
           }
+          Write-Host "Both x64 and arm64 packages are present in the bundle."
 
