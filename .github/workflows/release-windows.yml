@@ -149,21 +149,62 @@ jobs:
           Copy-Item $upload.FullName "CleanMachine-StoreUpload.msixupload"
           Write-Host "Upload package: $((Get-Item 'CleanMachine-StoreUpload.msixupload').Length) bytes"
 
+      # Unpack the submission and read the identity back OUT of the package, so
+      # this proves the stamping reached the artifact rather than just the log.
+      # There is no Appx cmdlet that validates a package file on disk -
+      # Get-AppxPackageManifest only reads packages that are already installed.
       - name: Verify the submission package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Add-AppxPackageManifest -Path "CleanMachine-StoreUpload.msixupload" -ErrorAction Stop | Out-Null
-          Write-Host "Package manifest is well formed."
-          $sig = Get-AuthenticodeSignature "CleanMachine-StoreUpload.msixupload"
-          Write-Host "Signature status: $($sig.Status)"
-          if ("$env:SIGN_PACKAGE" -eq "true") {
-            # Only meaningful when a certificate was actually configured: a
-            # self-signed one reports NotTrusted, which the Store would reject.
-            if ($sig.Status -ne 'Valid') {
-              throw "Store package is not validly signed ($($sig.Status)). A signed submission must chain to a CA in the Microsoft Trusted Root Program - or unset the certificate secrets to submit unsigned."
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          function Expand-Zip([string]$path, [string]$dest) {
+            if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($path, $dest)
+          }
+
+          $root = Join-Path $env:RUNNER_TEMP "verify"
+          Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
+          Expand-Zip (Resolve-Path "CleanMachine-StoreUpload.msixupload") (Join-Path $root "upload")
+
+          $bundle = Get-ChildItem (Join-Path $root "upload") -Recurse -Filter *.msixbundle | Select-Object -First 1
+          if ($null -eq $bundle) { throw "No .msixbundle inside the .msixupload." }
+          $bundleDir = Join-Path $root "bundle"
+          Expand-Zip $bundle.FullName $bundleDir
+
+          $packages = Get-ChildItem $bundleDir -Recurse -File -Filter *.msix
+          Write-Host "Per-architecture packages: $($packages.Name -join ', ')"
+          foreach ($arch in @("x64", "arm64")) {
+            if (-not ($packages | Where-Object { $_.Name -like "*_${arch}.msix" -or $_.Name -like "*_${arch}_*.msix" })) {
+              throw "The submission bundle contains no $arch package."
             }
           }
+
+          $x64 = $packages | Where-Object { $_.Name -like "*_x64.msix" } | Select-Object -First 1
+          $msixDir = Join-Path $root "x64"
+          Expand-Zip $x64.FullName $msixDir
+          [xml]$manifest = Get-Content (Join-Path $msixDir "AppxManifest.xml")
+          # local-name() so the appx default namespace never has to be spelled out.
+          $identity = $manifest.SelectSingleNode("//*[local-name()='Identity']")
+          $publisher = $identity.GetAttribute("Publisher")
+          $version = $identity.GetAttribute("Version")
+          $name = $identity.GetAttribute("Name")
+          Write-Host "Package identity: Name=$name Publisher=$publisher Version=$version"
+          if ($publisher -ne $env:STORE_PUBLISHER) {
+            throw "Publisher in the package ('$publisher') does not match STORE_PUBLISHER ('$($env:STORE_PUBLISHER)')."
+          }
+          if ($version -ne $env:VERSION4) {
+            throw "Version in the package ('$version') does not match the tag ($($env:VERSION4))."
+          }
+
+          $sig = Get-AuthenticodeSignature "CleanMachine-StoreUpload.msixupload"
+          Write-Host "Signature status: $($sig.Status)"
+          if ("$env:SIGN_PACKAGE" -eq "true" -and $sig.Status -ne 'Valid') {
+            # Only meaningful when a certificate was configured: a self-signed one
+            # reports NotTrusted, which the Store would reject.
+            throw "Store package is not validly signed ($($sig.Status)). A signed submission must chain to a CA in the Microsoft Trusted Root Program - or unset the certificate secrets to submit unsigned."
+          }
+          Write-Host "Submission package verified."
 
       - name: Upload the submission package
         uses: actions/upload-artifact@v4
