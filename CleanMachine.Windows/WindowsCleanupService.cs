@@ -300,10 +300,15 @@ public sealed class WindowsCleanupService
             .Where(f => !IsRecentlyModified(f))
             .ToArray();
 
-    private static bool IsRecentlyModified(string path)
+    /// <summary>True when the file was written in the last two hours, i.e. something
+    /// is probably still using it. FAILS CLOSED: an unreadable timestamp counts as
+    /// recently modified and the file is skipped. Returning false on error would
+    /// make a file we cannot even stat a deletion candidate. Internal (not private)
+    /// so the fail-closed contract is directly testable.</summary>
+    internal static bool IsRecentlyModified(string path)
     {
         try { return File.GetLastWriteTimeUtc(path) > DateTime.UtcNow.AddHours(-2); }
-        catch { return false; }
+        catch { return true; }
     }
 
     private static IEnumerable<string> EnumerateCleanableFiles(string directory, string? pattern, string[]? extensions, IReadOnlySet<string>? exclusions)

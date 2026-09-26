@@ -69,7 +69,11 @@ public sealed class BrowserCleanupService
                 new BrowserCleanupState(operationId, files, 0, 0, DateTimeOffset.UtcNow), token);
 
             var report = await _cleanup.CleanBrowserTargetsAsync(allowed, progress, token);
-            await ClearStateAsync(token);
+            // Fresh token: the clean SUCCEEDED, so the interrupted-state file must
+            // go even if the caller cancelled a moment later. Clearing it with the
+            // caller's token left a stale state file behind, and the next launch
+            // then reported a phantom "interrupted cleanup" over work already done.
+            await ClearStateAsync();
             return report;
         }
         finally
@@ -117,9 +121,13 @@ public sealed class BrowserCleanupService
         }
     }
 
-    public async Task ClearStateAsync(CancellationToken token = default)
+    /// <summary>Removes the interrupted-state file. Takes no token on purpose: it
+    /// only runs after a clean that already succeeded, so a cancelled caller must
+    /// not be able to leave a stale state file behind (which would report a phantom
+    /// interrupted run on the next launch).</summary>
+    public async Task ClearStateAsync()
     {
-        await StateGate.WaitAsync(token);
+        await StateGate.WaitAsync(CancellationToken.None);
         try { if (File.Exists(_statePath)) File.Delete(_statePath); }
         catch (IOException) { }
         // Access-denied must be swallowed too: this runs right after a successful
@@ -408,6 +416,11 @@ public sealed class BrowserCleanupService
         return (removed, bytes, skipped);
     }
 
+    /// <summary>Deletes directories left empty by the clean, deepest first. Ordered
+    /// by path LENGTH as a proxy for depth: every descendant string is longer than
+    /// its ancestor, so a child is always visited before the parent that would
+    /// otherwise still look non-empty. A parent whose child was not removed (locked)
+    /// simply is not empty yet and is left alone.</summary>
     private static void RemoveEmptyDirectories(string root)
     {
         try

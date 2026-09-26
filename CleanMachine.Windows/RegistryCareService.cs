@@ -180,80 +180,80 @@ public sealed class RegistryCareService
         await CleanupCoordinator.Gate.WaitAsync(token);
         try
         {
-        var removed = 0;
-        var skipped = new List<CleanupIssue>();
-        var cleaned = new List<RegistryFinding>();
-        if (review.Findings.Count > 0)
-        {
-            var verifiedBackup = false;
-            foreach (var backup in review.Backups)
+            var skipped = new List<CleanupIssue>();
+            var cleaned = new List<RegistryFinding>();
+            if (review.Findings.Count > 0)
             {
-                if (await ValidateBackupAsync(backup, token))
+                var verifiedBackup = false;
+                foreach (var backup in review.Backups)
                 {
-                    verifiedBackup = true;
-                    break;
+                    if (await ValidateBackupAsync(backup, token))
+                    {
+                        verifiedBackup = true;
+                        break;
+                    }
+                }
+
+                if (!verifiedBackup)
+                {
+                    return new RegistryCleanResult(
+                        0,
+                        review.Findings.Select(f => new CleanupIssue(
+                            f.Path, "Registry cleanup requires a verified backup.")).ToArray(),
+                        []);
                 }
             }
 
-            if (!verifiedBackup)
+            // Registry edits are disk-bound work the page awaits on the UI thread.
+            return await Task.Run(() =>
             {
-                return new RegistryCleanResult(
-                    0,
-                    review.Findings.Select(f => new CleanupIssue(
-                        f.Path, "Registry cleanup requires a verified backup.")).ToArray(),
-                    []);
-            }
-        }
-
-        // Registry edits are disk-bound work the page awaits on the UI thread.
-        return await Task.Run(() =>
-        {
-            for (var index = 0; index < review.Findings.Count; index++)
-            {
-                token.ThrowIfCancellationRequested();
-                var finding = review.Findings[index];
-                progress?.Report(new CleanupProgress("Registry values", index + 1, review.Findings.Count, 0));
-                if (!IsCleanable(finding)) { skipped.Add(new(finding.Path, "Not eligible (safety gate)")); continue; }
-                try
+                var removed = 0;
+                for (var index = 0; index < review.Findings.Count; index++)
                 {
-                    using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
-                    if (finding.ValueName is not null)
+                    token.ThrowIfCancellationRequested();
+                    var finding = review.Findings[index];
+                    progress?.Report(new CleanupProgress("Registry values", index + 1, review.Findings.Count, 0));
+                    if (!IsCleanable(finding)) { skipped.Add(new(finding.Path, "Not eligible (safety gate)")); continue; }
+                    try
                     {
-                        // Value-level finding: delete a single named value under the key.
-                        using var key = root.OpenSubKey(finding.Path, writable: true);
-                        if (key is null) { skipped.Add(new(finding.Path, "Key not found")); continue; }
-                        if (key.GetValue(finding.ValueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is null)
+                        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+                        if (finding.ValueName is not null)
                         {
-                            skipped.Add(new(finding.Path, "Value not found (already clean)"));
-                            continue;
+                            // Value-level finding: delete a single named value under the key.
+                            using var key = root.OpenSubKey(finding.Path, writable: true);
+                            if (key is null) { skipped.Add(new(finding.Path, "Key not found")); continue; }
+                            if (key.GetValue(finding.ValueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is null)
+                            {
+                                skipped.Add(new(finding.Path, "Value not found (already clean)"));
+                                continue;
+                            }
+                            key.DeleteValue(finding.ValueName, throwOnMissingValue: false);
+                            removed++;
+                            cleaned.Add(finding);
                         }
-                        key.DeleteValue(finding.ValueName, throwOnMissingValue: false);
-                        removed++;
-                        cleaned.Add(finding);
+                        else
+                        {
+                            using var parent = root.OpenSubKey(ParentKeyPath(finding.Path), writable: true);
+                            if (parent is null) { skipped.Add(new(finding.Path, "Parent key not found")); continue; }
+                            var leaf = LeafKeyName(finding.Path);
+                            // Probe with a scoped handle and dispose it BEFORE deleting: a key
+                            // cannot be removed while any handle to it is open.
+                            using (var existing = parent.OpenSubKey(leaf))
+                            {
+                                if (existing is null) { skipped.Add(new(finding.Path, "Key not found (already clean)")); continue; }
+                            }
+                            parent.DeleteSubKeyTree(leaf, throwOnMissingSubKey: false);
+                            removed++;
+                            cleaned.Add(finding);
+                        }
                     }
-                    else
+                    catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException or ArgumentException)
                     {
-                        using var parent = root.OpenSubKey(ParentKeyPath(finding.Path), writable: true);
-                        if (parent is null) { skipped.Add(new(finding.Path, "Parent key not found")); continue; }
-                        var leaf = LeafKeyName(finding.Path);
-                        // Probe with a scoped handle and dispose it BEFORE deleting: a key
-                        // cannot be removed while any handle to it is open.
-                        using (var existing = parent.OpenSubKey(leaf))
-                        {
-                            if (existing is null) { skipped.Add(new(finding.Path, "Key not found (already clean)")); continue; }
-                        }
-                        parent.DeleteSubKeyTree(leaf, throwOnMissingSubKey: false);
-                        removed++;
-                        cleaned.Add(finding);
+                        skipped.Add(new(finding.Path, ex.Message));
                     }
                 }
-                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException or ArgumentException)
-                {
-                    skipped.Add(new(finding.Path, ex.Message));
-                }
-            }
-            return new RegistryCleanResult(removed, skipped, cleaned);
-        }, token);
+                return new RegistryCleanResult(removed, skipped, cleaned);
+            }, token);
         }
         finally
         {

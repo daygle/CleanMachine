@@ -90,8 +90,21 @@ public sealed class BackgroundAgent : IDisposable
             // Benign shutdown race: StopBackgroundAgent disposes the timer/CTS while
             // WaitForNextTickAsync may still be pending on them.
         }
-        finally { IsRunning = false; }
+        finally
+        {
+            IsRunning = false;
+            // Owned by the loop, not by Dispose: the thread that awaited the timer is
+            // the only one guaranteed not to race a concurrent Dispose call.
+            _timer.Dispose();
+        }
     }
 
-    public void Dispose() { _shutdown.Cancel(); _timer.Dispose(); _shutdown.Dispose(); }
+    /// <summary>Stops the loop. Cancellation only - deliberately no Dispose of the
+    /// timer or the CTS. Dispose is called from the UI thread while RunAsync may not
+    /// have started yet (the loop is started via Task.Run), and disposing either one
+    /// out from under it throws ObjectDisposedException at
+    /// <c>CreateLinkedTokenSource</c>/<c>WaitForNextTickAsync</c>, before the loop's
+    /// own try/catch can absorb it. The timer is disposed by RunAsync's finally on
+    /// the loop's own thread instead.</summary>
+    public void Dispose() => _shutdown.Cancel();
 }

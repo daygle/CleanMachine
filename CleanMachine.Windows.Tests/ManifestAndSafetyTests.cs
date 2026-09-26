@@ -588,6 +588,45 @@ public sealed class ManifestAndSafetyTests
         // Non-path commands (e.g. a bare command name) must not be resolved.
         Assert.Null(CleanupService.ResolveStartupExecutable("cmd /c echo hi"));
         Assert.Null(CleanupService.ResolveStartupExecutable(""));
+        // An unterminated quote used to produce a -1 slice bound; it must resolve to
+        // null (unknown), never throw out of a registry scan.
+        Assert.Null(CleanupService.ResolveStartupExecutable(@"""C:\App\app.exe"));
+        Assert.Null(CleanupService.ResolveStartupExecutable(@""""""));
+    }
+
+    /// <summary>The two-hour recency guard is the app's main defence against
+    /// deleting a file something still has open, so it must fail CLOSED: a path
+    /// whose timestamp cannot be read has to count as recently modified (skip it),
+    /// never as old (delete it).</summary>
+    [Fact]
+    public void RecentlyModifiedGuardSkipsFreshFilesAndFailsClosed()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "CleanMachine-RecencyGuard");
+        Directory.CreateDirectory(directory);
+        var fresh = Path.Combine(directory, "fresh.tmp");
+        var old = Path.Combine(directory, "old.tmp");
+        try
+        {
+            File.WriteAllText(fresh, "probe");
+            // A file written now is inside the two-hour window: never a candidate.
+            Assert.True(WindowsCleanupService.IsRecentlyModified(fresh));
+
+            File.WriteAllText(old, "probe");
+            File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddDays(-30));
+            Assert.False(WindowsCleanupService.IsRecentlyModified(old));
+
+            // A path the file system refuses outright must read as "recently
+            // modified" so the file is skipped rather than deleted. A NUL in the
+            // path is the reliable way to make the stat throw; note that a merely
+            // MISSING file does not throw (it reports the epoch), so it cannot
+            // exercise the catch.
+            Assert.True(WindowsCleanupService.IsRecentlyModified(
+                Path.Combine(directory, "bad\0name.tmp")));
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch { }
+        }
     }
 
     [Fact]

@@ -384,10 +384,20 @@ public sealed class CleanupService
     {
         var trimmed = command.Trim();
         if (trimmed.Length == 0) return null;
-        string? candidate = trimmed.StartsWith('"')
-            ? (trimmed.IndexOf('"', 1) is var end && end > 1 ? trimmed[1..end] : null)
-            : trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
-        if (candidate is null || candidate.Contains('%')) return null;
+        string? candidate;
+        if (trimmed.StartsWith('"'))
+        {
+            // Quoted form: the path runs to the NEXT quote. An unterminated quote
+            // yields -1, which is not a valid slice bound, so it resolves to null
+            // rather than throwing.
+            var end = trimmed.IndexOf('"', 1);
+            candidate = end > 1 ? trimmed[1..end] : null;
+        }
+        else
+        {
+            candidate = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+        }
+        if (string.IsNullOrEmpty(candidate) || candidate.Contains('%')) return null;
         return Path.IsPathFullyQualified(candidate) ? candidate : null;
     }
 
@@ -422,6 +432,7 @@ public sealed class CleanupService
             roots.AddRange(additionalRoots);
 
         var profiles = new List<string>();
+        var isFirefox = browser.Equals("firefox", StringComparison.OrdinalIgnoreCase);
         foreach (var root in roots)
         {
             try
@@ -429,19 +440,18 @@ public sealed class CleanupService
                 if (!Directory.Exists(root)) continue;
                 foreach (var dir in Directory.EnumerateDirectories(root))
                 {
-                    var name = Path.GetFileName(dir);
-                    if (browser.Equals("firefox", StringComparison.OrdinalIgnoreCase))
+                    if (isFirefox)
                     {
-                        // Firefox profiles are hex-named dirs containing a profile ini reference
+                        // Firefox profiles are hex-named dirs, each holding a profile
+                        // ini reference.
                         profiles.Add(dir);
+                        continue;
                     }
-                    else
-                    {
-                        // Chromium: Default, Profile 1, Profile 2, etc.
-                        if (name.Equals("Default", StringComparison.OrdinalIgnoreCase)
-                            || name.StartsWith("Profile ", StringComparison.OrdinalIgnoreCase))
-                            profiles.Add(dir);
-                    }
+                    // Chromium: Default, Profile 1, Profile 2, etc.
+                    var name = Path.GetFileName(dir);
+                    if (name.Equals("Default", StringComparison.OrdinalIgnoreCase)
+                        || name.StartsWith("Profile ", StringComparison.OrdinalIgnoreCase))
+                        profiles.Add(dir);
                 }
             }
             catch { /* inaccessible */ }

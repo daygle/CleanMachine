@@ -11,31 +11,14 @@ public static class AppNotifications
         catch { /* notifications are best-effort (e.g. elevated apps are unsupported) */ }
     }
 
-    public static void ShowCleanupComplete(CleanupResult result)
-    {
-        try
-        {
-            var notification = new AppNotificationBuilder()
-                .AddText("CleanMachine")
-                .AddText($"Browser cleanup complete: {result.ItemsRemoved:N0} items removed, {FormatBytes(result.BytesRecovered)} recovered.")
-                .BuildNotification();
-            AppNotificationManager.Default.Show(notification);
-        }
-        catch { /* notifications are best-effort */ }
-    }
+    /// <summary>Toast for a manual or browser-triggered run, e.g. "Browser cleanup
+    /// complete: ...". Shares the <see cref="ShowAutomaticCleanupComplete(string, long, long)"/>
+    /// body so every toast stays best-effort and identically formatted.</summary>
+    public static void ShowCleanupComplete(string what, CleanupResult result)
+        => ShowAutomaticCleanupComplete(what, result);
 
     public static void ShowSystemCleanupComplete(CleanupResult result)
-    {
-        try
-        {
-            var notification = new AppNotificationBuilder()
-                .AddText("CleanMachine")
-                .AddText($"System cleanup complete: {result.ItemsRemoved:N0} items removed, {FormatBytes(result.BytesRecovered)} recovered.")
-                .BuildNotification();
-            AppNotificationManager.Default.Show(notification);
-        }
-        catch { /* notifications are best-effort */ }
-    }
+        => ShowCleanupComplete("System cleanup complete", result);
 
     /// <summary>Toast for the opt-in notify option on the Automatic Cleanup page's
     /// startup and idle triggers (browser-exit and low-disk have their own toasts).</summary>

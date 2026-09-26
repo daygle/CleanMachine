@@ -130,8 +130,10 @@ public sealed class OverviewScanService
                     try
                     {
                         var settings = await AppSettings.LoadAsync();
-                        return (IReadOnlyList<CleanupItem>?)await Task.Run(
-                            () => new WindowsCleanupService().Scan(settings.ExcludedPaths));
+                        // Already on a thread-pool thread (the outer Task.Run), so the
+                        // scan runs inline: a second nested Task.Run only added
+                        // scheduling latency to the slowest Overview scan.
+                        return (IReadOnlyList<CleanupItem>?)new WindowsCleanupService().Scan(settings.ExcludedPaths);
                     }
                     catch { return null; }
                 });
@@ -190,7 +192,7 @@ public sealed class OverviewScanService
     {
         try
         {
-            var review = await Task.Run(() => new RegistryCareService().ScanAsync());
+            var review = await new RegistryCareService().ScanAsync();
             return review.Findings.Count > 0
                 ? new AreaSummary($"{review.Findings.Count:N0} review item(s) found")
                 : new AreaSummary("Clean");

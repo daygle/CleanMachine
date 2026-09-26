@@ -279,7 +279,7 @@ public partial class App : Application
 
             var displayName = char.ToUpperInvariant(browser[0]) + browser[1..];
             if (monitor.AfterExit == ExitAction.CleanAndNotify && report.Result.ItemsRemoved > 0)
-                AppNotifications.ShowCleanupComplete(report.Result);
+                AppNotifications.ShowCleanupComplete("Browser cleanup complete", report.Result);
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
                 "Browser Monitoring",
@@ -369,16 +369,17 @@ public partial class App : Application
             _recycleBinLastRun = DateTimeOffset.UtcNow;
             using var cleaning = CleaningActivity.Begin();
             await CleanupCoordinator.Gate.WaitAsync(token);
-            (int removed, long bytes) result;
+            int removed;
+            long bytes;
             try
             {
-                result = await Task.Run(() => RecycleBinService.EmptyOlderThan(settings.RecycleBinAutoEmptyDays, token), token);
+                (removed, bytes) = await Task.Run(
+                    () => RecycleBinService.EmptyOlderThan(settings.RecycleBinAutoEmptyDays, token), token);
             }
             finally
             {
                 CleanupCoordinator.Gate.Release();
             }
-            var (removed, bytes) = result;
             if (removed > 0)
             {
                 await new CleanupStatsStore().RecordAsync(removed, bytes, token);
@@ -435,28 +436,26 @@ public partial class App : Application
             if (_systemMonitorLastRun is { } last && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(1))
                 return;
 
-            // Only Safe-risk categories are ever cleaned here; Review/Advanced
-            // categories always stay behind the manual page.
-            var selected = SelectedSafeCategories(settings, settings.SystemMonitorCategories);
-            if (selected.Count == 0) return;
-            var report = await new WindowsCleanupService().CleanSelectedAsync(
-                selected,
-                new WindowsCleanupOptions(ConfirmReviewCategories: false, ExcludedPaths: settings.ExcludedPaths),
-                cancellationToken: token);
+            // Nothing selected means nothing to do, so leave the trigger armed: the
+            // user may enable a category later while the drive is still full.
+            if (SelectedSafeCategories(settings, settings.SystemMonitorCategories).Count == 0) return;
 
+            // Consume the trigger BEFORE the clean. Doing it afterwards meant a
+            // failing clean (a locked-file storm, a vanished drive) left both flags
+            // untouched, so the next 5-second tick started the whole pass again -
+            // an unattended retry loop hammering the disk exactly when it was
+            // already full.
             _systemMonitorLastRun = DateTimeOffset.UtcNow;
             _systemMonitorArmed = false; // wait for recovery before firing again
-            await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
 
-            if (settings.SystemMonitorAction == ExitAction.CleanAndNotify && report.Result.ItemsRemoved > 0)
-                AppNotifications.ShowSystemCleanupComplete(report.Result);
             var usingMb = string.Equals(settings.SystemMonitorFreeSpaceUnit, "MB", StringComparison.OrdinalIgnoreCase);
             var thresholdLabel = usingMb ? $"{thresholdGb * 1024.0:0.#} MB" : $"{thresholdGb:0.#} GB";
-            await new ActivityStore().AddAsync(new ActivityEntry(
-                DateTimeOffset.UtcNow,
+            await RunSafeCleanAsync(
+                settings,
                 "System Monitoring",
-                $"Free space below {thresholdLabel} - cleaned {report.Result.ItemsRemoved:N0} items, {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered",
-                ActivityStore.BreakdownLines(report.Breakdown)),
+                $"Free space below {thresholdLabel}",
+                settings.SystemMonitorCategories,
+                settings.SystemMonitorAction == ExitAction.CleanAndNotify,
                 token);
         }
         catch { /* monitoring is best-effort; never let it kill the agent loop */ }
