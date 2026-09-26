@@ -479,3 +479,117 @@ jobs:
           if ! git push origin HEAD:main; then
             echo "::warning::Could not push the version-default bump to main (concurrent update?). Released artifacts are unaffected."
           fi
+
+  # ------------------------------------------------------------------
+  # Microsoft Store submission package (.msixupload)
+  #
+  # Manual only. Never triggered by a tag push, so the private, self-signed
+  # release above is completely unaffected by anything here.
+  #
+  # A Store submission needs a different artifact from the private release:
+  #   - a .msixupload (package + crash symbols) rather than a bare .msix
+  #   - UapAppxPackageBuildMode=StoreUpload rather than SideloadOnly
+  #   - a certificate chaining to a CA in the Microsoft Trusted Root Program.
+  #     The self-signed PFX used above is NOT accepted by the Store.
+  #
+  # The Publisher must be an identity reserved in Partner Center, supplied as the
+  # STORE_PUBLISHER repository variable. It is deliberately not defaulted: guessing
+  # a publisher would produce a package that uploads and then fails certification.
+  # ------------------------------------------------------------------
+  store-package:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+      STORE_CERT_BASE64: ${{ secrets.STORE_SIGNING_CERTIFICATE_BASE64 }}
+      STORE_CERT_PASSWORD: ${{ secrets.STORE_SIGNING_CERTIFICATE_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Require a reserved Store identity and a trusted certificate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER)) {
+            throw "Set the STORE_PUBLISHER repository variable to the Publisher string reserved for this app in Partner Center (Product > Identity). Refusing to build a package with a guessed publisher."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:STORE_CERT_BASE64) -or [string]::IsNullOrWhiteSpace($env:STORE_CERT_PASSWORD)) {
+            throw "Set STORE_SIGNING_CERTIFICATE_BASE64 and STORE_SIGNING_CERTIFICATE_PASSWORD. The Store requires a certificate chaining to a CA in the Microsoft Trusted Root Program; the self-signed certificate used for private releases is rejected."
+          }
+          $version3 = '0.0.1'
+          $ref = $env:GITHUB_REF_NAME
+          if ($ref -match '^v(\d+)\.(\d+)\.(\d+)$') { $version3 = "$($Matches[1]).$($Matches[2]).$($Matches[3])" }
+          "VERSION3=$version3"       | Out-File $env:GITHUB_ENV -Append
+          "VERSION4=$version3.0"     | Out-File $env:GITHUB_ENV -Append
+
+      - name: Stamp the manifest with the reserved identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifestPath = "CleanMachine.Windows/Package.appxmanifest"
+          [xml]$manifest = Get-Content $manifestPath
+          $manifest.Package.Identity.Publisher = $env:STORE_PUBLISHER
+          $manifest.Package.Identity.Version = $env:VERSION4
+          $manifest.Save((Resolve-Path $manifestPath))
+          Write-Host "Stamped publisher: $env:STORE_PUBLISHER"
+
+      - name: Import the Store signing certificate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfx = Join-Path $env:RUNNER_TEMP "store.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:STORE_CERT_BASE64))
+          $password = ConvertTo-SecureString $env:STORE_CERT_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password |
+            Where-Object HasPrivateKey | Select-Object -First 1
+          if ($null -eq $cert) { throw "Store certificate could not be imported (no private key)." }
+          Write-Host "Signing with $($cert.Subject) [$($cert.Thumbprint)]"
+          "STORE_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Build the .msixupload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP "storepkg"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          # StoreUpload emits the .msixupload (package + symbols) that Partner Center
+          # accepts. SideloadOnly/AppxBundle=Never - what the private release uses -
+          # produces a bare .msix that the Store will not take.
+          dotnet msbuild $env:PROJECT /t:Publish `
+            /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 `
+            /p:UapAppxPackageBuildMode=StoreUpload /p:AppxBundle=Never `
+            /p:AppxPackageSigningEnabled=true "/p:PackageCertificateThumbprint=$env:STORE_THUMBPRINT" `
+            /p:AppxSymbolPackageEnabled=true /p:GenerateAppxPackageOnBuild=true `
+            "/p:AppxPackageDir=$out" "/p:ApplicationDisplayVersion=$env:VERSION3"
+          if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }
+          $upload = Get-ChildItem $out -Recurse -Filter *.msixupload | Select-Object -First 1
+          if ($null -eq $upload) { throw "No .msixupload was produced." }
+          Copy-Item $upload.FullName "CleanMachine-StoreUpload.msixupload"
+          Write-Host "Upload package: $((Get-Item 'CleanMachine-StoreUpload.msixupload').Length) bytes"
+
+      - name: Verify the signature chains to a trusted root
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # A self-signed package reports NotTrusted here. That is the exact failure the
+          # Store would reject, so it is caught here rather than at upload time.
+          $sig = Get-AuthenticodeSignature "CleanMachine-StoreUpload.msixupload"
+          Write-Host "Signature status: $($sig.Status); subject: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') {
+            throw "Store upload package is not validly signed ($($sig.Status)). The Store requires a certificate chaining to a CA in the Microsoft Trusted Root Program."
+          }
+
+      - name: Upload the submission package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CleanMachine-StoreUpload
+          path: CleanMachine-StoreUpload.msixupload
+          if-no-files-found: error

@@ -69,3 +69,102 @@ Get-AuthenticodeSignature "CleanMachine-x64-vX.Y.Z.msix"
 ## Update manifest
 
 The workflow generates `update-manifest.json` for each release (version, per-architecture package URLs, SHA-256 hashes, publisher) and attaches it to the GitHub release. The in-app updater fetches it over HTTPS, verifies hash and publisher, then sideloads the MSIX. There is no checked-in template: the workflow's manifest-generation step (the Python block near the end of `release-windows.yml`) is the authoritative definition of the format.
+## Microsoft Store distribution
+
+Store distribution is a **separate channel** from the private, self-signed release
+above. The two cannot share a package identity: MSIX identity is `Identity Name` +
+`Publisher` combined, so a package published under a Partner Center-reserved
+publisher is a *different app* from the self-signed one and installs alongside it
+rather than replacing it.
+
+The private release is unaffected by anything in this section. The `store-package`
+job is manual-only (`workflow_dispatch`) and never runs on a tag push.
+
+### What the Store requires that a private release does not
+
+| Requirement | Private release | Store submission |
+| --- | --- | --- |
+| Package artifact | `*.msix` per architecture | `*.msixupload` (package + crash symbols) |
+| Build mode | `UapAppxPackageBuildMode=SideloadOnly` | `UapAppxPackageBuildMode=StoreUpload` |
+| Bundling | `AppxBundle=Never` | a bundle is preferred (see below) |
+| Certificate | long-lived self-signed | must chain to a CA in the **Microsoft Trusted Root Program** |
+| Publisher | `CN=CleanMachine Publisher` | an identity **reserved in Partner Center** |
+| Developer account fee | n/a | waived for individual and company accounts |
+
+A self-signed certificate is treated as **no signature at all** by both SmartScreen
+and Smart App Control, which is why the private release needs Smart App Control off
+(see [Smart App Control](#smart-app-control-and-updates)) while a Store-signed build
+does not.
+
+### Prerequisites (both required before the job will run)
+
+1. **Reserve an app identity** in Partner Center (Product → Identity) and put the
+   exact `Publisher` string in the `STORE_PUBLISHER` repository variable. The job
+   refuses to guess it: a wrong publisher uploads cleanly and then fails
+   certification.
+2. **A trusted code-signing certificate**, in the `STORE_SIGNING_CERTIFICATE_BASE64`
+   and `STORE_SIGNING_CERTIFICATE_PASSWORD` secrets. Microsoft's own
+   [Artifact Signing](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart)
+   (~$9.99/month, no hardware token, has an official GitHub Action) is the
+   cheapest fit; a commercial OV certificate works too. Note that even a valid
+   certificate starts with zero SmartScreen reputation and accrues it over
+   weeks of real-world installs — but Store-distributed apps are re-signed by
+   Microsoft and carry full reputation immediately.
+
+### Running it
+
+Run the **Release Windows app** workflow manually (*Actions → Release Windows app →
+Run workflow*). It produces `CleanMachine-StoreUpload.msixupload` as a workflow
+artifact, verifies the package chains to a trusted root, and stops with a clear
+error if it does not — a self-signed package reports `NotTrusted` here rather than
+failing mysteriously at upload.
+
+Submission itself is done by hand in Partner Center, along with the listing
+(screenshots, description, privacy policy URL, support contact) and the age
+rating. Screenshots and the privacy policy are **not** part of the package.
+
+### Still outstanding before certification
+
+1. **Multi-architecture bundle.** The job currently builds x64 only
+   (`AppxBundle=Never` per architecture, as the private release does). Partner
+   Center prefers a single bundle covering x64 and ARM64.
+2. **Listing copy.** `Package.appxmanifest` currently describes the app as
+   *"Private, review-first Windows cleanup utility."* That is developer-internal
+   wording and reads badly in a public listing.
+3. **Capability justification.** The manifest declares the restricted capability
+   `runFullTrust`. The Store requires a written justification for restricted
+   capabilities, and **Secure Delete** and **Drive Wiper** — a permanent file
+   overwriting utility and a disk wiper — are the features most likely to draw
+   scrutiny under policy 10.6.
+4. **Coexistence with the private build.** The two flavours share resources that
+   are not scoped by package identity, so both installed at once would collide:
+
+   | Resource | Where | Effect |
+   | --- | --- | --- |
+   | `Local\CleanMachine.SingleInstance` mutex | `SingleInstance.cs` | one copy exits as "already running" |
+   | `%LOCALAPPDATA%\CleanMachine` data root | `AppDataPaths.cs` | both read/write one settings, activity log and update staging area |
+   | `\CleanMachine\Cleanup-*` scheduled task | `Scheduling.cs` | both fight over the same task |
+   | logon startup entry | `StartupRegistration.cs` | both register on logon |
+
+   The mutex alone makes the Store build look broken on first launch. These need
+   namespacing per flavour before both are installed on one machine.
+5. **Updates.** The Store manages updates for Store installs, so the in-app
+   updater only applies to the private build.
+
+## Smart App Control and updates
+
+Smart App Control blocks the private, self-signed release outright: SAC refuses
+any executable without a positive cloud reputation, applies its checks to **all
+executables regardless of origin**, and offers no "Run anyway" override. A
+self-signed certificate is treated exactly as no signature.
+
+**Consequence: on a machine with Smart App Control on, the in-app updater can
+never complete an install for the private build.** This is a property of the
+signing model, not a bug that can be worked around in code. `UpdateService`
+detects a confirmed block from the Windows Code Integrity log and reports it
+rather than failing silently, but detection does not make the install succeed.
+
+Options are documented in the Microsoft guidance on
+[SmartScreen reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation):
+keep Smart App Control off on machines that run the private build, move to a
+trusted certificate, or distribute through the Microsoft Store.
