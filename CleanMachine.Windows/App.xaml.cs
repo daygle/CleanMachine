@@ -233,7 +233,7 @@ public partial class App : Application
         // Start the loop on the thread pool: RunAsync captures the caller's
         // synchronization context at its first await, and starting it from the UI
         // thread made every tick - the 5-second process poll, browser-exit cleans,
-        // monitors, update checks - run on the WinUI dispatcher, where any slow
+        // monitors - run on the WinUI dispatcher, where any slow
         // synchronous stretch froze the window and fed WER's hang reports.
         _agentTask = Task.Run(() => _agent.RunAsync(_agentCts.Token));
     }

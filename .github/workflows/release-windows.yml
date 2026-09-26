@@ -2,7 +2,7 @@ name: Release Windows app
 
 # The Microsoft Store is the only distribution channel (see RELEASE.md). This
 # workflow therefore builds exactly one artifact: the .msixupload that Partner
-# Center accepts. There is no self-signed certificate, no Inno Setup installer
+# Center accepts. There is no self-signed certificate, no .exe installer
 # and no GitHub release - the Store installs and updates the app.
 #
 # No code-signing certificate is required. Partner Center accepts an UNSIGNED

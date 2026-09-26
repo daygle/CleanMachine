@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-Security fixes are applied to the latest state of the `main` branch and shipped through signed releases. Only the latest release receives security updates; older builds are not guaranteed to receive them. Keep the app current using the in-app updater or the releases page.
+Security fixes are applied to the latest state of the `main` branch and shipped through Microsoft Store releases. Only the latest Store version receives security updates; older builds are not guaranteed to receive them. Keep the app current by letting the Store update it (Store -> Library -> Get updates).
 
-Only use CleanMachine on systems where its cleanup, registry export/restore, secure deletion, and update behavior have been validated for your environment.
+Only use CleanMachine on systems where its cleanup and registry export/restore behavior have been validated for your environment.
 
 ## Reporting a vulnerability
 
@@ -26,17 +26,17 @@ We will acknowledge reports as soon as practical, investigate responsibly, and c
 
 Reports are especially important for:
 
-- Update manifest, package hash, publisher, and rollback validation
+- Package publisher, version stamping, and submission validation
 - MSIX, Authenticode, and release workflow configuration
 - Registry backup, restore, and future mutation paths
 - Protected-path and reparse-point validation
 - Browser profile discovery and cleanup boundaries
 - Startup registration and background-agent execution
-- Secure Delete path selection and overwrite behavior
+- Recycle Bin auto-empty and scheduled-task registration
 - Accidental collection or disclosure of local data
 
 ## Current limitations
 
-CleanMachine is Windows-specific and requires validation on each supported Windows version. Registry Care only cleans findings that pass its low-risk confidence gate (always after a backup), and secure-delete overwrite methods cannot guarantee sanitization of SSDs or modern storage - use device encryption for sensitive data. Do not interpret the presence of a UI option as proof of production-grade protection.
+CleanMachine is Windows-specific and requires validation on each supported Windows version. Registry Care only cleans findings that pass its low-risk confidence gate (always after a backup). CleanMachine ships no secure-erase or drive-wiping tool and makes no claim of sanitizing storage; use device encryption for sensitive data. Do not interpret the presence of a UI option as proof of production-grade protection.
 
 The project does not request vulnerability reports containing secrets. Remove API keys, certificates, passwords, browser data, registry exports, and other private information before sharing diagnostics.

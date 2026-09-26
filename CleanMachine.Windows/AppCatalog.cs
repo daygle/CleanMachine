@@ -583,9 +583,6 @@ public static class AppCatalog
     public static AppDefinition? Find(string id)
         => ById.TryGetValue(id, out var def) ? def : null;
 
-    public static IReadOnlyList<AppDefinition> ForGroup(string group)
-        => Definitions.Where(d => d.Group == group).ToArray();
-
     public static IReadOnlyList<string> Groups()
         => Definitions.Select(d => d.Group).Distinct().ToArray();
 }

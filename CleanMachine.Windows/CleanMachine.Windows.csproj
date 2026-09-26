@@ -38,10 +38,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>CleanMachine</AssemblyName>
     <!-- Stamp the assembly version from the release version (passed as
-         ApplicationDisplayVersion by the release workflow) so the unpackaged
-         installer build reports its true version in update checks; without this
-         the exe stays at the default 1.0.0.0 and update checks always offer
-         the latest release as an "update". -->
+         ApplicationDisplayVersion by the release workflow) so the built binary
+         reports its true version; without this it stays at the default
+         1.0.0.0. -->
     <Version Condition="'$(ApplicationDisplayVersion)' != ''">$(ApplicationDisplayVersion)</Version>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
@@ -50,7 +49,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Ship the icon/tile assets with the app (unpackaged + MSIX) so the in-app
+    <!-- Ship the icon/tile assets with the app (MSIX) so the in-app
          logo and the window title-bar icon resolve at runtime. -->
     <Content Include="Assets\**" Exclude="Assets\generate_icons.py;Assets\icon-master.svg" />
     <!-- Belt and braces: Remove always evaluates after Include, so these dev files
@@ -58,7 +57,7 @@
          by wildcard evaluation order. -->
     <Content Remove="Assets\generate_icons.py;Assets\icon-master.svg" />
     <!-- Also embed the sidebar mark in the assembly. Loose Content files can fail to
-         be laid down (or resolved) in unpackaged/installer builds, which showed the
+         be laid down (or resolved) in some layouts, which showed the
          sidebar logo blank; the embedded copy is always present, with the loose file
          kept as a fallback. -->
     <EmbeddedResource Include="Assets\AppLogo.png" />

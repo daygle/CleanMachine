@@ -134,7 +134,7 @@ public sealed class AppSettings
     public HashSet<string>? SystemMonitorCategories { get; set; }
 
     // The background agent has no standalone switch: it runs whenever a service
-    // that needs it is enabled (automatic update checks or automatic cleanup).
+    // that needs it is enabled (automatic cleanup).
     // Windows startup registration follows the same rule, so the app is present
     // while the window is closed. Derived, so it is never persisted.
     [JsonIgnore]

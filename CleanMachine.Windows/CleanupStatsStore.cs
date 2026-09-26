@@ -83,10 +83,6 @@ public sealed class CleanupStatsStore
         return (items, bytes);
     }
 
-    /// <summary>Items and bytes cleaned within the recent window.</summary>
-    public static async Task<(long Items, long Bytes)> RecentTotalsAsync(CancellationToken token = default)
-        => RecentTotals(await new CleanupStatsStore().LoadAsync(token));
-
     private static async Task SaveAsync(CleanupStatsFile stats, CancellationToken token)
     {
         var directory = Path.GetDirectoryName(FilePath)!;

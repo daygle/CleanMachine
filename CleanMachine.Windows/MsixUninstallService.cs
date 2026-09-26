@@ -7,9 +7,9 @@ namespace CleanMachine.Windows;
 /// <summary>Uninstalls the MSIX package from inside the app. Windows offers no
 /// uninstall hook for MSIX: Settings > Uninstall just removes the package, which
 /// left the self-heal desktop shortcut behind and silently destroyed the
-/// package-local data without ever asking. This mirrors what the .exe (Inno)
-/// uninstaller does - remove everything the package does not own (desktop
-/// shortcut, scheduled cleanup tasks, startup entry, staged update files),
+/// package-local data without ever asking. So the app does it itself - remove
+/// everything the package does not own (desktop shortcut, scheduled cleanup
+/// tasks, startup entry),
 /// optionally delete the data folder after the user was asked, and remove the
 /// package itself via a deferred helper, because Remove-AppxPackage refuses to
 /// run while the package's own processes are alive.</summary>
@@ -60,12 +60,12 @@ internal static class MsixUninstallService
 
         // 3. Scheduled cleanup tasks live in the real Task Scheduler (folder
         //    \CleanMachine\), outside the package. PowerShell because schtasks
-        //    cannot enumerate or delete by task folder - same approach as the .exe
-        //    uninstaller.
+        //    cannot enumerate or delete by task folder.
         Try(() => Process.Start(PowerShellInfo(
             "-NoProfile -ExecutionPolicy Bypass -Command \"Get-ScheduledTask -TaskPath '\\CleanMachine\\' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false\"")));
 
-        // 4. Staged update files the app dropped in %TEMP%.
+        // 4. Leftover scratch files under %TEMP%\CleanMachine. Nothing writes there
+        //    anymore, but older installs did, and %TEMP% outlives the app.
         Try(() =>
         {
             var temp = Path.Combine(Path.GetTempPath(), FolderName);

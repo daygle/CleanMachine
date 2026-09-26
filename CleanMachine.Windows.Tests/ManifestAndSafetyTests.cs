@@ -993,6 +993,57 @@ public sealed class ManifestAndSafetyTests
         Assert.True(offenders.Count == 0, "Removed features still referenced in markup: " + string.Join(", ", offenders));
     }
 
+    /// <summary>The removal left stale prose behind in three places at once: the
+    /// docs still promised an in-app updater and signed releases, and the release
+    /// workflow comments still described the retired self-signed sideload channel.
+    /// None of it breaks a build, so it rots silently - a user following SECURITY.md
+    /// would look for an updater that no longer exists. The retired secret name and
+    /// the retired phrases are pinned here.</summary>
+    [Fact]
+    public void RetiredChannelsAreNotAdvertisedInDocsOrWorkflows()
+    {
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
+
+        var files = new[]
+        {
+            Path.Combine(root!, "README.md"),
+            Path.Combine(root!, "RELEASE.md"),
+            Path.Combine(root!, "SECURITY.md"),
+            Path.Combine(root!, ".github", "workflows", "release-windows.yml"),
+            Path.Combine(root!, ".github", "workflows", "ci-windows.yml"),
+        };
+
+        // Phrases that only ever described the removed private/self-signed channel
+        // or the removed updater. "self-signed" on its own is still legitimate: the
+        // release workflow supports optional self-signing and says so.
+        var retired = new[]
+        {
+            "WINDOWS_SIGNING_CERTIFICATE",   // the retired sideload secrets
+            "in-app updater or the releases",
+            "shipped through signed releases",
+            "secure deletion",
+            "Secure Delete path selection",
+            "secure-delete overwrite",
+            "staged update files",
+            "Inno Setup",   // the retired installer toolchain (matched in full: a bare
+                            // "Inno" would false-positive on RecycleBinNotify...)
+        };
+
+        var offenders = new List<string>();
+        foreach (var file in files)
+        {
+            Assert.True(File.Exists(file), $"Expected file is missing: {file}");
+            var text = File.ReadAllText(file);
+            foreach (var phrase in retired)
+                if (text.Contains(phrase, StringComparison.OrdinalIgnoreCase))
+                    offenders.Add($"{Path.GetFileName(file)}: {phrase}");
+        }
+
+        Assert.True(offenders.Count == 0,
+            "Retired channels/features still described: " + string.Join(", ", offenders));
+    }
+
     /// <summary>schtasks writes the reason it refused a task to stderr. Keeping the
     /// first meaningful line is what turns "something went wrong" into a diagnosable
     /// failure - it is the whole reason this bug was catchable after the fact.</summary>

@@ -2,7 +2,7 @@ namespace CleanMachine.Windows;
 
 /// <summary>Reference-counted "a cleanup is running now" flag shared by every
 /// cleaning path: manual page cleans, Quick Clean, scheduled/idle/startup runs,
-/// browser-exit monitoring, Recycle Bin auto-empty, secure delete and drive wipe.
+/// browser-exit monitoring and Recycle Bin auto-empty.
 /// Each path wraps its work in <c>using CleaningActivity.Begin()</c>; overlapping
 /// cleans keep the state active until the last scope ends. <see cref="Changed"/>
 /// fires only on the 0-&gt;1 and 1-&gt;0 transitions, on whichever thread crosses
