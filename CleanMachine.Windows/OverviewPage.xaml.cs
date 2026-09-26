@@ -233,11 +233,16 @@ public sealed partial class OverviewPage : Page
         }
         catch (OperationCanceledException ex)
         {
-            UpdateStatusText.Text = ex.Message; // e.g. UAC declined - Update Now stays available
+            // e.g. UAC declined - Update Now stays available. The headline does not
+            // wrap, so it stays short and the full reason goes in the wrapped detail
+            // line beneath it, matching how a failed check is reported above.
+            UpdateStatusText.Text = "Update didn't start";
+            UpdateDetailText.Text = $"{ex.Message} CleanMachine {FormatVersion(UpdateService.CurrentVersion())} is installed.";
         }
         catch (Exception ex)
         {
-            UpdateStatusText.Text = $"Update failed: {ex.Message}";
+            UpdateStatusText.Text = "Update failed";
+            UpdateDetailText.Text = $"{ex.Message} CleanMachine {FormatVersion(UpdateService.CurrentVersion())} is installed.";
         }
         finally
         {

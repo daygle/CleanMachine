@@ -197,10 +197,13 @@ public sealed class UpdateService
                 // rollback that has nothing to roll back. The Updates page shows the
                 // message; the idle auto-installer leaves the update pending.
                 await _stateStore.MarkAsync("staged", packagePath, null, cancellationToken);
+                // Kept short on purpose: this is shown verbatim in the Overview banner's
+                // single-line headline, where a sentence and a half was truncated to
+                // "...would freeze and close Cl". The rationale above stays in the code
+                // and the page puts this in the wrapped detail line beneath the banner.
                 throw new OperationCanceledException(
-                    "Windows would not start the background update helper, and installing the " +
-                    "update from inside the running app would freeze and close CleanMachine. " +
-                    "The verified update is still staged - install it again to retry.");
+                    "Windows couldn't start the background update helper. " +
+                    "The update is still staged - install it again to retry.");
             }
             else
             {
