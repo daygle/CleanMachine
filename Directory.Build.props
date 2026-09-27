@@ -1,0 +1,31 @@
+<Project>
+
+  <!-- CleanMachine is a Windows-only WinUI 3 app, so every project here targets
+       net10.0-windows and `dotnet restore` refuses to run anywhere that is not
+       Windows:
+
+         error NETSDK1100: To build a project targeting Windows on this
+         operating system, set the EnableWindowsTargeting property to true.
+
+       The builds themselves still need a Windows host - the XAML compiler, the
+       MSIX packaging, and the tests that drive real scheduled tasks and the
+       registry all do - and every workflow that compiles or packages this
+       repository correctly runs on windows-latest. Nothing here loosens that.
+
+       This exists for restore alone, on a Linux runner, because that is what
+       GitHub's automatically generated "Automatic Dependency Submission (NuGet)"
+       workflow does: it shells out to `dotnet restore` on ubuntu in order to
+       read the dependency graph, and it cannot read a graph out of a project
+       that will not restore. The alternative was turning dependency submission
+       off, which would also switch off the NuGet dependency tracking that
+       produces Dependabot security alerts for these two package references.
+
+       Guarded on $(OS) so a Windows build is not touched at all: $(OS) is
+       Windows_NT there, the condition is false, and targeting a Windows SDK
+       from Windows is already the default behaviour. -->
+
+  <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+</Project>
