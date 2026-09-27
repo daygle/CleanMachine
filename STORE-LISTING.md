@@ -155,6 +155,60 @@ Tips that matter for certification:
 - Show real, populated lists. An empty-state screenshot reads as a broken app.
 - No certificate warnings, SmartScreen prompts, or debug windows in frame.
 
+## Supplemental fields
+
+All optional. Fill the two that earn their place, skip the rest.
+
+| Field | Do this |
+|---|---|
+| Short title | **Skip** - Xbox One only |
+| Voice title | **Skip** - Xbox/Kinect only |
+| **Short description** | **Fill it** - see below |
+| **Keywords** | **Fill it** - see below |
+| **Copyright and trademark info** | **Fill it** - one line |
+| Additional license terms | **Skip** unless you amended the Store's Standard Application License Terms |
+| Developed by | Already set to `daygle` - fine as-is |
+
+### Short description (270 characters or fewer)
+
+Shown at the top of the listing, so it does real work above the fold. Trimmed
+and assertive version of the long description:
+
+```text
+Review-first cleanup for Windows. Clear browser caches, temporary files, app
+leftovers and stale per-user registry entries. Everything is shown to you
+before anything is removed, and registry changes are backed up first.
+```
+
+232 characters.
+
+### Keywords
+
+Up to 7, each 40 characters or fewer, and no more than 21 separate words
+across all of them. Press Enter after each to add it.
+
+```text
+disk cleaner
+disk cleanup
+browser cache
+temp file cleanup
+storage cleaner
+registry cleaner
+junk file remover
+```
+
+16 words total, so it is inside the shared word budget.
+
+### Copyright and trademark info
+
+```text
+Copyright (c) 2026 CleanMachine contributors
+```
+
+Matches the `LICENSE` file, which is MIT. The Store supplies the default
+licence terms, so leave **Additional license terms** empty - that field is only
+for amending them, and MIT in the repo covers the source, not the Store EULA.
+
 ## Privacy policy URL
 
 Required. Publish [`PRIVACY.md`](PRIVACY.md) and point the Properties field at
