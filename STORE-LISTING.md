@@ -73,26 +73,38 @@ stay on your PC.
 
 ## Product features
 
-Enter these one per row (up to 20):
+Optional, but worth filling: it renders as a bulleted list under the title, so
+it is the part a customer actually scans. The form allows **up to 20**, which
+is a ceiling rather than a target - a list that long reads as noise. The nine
+below are the recommended set, ordered so the strongest selling point is first.
+
+**Recommended (enter these nine):**
 
 1. Review-first cleaning: every deletion is shown before it happens
-2. Browser cache cleaning for Chrome, Edge, Firefox, Brave, Opera and Vivaldi, across all profiles
+2. Browser cache cleaning for Chrome, Edge, Firefox, Brave, Opera and Vivaldi
 3. Temporary file, thumbnail, error report and internet cache cleanup
 4. Temp file cleanup for installed desktop and Microsoft Store apps
 5. Read-only per-user registry scanning, with a backup taken before any change
-6. One-click restore from the registry backup CleanMachine created
-7. "Clean All Safe Items" behind a single confirmation, with progress and cancel
-8. Automatic cleaning when a browser closes, when disk space runs low, at sign-in or when idle
-9. Recycle Bin auto-empty for items older than a chosen age
-10. Daily, weekly, monthly and at-logon schedules that run while the app is closed
-11. Startup program management: enable, disable and remove auto-start entries
-12. Installed app browser that hands off to each vendor's own uninstaller
-13. Activity log of every automated and manual cleanup run
-14. Lifetime and last-30-days cleanup statistics
-15. Exclude any folder from cleanup
-16. System tray support: start minimised, minimise or close to tray
-17. No advertising, no telemetry, no third-party analytics
+6. "Clean All Safe Items" behind a single confirmation, with progress and cancel
+7. Automatic cleaning when a browser closes, when disk space runs low, at sign-in or when idle
+8. Recycle Bin auto-empty for items older than a chosen age
+9. No advertising, no telemetry, no third-party analytics
+
+**Optional extras** - add any of these only if the list still looks short:
+
+10. One-click restore from the registry backup CleanMachine created
+11. Daily, weekly, monthly and at-logon schedules that run while the app is closed
+12. Startup program management: enable, disable and remove auto-start entries
+13. Installed app browser that hands off to each vendor's own uninstaller
+14. Activity log of every automated and manual cleanup run
+15. Lifetime and last-30-days cleanup statistics
+16. Exclude any folder from cleanup
+17. System tray support: start minimised, minimise or close to tray
 18. Runs in your own user account and never requests administrator rights
+
+Note the ordering intent: "review-first" and "no telemetry" are the two
+differentiators for a cleanup utility, so they lead and close the list rather
+than being buried among the feature inventory.
 
 ## Store logo (1:1 app tile icon)
 
