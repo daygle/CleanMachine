@@ -9,7 +9,7 @@ namespace CleanMachine.Windows;
 
 public sealed partial class AboutPage : Page
 {
-    private static readonly Brush IdleBrush = BrushFromHex("#00000000"); // fully transparent
+    private static readonly Brush IdleBrush = BrushFromHex("#000000", alpha: 0);
     private static readonly Brush HoverBrush = BrushFromHex("#F3F8F5");
     private static readonly Brush PressedBrush = BrushFromHex("#EAF4EE");
 
@@ -50,12 +50,19 @@ public sealed partial class AboutPage : Page
         return Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown";
     }
 
-    private static SolidColorBrush BrushFromHex(string hex)
+    private static SolidColorBrush BrushFromHex(string hex, byte alpha = 255)
+        => new(ColorFromHex(hex, alpha));
+
+    /// <summary>Mirrors MainWindow.ColorFromHex, which builds the color with an
+    /// object initializer because FromArgb has no three-argument overload - it
+    /// always takes alpha as the first argument.</summary>
+    private static global::Windows.UI.Color ColorFromHex(string hex, byte alpha) => new()
     {
-        var value = uint.Parse(hex.AsSpan(1), System.Globalization.NumberStyles.HexNumber);
-        return new SolidColorBrush(global::Windows.UI.Color.FromArgb(
-            (byte)(value >> 16), (byte)(value >> 8), (byte)value));
-    }
+        A = alpha,
+        R = Convert.ToByte(hex.Substring(1, 2), 16),
+        G = Convert.ToByte(hex.Substring(3, 2), 16),
+        B = Convert.ToByte(hex.Substring(5, 2), 16),
+    };
 
     /// <summary>Hover/press tint for the link rows. Attached on Loaded rather than
     /// in the constructor because the buttons are named in markup and only exist
