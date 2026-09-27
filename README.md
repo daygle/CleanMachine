@@ -47,9 +47,12 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 - Two-pane list/detail view: finding categories as expanders on the left, a summary header with eligible/selected/total chips on the right, and a per-finding drill-down showing its registry key, value, confidence and reason
 - Safe per-user cleanup with value-level deletion, so shared keys are never removed wholesale
 - Confidence-based filtering (minimum 70%) for review eligibility; Show All reveals ineligible findings when there are any (and is disabled with an explanation when there are none)
-- `.reg` backup export with validation of backup header integrity; cleaning refuses to run without a backup
+- `.reg` backup export, and cleaning refuses to run without a backup that is present and well-formed
+- Every exported restore point is recorded in the app's own provenance record (file, key root, time, and a hash of the bytes), and the Backups page labels a restore point from the key root that was recorded rather than from the file's name
+- Restore is refused for any file that is not in that record, or whose bytes changed after export, and a restore point's key root must be inside the same allow-list the cleaner uses for deletion
 - A Backups link showing how many backup files exist and opening the backup folder in Explorer
 - Explicit restore flow using Windows `reg.exe`; the list re-scans after a clean
+- Restore points written by a build from before provenance tracking, or copied in by hand, are listed so they can be seen and deleted, but are not restorable from the app
 
 ### Windows Cleanup
 - Two-pane list/detail view: categories on the left, a summary header with chips and a per-category file drill-down on the right
@@ -112,13 +115,15 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 
 ## Safety model
 
-All destructive workflows are review-first. Browser cleaning requires supported browsers to be closed; safe items (caches, sessions, crash reports) are selected by default, while destructive items (cookies, history, saved passwords) are opt-in behind a confirmation. Registry Care deletes only after a verified `.reg` backup and only from an allow-listed set of per-user paths. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. CleanMachine does not modify the protected Windows component store.
+All destructive workflows are review-first. Browser cleaning requires supported browsers to be closed; safe items (caches, sessions, crash reports) are selected by default, while destructive items (cookies, history, saved passwords) are opt-in behind a confirmation. Registry Care deletes only after a `.reg` backup that is present and well-formed, only from an allow-listed set of per-user paths, and only after re-checking that allow-list at the moment of deletion. Restoring a registry backup is bounded by the same allow-list, and only restore points the app recorded at export can be restored at all. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths, and every deletion path - including Recycle Bin auto-empty - checks the target is inside a trusted folder and is not a reparse point. Recycle Bin cleanup requires explicit confirmation. CleanMachine does not modify the protected Windows component store.
+
+Settings are treated as untrusted input on load: `settings.json` decides what gets deleted, so it is read with a size bound and every value is clamped back into range before anything acts on it. See [SECURITY.md](SECURITY.md) for what this does and does not protect against.
 
 "Clean All Safe Items" is bounded the same way: only non-destructive browser cache items, enabled Safe-risk Windows categories, application temp files, and registry findings passing the safety gate (with a mandatory backup) are included. Downloads, documents, Review/Advanced categories, and destructive browser items are never touched by it. Quick Clean is bounded the same way, with one deliberate exception: the Recycle Bin can be opted into per user choice in its picker, and ticking it there is the confirmation its Review risk requires.
 
 Startup Apps changes affect only auto-start entries, never the programs themselves. Installed Apps uninstalls run the vendor's own uninstaller; CleanMachine does not delete other programs' files.
 
-Registry Care scans read-only and does not delete registry entries. Selected high-confidence low-risk findings can produce a real current-user uninstall-key `.reg` export; restore is explicit and uses Windows `reg.exe`.
+Registry Care **scanning** is read-only, but cleaning is not: Registry Care deletes registry keys and values. What it deletes is bounded three times over - only current-user (HKCU) locations, only keys in a fixed allow-list, and only findings that pass a low-risk + confidence gate - and a matching `.reg` export is created and verified first, so a clean cannot run without a restore point. Restoring one is explicit, uses Windows `reg.exe`, and is limited to restore points the app itself recorded.
 
 CleanMachine ships no secure-erase tool and no drive wiper. Those were removed
 because they are the features most likely to draw certification scrutiny on a
@@ -153,9 +158,18 @@ capability justification.
 
 ### Uninstalling and your data
 
-CleanMachine keeps its per-user data in `%LOCALAPPDATA%\CleanMachine` (settings, cleanup
-statistics, activity history, and Registry Care `.reg` backups) so a
-reinstall picks up where you left off. Uninstalling from **Settings > Uninstall
+CleanMachine keeps its per-user data in a single folder - settings, cleanup
+statistics, activity history, the Registry Care provenance record, and `.reg`
+restore points - so a reinstall picks up where you left off. On a Store (MSIX)
+install that folder is `%USERPROFILE%\CleanMachine`: the package-local
+`%LOCALAPPDATA%` copy is deleted by Windows at uninstall without asking, so the
+durable location is deliberately outside every known folder the app container
+redirects. Older builds, and non-MSIX installs, use `%LOCALAPPDATA%\CleanMachine`
+and are migrated across on first launch. If neither is writable, Registry Care
+exports fall back to `%TEMP%\CleanMachine\Backups` - restore points stay
+restorable there, but the settings and history do not move.
+
+Uninstalling from **Settings > Uninstall
 CleanMachine...** inside the app closes the app, removes the
 startup entry and scheduled cleanup tasks, sweeps away a desktop shortcut the app may
 have created itself, and then asks whether to also delete that data folder; the
@@ -167,5 +181,5 @@ inside the app: Windows' own MSIX uninstall cannot ask first and used to leave t
 shortcut behind (a package has no uninstall hook), so the in-app flow confirms, offers the
 same keep/delete choice for the data (keeping is the default), removes the desktop
 shortcut, scheduled cleanup tasks, and startup entry, and then removes the package.
-App data lives in the same `%LOCALAPPDATA%\CleanMachine` folder, so keeping the data means a
+App data lives in the same durable per-user folder described above, so keeping the data means a
 reinstall picks up where you left off - and uninstalling from Windows Settings keeps it too.

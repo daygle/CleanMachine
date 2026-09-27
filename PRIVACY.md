@@ -10,22 +10,38 @@ network connections. Everything it stores stays on your own PC.
 
 ## What CleanMachine stores
 
-CleanMachine keeps the following on your computer, in
-`%LOCALAPPDATA%\CleanMachine`:
+CleanMachine keeps the following on your computer, in a single per-user folder:
 
 - **Settings** - your preferences, chosen exclusions, and enabled cleanup
   categories.
 - **Cleanup statistics** - counts and sizes of what has been cleaned.
 - **Activity history** - a log of each cleanup run, stored locally.
-- **Registry backups** - `.reg` files CleanMachine writes before it removes any
+- **Registry restore points** - `.reg` files CleanMachine writes before it removes any
   registry entry, so you can restore what it changed.
+- **A record of those restore points** - for each one, the file name, the registry
+  key it covers, when it was written, and a hash of its contents. This is what
+  lets the app tell a restore point it created from any other `.reg` file, and
+  refuse to import the latter.
 
-This data is written only to that folder. It is never uploaded, and nothing in
+**Where that folder is.** On a Microsoft Store (MSIX) install it is
+`%USERPROFILE%\CleanMachine`. That is deliberate: the package-local
+`%LOCALAPPDATA%` copy is deleted by Windows at uninstall without asking, so the
+durable location sits outside every known folder the app container redirects.
+Older builds, and non-MSIX installs, use `%LOCALAPPDATA%\CleanMachine`; existing
+data is copied to the durable folder the first time you launch an updated build.
+If neither location is writable - an unusually locked-down profile, for example -
+Registry Care exports fall back to `%TEMP%\CleanMachine\Backups`; your settings
+and history stay where they were.
+
+This data is written only to those folders. It is never uploaded, and nothing in
 the app opens a network connection.
 
 ## What CleanMachine does not do
 
 - It does not collect personal, financial, or usage information.
+- It does not run anything in the background that reports to anyone. Automatic
+  cleaning, scheduled cleanup, and the background agent all work entirely on
+  your own machine.
 - It does not transmit anything to Microsoft or to any third party.
 - It does not contain advertising, telemetry, or analytics of any kind.
 - It does not read or modify files belonging to other applications except the
@@ -56,8 +72,8 @@ execute code, to access the network, or to elevate privileges.
 
 Uninstalling from Windows Settings leaves your data folder in place so a
 reinstall picks up where you left off. CleanMachine's own **Settings >
-Uninstall CleanMachine** flow asks first and offers to delete
-`%LOCALAPPDATA%\CleanMachine` as well. The default answer is to keep it.
+Uninstall CleanMachine** flow asks first and offers to delete the data folder
+described above as well. The default answer is to keep it.
 
 ## Children
 

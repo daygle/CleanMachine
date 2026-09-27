@@ -1,7 +1,6 @@
-# Dependabot keeps GitHub Actions version pins current so workflows never
-# drift behind runner deprecations (e.g. the Node 20 -> Node 24 transition).
-# Updates arrive as PRs grouped by ecosystem; minor/patch action bumps are
-# batched weekly to keep noise low.
+# Dependabot keeps both the workflow action pins and the NuGet package
+# references current, so neither drifts behind a security patch or a runner
+# deprecation. Updates arrive as PRs; nothing here merges itself.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -17,4 +16,21 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    open-pull-requests-limit: 5
+
+  # The workflows pin actions to commit SHAs rather than tags, so a moved tag
+  # cannot change what runs in CI. Dependabot understands that form and updates
+  # both the SHA and the trailing "# vX.Y" comment, so pinning does not turn
+  # into drift nobody maintains.
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      nuget:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
     open-pull-requests-limit: 5

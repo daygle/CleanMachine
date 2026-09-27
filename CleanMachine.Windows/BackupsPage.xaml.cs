@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -67,15 +66,17 @@ public sealed partial class BackupsPage : Page
         var info = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         info.Children.Add(new TextBlock
         {
-            Text = BackupScope(backup.FilePath),
+            Text = BackupScope(backup),
             FontSize = 13,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
             TextTrimming = TextTrimming.CharacterEllipsis
         });
+        var details = $"{backup.CreatedAt.ToLocalTime():MMM d, yyyy - h:mm tt}   \u2022   {AppNotifications.FormatBytes(size)}";
+        if (!backup.Verified) details += "   \u2022   not restorable";
         info.Children.Add(new TextBlock
         {
-            Text = $"{backup.CreatedAt.ToLocalTime():MMM d, yyyy - h:mm tt}   \u2022   {AppNotifications.FormatBytes(size)}",
+            Text = details,
             FontSize = 11,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
         });
@@ -98,6 +99,13 @@ public sealed partial class BackupsPage : Page
         });
         var restoreButton = (Button)actions.Children[0];
         var deleteButton = (Button)actions.Children[1];
+        // Only a file the app can prove it exported is restorable. Offering the
+        // button on an unrecognized file and failing at the last moment would be
+        // worse than not offering it at all.
+        restoreButton.IsEnabled = backup.Verified;
+        if (!backup.Verified)
+            ToolTipService.SetToolTip(restoreButton,
+                "This file is not a restore point CleanMachine created, so it cannot be imported.");
         restoreButton.Click += async (_, _) => await RestoreBackupAsync(backup);
         deleteButton.Click += async (_, _) => await DeleteBackupAsync(backup);
         Grid.SetColumn(actions, 2);
@@ -122,10 +130,18 @@ public sealed partial class BackupsPage : Page
 
     private async Task RestoreBackupAsync(RegistryBackup backup)
     {
+        // Defence in depth: RestoreBackupAsync enforces this too, but a stale
+        // card must not be able to start an import the user was never offered.
+        if (!backup.Verified)
+        {
+            FooterText.Text = "This file is not a restore point CleanMachine created, so it cannot be restored from here.";
+            return;
+        }
+
         var confirm = new ContentDialog
         {
             Title = "Restore registry backup?",
-            Content = $"'{Path.GetFileName(backup.FilePath)}' will be re-imported into the current user's registry (HKCU), restoring the values it saved ({backup.CreatedAt.ToLocalTime():MMM d, yyyy - h:mm tt}). Continue?",
+            Content = $"'{Path.GetFileName(backup.FilePath)}' will be re-imported into the current user's registry (HKCU), restoring the values it saved from HKCU\\{backup.KeyRoot} ({backup.CreatedAt.ToLocalTime():MMM d, yyyy - h:mm tt}). Continue?",
             PrimaryButtonText = "Restore",
             CloseButtonText = "Cancel",
             XamlRoot = XamlRoot
@@ -191,20 +207,35 @@ public sealed partial class BackupsPage : Page
         }
     }
 
-    /// <summary>A readable label for one backup file, decoded from the name
-    /// CleanMachine generates (registry-&lt;scope&gt;-&lt;stamp&gt;.reg).</summary>
-    private static string BackupScope(string filePath)
+    private const string UninstallRoot = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+    private const string ClassesRoot = @"Software\Classes";
+
+    /// <summary>A readable label for one backup file.
+    /// <para>
+    /// For a provenanced restore point this is decoded from the registry key root
+    /// the app recorded when it exported the file. It used to be decoded from the
+    /// file's <i>name</i>, which is the single thing about a planted file its
+    /// writer fully controls: a file called
+    /// <c>registry-uninstall-20991231-235959.reg</c> dropped into a backups folder
+    /// was displayed as a real "Uninstall entries" restore point dated years from
+    /// now, and the user was invited to import it. A file the app cannot account
+    /// for now says so instead of borrowing a label it did not earn.
+    /// </para></summary>
+    private static string BackupScope(RegistryBackup backup)
     {
-        var name = Path.GetFileNameWithoutExtension(filePath);
-        var match = Regex.Match(name, @"^(?<core>.+)-(\d{8}-\d{6})$");
-        var core = match.Success ? match.Groups["core"].Value : name;
-        if (core.StartsWith("registry-classes-", StringComparison.OrdinalIgnoreCase))
-            return "File association: ." + core["registry-classes-".Length..];
-        if (core.Equals("registry-uninstall", StringComparison.OrdinalIgnoreCase))
+        if (!backup.Verified || string.IsNullOrWhiteSpace(backup.KeyRoot))
+            return "Unrecognized file";
+
+        var root = backup.KeyRoot;
+        if (root.Equals(UninstallRoot, StringComparison.OrdinalIgnoreCase))
             return "Uninstall entries";
-        if (core.StartsWith("registry-", StringComparison.OrdinalIgnoreCase))
-            return ToWords(core["registry-".Length..]);
-        return name;
+        if (root.StartsWith(ClassesRoot + @"\.", StringComparison.OrdinalIgnoreCase))
+        {
+            var extension = root[(ClassesRoot.Length + 2)..];
+            return extension.Contains('\\') ? "Registry entries" : "File association: ." + extension;
+        }
+        var leaf = root[(root.LastIndexOf('\\') + 1)..];
+        return string.IsNullOrEmpty(leaf) ? "Registry entries" : ToWords(leaf);
     }
 
     private static string ToWords(string value) => string.Join(' ',

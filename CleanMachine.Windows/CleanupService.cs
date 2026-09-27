@@ -4,7 +4,19 @@ namespace CleanMachine.Windows;
 
 public sealed record CleanupResult(int ItemsRemoved, long BytesRecovered);
 public sealed record RegistryFinding(string Hive, string Path, string Reason, bool LowRisk, int Confidence = 50, string Category = "Other", string? ValueName = null);
-public sealed record RegistryBackup(string FilePath, DateTimeOffset CreatedAt);
+/// <param name="FilePath">Where the .reg file is.</param>
+/// <param name="CreatedAt">When it was written (the export time when provenance
+/// confirms it, otherwise the file's last-write time).</param>
+/// <param name="KeyRoot">The HKCU-relative registry root the file holds, as
+/// recorded at export. Empty when the file is not provenanced.</param>
+/// <param name="Verified">True only when <see cref="BackupProvenance"/> has a
+/// record of this file whose recorded hash still matches its bytes. A restore
+/// point that is not verified can be listed and deleted, never imported.</param>
+public sealed record RegistryBackup(
+    string FilePath,
+    DateTimeOffset CreatedAt,
+    string KeyRoot = "",
+    bool Verified = false);
 public sealed record BrowserCleanupTarget(string Browser, string Category, string Path, long Bytes, bool Selected);
 
 public sealed class CleanupService

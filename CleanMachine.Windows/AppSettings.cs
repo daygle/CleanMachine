@@ -193,21 +193,148 @@ public sealed class AppSettings
     private static string FilePath => Path.Combine(
         AppDataPaths.Root, "settings.json");
 
+    // settings.json decides what this app is allowed to delete: which categories
+    // run, which paths are excluded, which browsers are monitored, and whether a
+    // schedule shuts the machine down afterwards. It is a plain file in the user's
+    // own profile, so it is not a secret and cannot be made one - anything running
+    // as this user could edit it directly. What can be done is to stop a bad or
+    // hostile file from doing anything the user never configured: the values below
+    // bound what is read, and Sanitize clamps every value that later reaches a
+    // deletion, a command line, or a task scheduler call.
+    private const long MaxSettingsBytes = 4L * 1024 * 1024;
+    private const int MaxCollectionEntries = 4096;
+    private const int MaxEntryLength = 1024;
+    private const int MaxSchedules = 64;
+
     public static async Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            if (File.Exists(FilePath))
+            // Bounded read: without this a large settings.json turns opening the
+            // app into an unbounded allocation.
+            if (File.Exists(FilePath) && new FileInfo(FilePath).Length <= MaxSettingsBytes)
             {
                 await using var stream = File.OpenRead(FilePath);
-                return await JsonSerializer.DeserializeAsync<AppSettings>(stream, cancellationToken: cancellationToken)
-                    ?? new AppSettings();
+                var loaded = await JsonSerializer.DeserializeAsync<AppSettings>(
+                    stream, cancellationToken: cancellationToken);
+                if (loaded is not null) return loaded.Sanitize();
             }
         }
         catch (IOException) { }
         catch (JsonException) { }
         return new AppSettings();
     }
+
+    /// <summary>Puts everything read from disk back into the range the app can
+    /// actually act on, and replaces anything structurally wrong with the
+    /// default. Called on every load, so a hand-edited or corrupted file degrades
+    /// to "settings were not understood" rather than to an out-of-range hour, an
+    /// unbounded exclusion list, or a schedule id that would be rejected - or
+    /// worse, accepted - by the command-line builders.
+    /// <para>
+    /// This is hardening, not authentication: it does not stop a process already
+    /// running as this user from choosing what gets cleaned. It makes the file
+    /// unremarkable input to the rest of the app instead of a channel into it.
+    /// </para></summary>
+    internal AppSettings Sanitize()
+    {
+        ProtectedBrowsers = CapSet(ProtectedBrowsers, ["chrome", "edge", "firefox"]);
+        ExcludedPaths = CapSet(ExcludedPaths, []);
+        DisabledCleanupCategories = CapSet(DisabledCleanupCategories, []);
+        EnabledCleanupCategories = CapSet(EnabledCleanupCategories, []);
+        QuickCleanBrowsers = CapSet(QuickCleanBrowsers, ["chrome", "edge", "firefox"]);
+        QuickCleanWindowsCategories = CapSet(QuickCleanWindowsCategories, null);
+        QuickCleanRegistryCategories = CapSet(QuickCleanRegistryCategories, null);
+        QuickCleanApps = CapSet(QuickCleanApps, null);
+        StartupCleanCategories = CapSet(StartupCleanCategories, null);
+        IdleCleanCategories = CapSet(IdleCleanCategories, null);
+        SystemMonitorCategories = CapSet(SystemMonitorCategories, null);
+
+        if (BrowserCleanupSelection is null || BrowserCleanupSelection.Count > MaxCollectionEntries)
+            BrowserCleanupSelection = [];
+
+        // Thresholds and intervals. Each has a real bound: a negative or absurd
+        // free-space value would make the low-disk monitor fire constantly or
+        // never, and an absurd interval would leave a scheduled task unusable.
+        if (double.IsNaN(SystemMonitorFreeSpaceGb) || double.IsInfinity(SystemMonitorFreeSpaceGb))
+            SystemMonitorFreeSpaceGb = 1.0;
+        SystemMonitorFreeSpaceGb = Math.Clamp(SystemMonitorFreeSpaceGb, 0.01, 1_000_000);
+        if (SystemMonitorFreeSpaceUnit is not ("MB" or "GB")) SystemMonitorFreeSpaceUnit = "GB";
+        if (!Enum.IsDefined(SystemMonitorAction)) SystemMonitorAction = ExitAction.CleanAndNotify;
+        if (IdleCleanMinutes <= 0) IdleCleanMinutes = 15;
+        else IdleCleanMinutes = Math.Clamp(IdleCleanMinutes, 1, 1440);
+        if (RecycleBinAutoEmptyDays <= 0) RecycleBinAutoEmptyDays = 30;
+        else RecycleBinAutoEmptyDays = Math.Clamp(RecycleBinAutoEmptyDays, 1, 3650);
+
+        if (BrowserMonitors is null)
+        {
+            BrowserMonitors = [];
+        }
+        else
+        {
+            BrowserMonitors = BrowserMonitors
+                .Where(m => m is not null && !string.IsNullOrWhiteSpace(m.Browser))
+                .Take(MaxCollectionEntries)
+                .ToList();
+            foreach (var monitor in BrowserMonitors)
+            {
+                if (!Enum.IsDefined(monitor.AfterExit)) monitor.AfterExit = ExitAction.CleanAndNotify;
+                monitor.Items = monitor.Items is null
+                    ? null
+                    : monitor.Items.Where(id => !string.IsNullOrWhiteSpace(id) && id.Length <= MaxEntryLength)
+                        .Take(MaxCollectionEntries)
+                        .ToHashSet();
+            }
+        }
+
+        if (Schedules is null)
+        {
+            Schedules = [];
+        }
+        else
+        {
+            // A schedule id is embedded in a task name and in a cmd.exe command
+            // line, so it is filtered with the same rule the builders enforce
+            // rather than trusted from the file.
+            Schedules = Schedules
+                .Where(s => s is not null && ScheduledTask.IsValidScheduleId(s.Id))
+                .Take(MaxSchedules)
+                .Select(s =>
+                {
+                    s.Hour = Math.Clamp(s.Hour, 0, 23);
+                    s.Minute = Math.Clamp(s.Minute, 0, 59);
+                    s.DayOfMonth = Math.Clamp(s.DayOfMonth, 1, 31);
+                    if (!Enum.IsDefined(s.Trigger)) s.Trigger = ScheduleTrigger.Weekly;
+                    if (!Enum.IsDefined(s.AfterClean)) s.AfterClean = ScheduleAction.Nothing;
+                    s.WindowsCategoryIds = CapList(s.WindowsCategoryIds);
+                    s.RegistryCategories = CapList(s.RegistryCategories);
+                    if (string.IsNullOrWhiteSpace(s.Name) || s.Name.Length > 200) s.Name = "Scheduled cleanup";
+                    return s;
+                })
+                .ToList();
+        }
+
+        return this;
+    }
+
+    /// <summary>Bounds a set of ids, falling back to the default when the stored
+    /// one is absent or implausibly large. Entries are capped in length because
+    /// they end up compared against and matched to catalog ids and paths.</summary>
+    private static HashSet<string>? CapSet(HashSet<string>? stored, HashSet<string>? fallback)
+    {
+        if (stored is null || stored.Count > MaxCollectionEntries) return fallback;
+        return stored
+            .Where(value => !string.IsNullOrWhiteSpace(value) && value.Length <= MaxEntryLength)
+            .Take(MaxCollectionEntries)
+            .ToHashSet();
+    }
+
+    private static List<string> CapList(List<string>? stored)
+        => stored is null || stored.Count > MaxCollectionEntries
+            ? []
+            : stored.Where(value => !string.IsNullOrWhiteSpace(value) && value.Length <= MaxEntryLength)
+                    .Take(MaxCollectionEntries)
+                    .ToList();
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {

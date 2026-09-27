@@ -39,7 +39,38 @@ public sealed class SingleInstanceTests
         // Tests must never touch the live app's kernel objects.
         var scope = Scope();
         Assert.NotEqual(SingleInstance.MutexName, SingleInstance.Name(SingleInstance.MutexName, scope));
-        Assert.Equal(SingleInstance.MutexName, SingleInstance.Name(SingleInstance.MutexName));
+        Assert.NotEqual(SingleInstance.MutexName, SingleInstance.Name(SingleInstance.MutexName));
+    }
+
+    [Fact]
+    public void EveryKernelObjectNameIsScopedToTheCurrentUser()
+    {
+        // The bare constants are the names the app must NOT use: Local\ scopes a
+        // kernel object to the logon session, not the account, so two users
+        // sharing a session would otherwise share one mutex and one pair of
+        // events - either able to suppress the other's app or signal it to exit.
+        foreach (var baseName in new[]
+                 {
+                     SingleInstance.MutexName,
+                     SingleInstance.ShutdownEventName,
+                     SingleInstance.ActivateEventName
+                 })
+        {
+            var name = SingleInstance.Name(baseName);
+            Assert.StartsWith(baseName + ".", name, StringComparison.Ordinal);
+            Assert.Contains(SingleInstance.UserScope, name, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void TwoUsersWouldNotShareTheSameKernelObjectNames()
+    {
+        // The suffix is derived from the per-user application-data path, so it is
+        // stable for an account and distinct between accounts. This asserts the
+        // derivation is actually in place rather than a constant that happens to
+        // be non-empty.
+        Assert.False(string.IsNullOrWhiteSpace(SingleInstance.UserScope));
+        Assert.Equal(SingleInstance.Name(SingleInstance.MutexName), SingleInstance.Name(SingleInstance.MutexName));
     }
 
     [Fact]

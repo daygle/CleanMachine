@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 
 namespace CleanMachine.Windows;
@@ -28,10 +30,46 @@ public static class SingleInstance
     /// falling back to a force kill.</summary>
     public static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(10);
 
-    /// <summary>The kernel object name for <paramref name="baseName"/>, optionally
-    /// suffixed with a test scope so unit tests never touch the live app's objects.</summary>
-    public static string Name(string baseName, string? scope = null) =>
-        scope is null ? baseName : $"{baseName}.{scope}";
+    /// <summary>A stable suffix identifying the current user, appended to every
+    /// kernel object name.
+    /// <para>
+    /// <c>Local\</c> scopes a name to the logon session, not to the account, so
+    /// two people sharing a session (RDP, a shared or family machine) would
+    /// otherwise share one mutex and one pair of events: either could suppress
+    /// the other's app from launching, and either could signal it to exit. A
+    /// per-user suffix removes that.
+    /// </para>
+    /// <para>
+    /// This is deliberately described as what it is and no more. It stops one
+    /// account from interfering with another's, not a process impersonating this
+    /// user: anything running as this user can read the same folder path, derive
+    /// the same suffix, and signal these objects. Constraining that further needs
+    /// an explicit DACL on the objects, which is a larger change than this fix
+    /// claims to be.</para></summary>
+    internal static string UserScope { get; } = ComputeUserScope();
+
+    /// <summary>The kernel object name for <paramref name="baseName"/>, scoped to
+    /// the current user and optionally to a test scope so unit tests never touch
+    /// the live app's objects.
+    /// <para>
+    /// Every caller must go through here rather than using the bare constants:
+    /// the unscoped name is the one the app must not use.</para></summary>
+    public static string Name(string baseName, string? scope = null)
+    {
+        var scoped = $"{baseName}.{UserScope}";
+        return scope is null ? scoped : $"{scoped}.{scope}";
+    }
+
+    private static string ComputeUserScope()
+    {
+        // The per-user application-data path is stable for the account, and -
+        // unlike a user name - survives the account being renamed. It is hashed
+        // only so a filesystem path does not end up spelled out in a globally
+        // visible kernel object name.
+        var perUser = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(perUser)) return "0";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(perUser)))[..16];
+    }
 
     /// <summary>Acquires the single-instance mutex. Returns null when another GUI
     /// instance is already running (the caller should activate that instance and
@@ -64,7 +102,7 @@ public static class SingleInstance
     {
         try
         {
-            using var handle = EventWaitHandle.OpenExisting(ShutdownEventName);
+            using var handle = EventWaitHandle.OpenExisting(Name(ShutdownEventName));
             handle.Set();
         }
         catch
@@ -83,7 +121,7 @@ public static class SingleInstance
     {
         try
         {
-            using var handle = EventWaitHandle.OpenExisting(ActivateEventName);
+            using var handle = EventWaitHandle.OpenExisting(Name(ActivateEventName));
             handle.Set();
         }
         catch { /* no instance to activate */ }

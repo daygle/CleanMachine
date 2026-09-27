@@ -124,11 +124,20 @@ public static class ScheduledTask
         => schedule.WindowsCategoryIds.Count > 0 || schedule.CleanBrowserCache
            || schedule.CleanAppTempFiles || schedule.RegistryCategories.Count > 0;
 
+    /// <summary>Whether a schedule id is built only from characters that are safe
+    /// to embed in a task name and in a <c>cmd.exe</c> command line.
+    /// <para>
+    /// Exposed so that settings loaded from disk can be filtered with exactly the
+    /// rule the command builders enforce, rather than a second, looser copy of it
+    /// that could drift.</para></summary>
+    internal static bool IsValidScheduleId(string? scheduleId)
+        => !string.IsNullOrWhiteSpace(scheduleId)
+           && scheduleId.Length <= 64
+           && scheduleId.All(c => char.IsLetterOrDigit(c) || c is '-' or '_');
+
     private static void ValidateScheduleId(string scheduleId)
     {
-        if (string.IsNullOrWhiteSpace(scheduleId)
-            || scheduleId.Length > 64
-            || scheduleId.Any(c => !(char.IsLetterOrDigit(c) || c is '-' or '_')))
+        if (!IsValidScheduleId(scheduleId))
             throw new ArgumentException("Schedule id contains unsupported characters.", nameof(scheduleId));
     }
 

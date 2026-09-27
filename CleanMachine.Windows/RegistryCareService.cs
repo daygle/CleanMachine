@@ -88,6 +88,46 @@ public sealed class RegistryCareService
         return false;
     }
 
+    /// <summary>Whether a recorded restore point covers a registry root this app is
+    /// allowed to touch at all.
+    /// <para>
+    /// Restore and delete do not deserve different rules, and until provenance
+    /// existed they got them: deletion is gated by an allow-list that is
+    /// re-checked at the moment of the write, while restore handed any
+    /// <c>.reg</c> file in a backups folder straight to <c>reg import</c>, which
+    /// applies every key and value in the file. A restore can therefore write
+    /// exactly what the cleaner refuses to delete, so it is bounded by the same
+    /// roots.
+    /// </para>
+    /// <para>
+    /// It is deliberately a little wider than <see cref="IsDeletablePath"/>, in two
+    /// respects that follow from what a restore actually is. The whole Uninstall
+    /// root is exported as one restore point, so the root itself has to be an
+    /// acceptable scope even though it is never an acceptable deletion target;
+    /// and a restore writes values, not keys, so anything beneath an allowed root
+    /// is within the area the cleaner already operates in.
+    /// </para>
+    /// </summary>
+    internal static bool IsRestorableScope(string? keyRoot)
+    {
+        if (string.IsNullOrWhiteSpace(keyRoot) || keyRoot.Length > 500) return false;
+        if (keyRoot.Contains('"')) return false;
+
+        foreach (var root in AllowedCleanupRoots)
+        {
+            var trimmed = root.TrimEnd('\\');
+            if (keyRoot.Equals(trimmed, StringComparison.OrdinalIgnoreCase)) return true;
+            if (keyRoot.StartsWith(trimmed + "\\", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        // Mirrors the per-user extension rule in IsDeletablePath: the per-user
+        // <c>Software\\Classes\\.&lt;ext&gt;</c> key and nothing below it.
+        if (keyRoot.StartsWith(ClassesRoot + @"\.", StringComparison.OrdinalIgnoreCase))
+            return !keyRoot[(ClassesRoot.Length + 2)..].Contains('\\');
+
+        return false;
+    }
+
     /// <summary>Whether a finding passes the safety gate for actual deletion.</summary>
     public static bool IsCleanable(RegistryFinding finding)
         => finding.LowRisk && finding.Confidence >= 70
@@ -327,18 +367,44 @@ public sealed class RegistryCareService
     /// read. CreatedAt comes from the file's last-write time, which matches the
     /// stamp in its name.</summary>
     public static IReadOnlyList<RegistryBackup> ListBackups()
-        => BackupDirectories
-            .SelectMany(ListBackups)
+    {
+        // The provenance record is read once: matching it hashes every candidate
+        // file, and this walks up to three directories.
+        var provenance = BackupProvenance.Load();
+        return BackupDirectories
+            .SelectMany(directory => ListBackups(directory, provenance))
             .OrderByDescending(b => b.CreatedAt)
             .ToList();
+    }
 
     internal static IReadOnlyList<RegistryBackup> ListBackups(string directory)
+        => ListBackups(directory, []);
+
+    /// <summary>Lists the <c>.reg</c> files in one backup directory, marking which of
+    /// them this app can prove it wrote.
+    /// <para>
+    /// An unprovenanced file is still listed: the user should be able to see that
+    /// it exists and delete it. It simply carries no key scope, is not restorable,
+    /// and must not be given a friendly "this is your Uninstall entries backup"
+    /// label derived from its name - the name is the one thing about a planted
+    /// file its writer fully controls.</para>
+    /// </summary>
+    internal static IReadOnlyList<RegistryBackup> ListBackups(
+        string directory, IReadOnlyList<BackupProvenanceEntry> provenance)
     {
         try
         {
             if (!Directory.Exists(directory)) return [];
             return Directory.GetFiles(directory, "*.reg")
-                .Select(p => new RegistryBackup(p, new DateTimeOffset(File.GetLastWriteTimeUtc(p))))
+                .Select(p =>
+                {
+                    var match = BackupProvenance.Match(p, provenance);
+                    return new RegistryBackup(
+                        p,
+                        match?.CreatedAtUtc ?? new DateTimeOffset(File.GetLastWriteTimeUtc(p)),
+                        match?.KeyRoot ?? string.Empty,
+                        match is not null);
+                })
                 .OrderByDescending(b => b.CreatedAt)
                 .ToList();
         }
@@ -460,6 +526,11 @@ public sealed class RegistryCareService
                 continue;
             }
 
+            // Record what reg.exe actually wrote, in whichever directory it managed
+            // to write it, before anything else can get at the bytes. Without this
+            // the file is just a .reg in a folder, which is not evidence of anything.
+            BackupProvenance.Record(target, keyPath, backup.CreatedAt);
+
             // Prefer the app's own folder when it can also hold the file, so the
             // Backups page has one obvious place to look.
             if (!string.Equals(target, filePath, StringComparison.OrdinalIgnoreCase))
@@ -467,7 +538,8 @@ public sealed class RegistryCareService
                 try
                 {
                     File.Copy(target, filePath, overwrite: true);
-                    return new RegistryBackup(filePath, backup.CreatedAt);
+                    BackupProvenance.Record(filePath, keyPath, backup.CreatedAt);
+                    return backup with { FilePath = filePath, KeyRoot = keyPath, Verified = true };
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -476,7 +548,7 @@ public sealed class RegistryCareService
                     // layout, and ListBackups reads every directory anyway.
                 }
             }
-            return backup;
+            return backup with { KeyRoot = keyPath, Verified = true };
         }
 
         throw new InvalidOperationException(
@@ -575,6 +647,25 @@ public sealed class RegistryCareService
             throw new InvalidDataException("The registry backup is missing, empty, or invalid.");
         if (!backup.FilePath.EndsWith(".reg", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Only .reg file backups can be restored through the registry importer.");
+
+        // Provenance gate. A .reg file is a script, and the backup directories
+        // include %TEMP%, so a file that merely looks like a restore point is
+        // exactly the thing an attacker would plant. Only bytes this app exported,
+        // still hashing to what it recorded, may be imported.
+        var match = BackupProvenance.Match(backup.FilePath, BackupProvenance.Load())
+            ?? throw new InvalidDataException(
+                "This file is not a restore point CleanMachine created: it is not in the app's own "
+                + "record of what it exported, or its contents have changed since. Nothing was imported. "
+                + "Restore points written by an older version of the app, or copied in by hand, are no "
+                + "longer restorable from here - open the file with regedit directly if you trust it.");
+
+        // Scope gate: the recorded key root must be one the cleaner is allowed to
+        // touch at all. Restore writes whatever the file contains, so it gets the
+        // same allow-list as deletion rather than a wider one.
+        if (!IsRestorableScope(match.KeyRoot))
+            throw new InvalidDataException(
+                $"This restore point covers HKCU\\{match.KeyRoot}, which is outside the registry areas "
+                + "CleanMachine backs up. Nothing was imported.");
 
         var psi = new ProcessStartInfo("reg.exe")
         {

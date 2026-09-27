@@ -16,7 +16,74 @@ public sealed class ManifestAndSafetyTests
     public void InvalidAndProtectedPathsAreRejected()
     {
         Assert.True(NativeSafety.IsProtectedPath(Environment.GetFolderPath(Environment.SpecialFolder.Windows)));
-        Assert.False(NativeSafety.IsSafeFileCandidate(string.Empty));
+        // The trusted root is a required argument: with it optional, this call
+        // would mean "delete anything that is not in a system folder".
+        Assert.False(NativeSafety.IsSafeFileCandidate(string.Empty, Path.GetTempPath()));
+    }
+
+    [Fact]
+    public void ProtectedPathsCoverProgramFilesAndProgramDataNotJustTheOs()
+    {
+        // The old rule only covered Windows and System32, so Program Files,
+        // ProgramData and drive roots read as ordinary deletion candidates.
+        foreach (var folder in new[]
+                 {
+                     Environment.SpecialFolder.ProgramFiles,
+                     Environment.SpecialFolder.ProgramFilesX86,
+                     Environment.SpecialFolder.CommonApplicationData
+                 })
+        {
+            var path = Environment.GetFolderPath(folder);
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            Assert.True(NativeSafety.IsProtectedPath(Path.Combine(path, "anything")), $"{folder} must be protected");
+        }
+    }
+
+    [Fact]
+    public void ADriveRootIsNeverASafeFileCandidate()
+    {
+        var temp = Path.GetTempPath();
+        var root = Path.GetPathRoot(temp);
+        if (string.IsNullOrEmpty(root)) return;
+        Assert.True(NativeSafety.IsProtectedPath(root));
+        Assert.False(NativeSafety.IsSafeFileCandidate(root, temp));
+    }
+
+    [Fact]
+    public void SafeFileCandidateRequiresATrustedRootAndStaysInsideIt()
+    {
+        var temp = Path.GetTempPath();
+        var scope = Path.Combine(temp, "cm-candidate-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(scope);
+        try
+        {
+            var inside = Path.Combine(scope, "cache.tmp");
+            File.WriteAllText(inside, "x");
+            Assert.True(NativeSafety.IsSafeFileCandidate(inside, scope));
+
+            // Same file, but the caller named a different root: outside it means no.
+            var other = Path.Combine(temp, "cm-candidate-other-" + Guid.NewGuid().ToString("N"));
+            Assert.False(NativeSafety.IsSafeFileCandidate(inside, other));
+
+            // No root at all is not a request to clean the whole profile.
+            Assert.False(NativeSafety.IsSafeFileCandidate(inside, string.Empty));
+            Assert.False(NativeSafety.IsSafeFileCandidate(inside, "   "));
+        }
+        finally
+        {
+            try { Directory.Delete(scope, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void TheUserProfileIsNotBlanketProtectedBecauseThatIsWhereCleanupLives()
+    {
+        // Regression guard for the trap this rule used to be: every legitimate
+        // browser cache and app temp file lives under the profile, so protecting
+        // the whole of it would refuse all real work.
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrWhiteSpace(profile)) return;
+        Assert.False(NativeSafety.IsProtectedPath(Path.Combine(profile, "AppData", "Local", "Temp")));
     }
 
     [Fact]
