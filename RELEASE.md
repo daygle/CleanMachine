@@ -120,22 +120,51 @@ ARM64) plus crash symbols.
 justification for. Paste the following into the submission's restricted-capability
 declaration field:
 
-> CleanMachine is a desktop cleanup utility built with the Windows App SDK
-> (WinUI 3). It declares `runFullTrust` because its core purpose cannot be
-> implemented through the sandboxed WinRT APIs.
+> CleanMachine is a Windows desktop cleanup utility built with the Windows App
+> SDK (WinUI 3). It requires `runFullTrust` because its entire purpose is
+> inspecting and removing files, folders and registry values that lie outside
+> the app container, which the sandboxed WinRT APIs cannot reach. A packaged
+> WinUI 3 desktop app declares `runFullTrust` in order to run as a normal
+> full-trust desktop process, and the manifest's
+> `desktop:Extension Category="windows.fullTrustProcess"` entry requires it.
 >
-> Specifically, the app enumerates and removes temporary files and browser cache
-> files located outside the app container (for example `%TEMP%`, browser profile
-> cache directories, and Microsoft Store app cache folders), manages the Recycle
-> Bin via the Shell API, and reads per-user registry keys for its read-only
-> Registry Care view. These operations require file-system and registry access
-> that is only available to a full-trust desktop process. The app does not use
-> `runFullTrust` to download, install or execute code, to access the network
-> beyond the Windows package deployment APIs, or to elevate privileges - it runs
-> entirely in the current user context and never requests administrator rights.
+> How it is used:
+> - Enumerating and deleting temporary files, thumbnail and icon caches, error
+>   reports, internet cache and jump-list files, including browser profile cache
+>   directories and Microsoft Store app cache folders.
+> - Emptying the Recycle Bin through the Shell API (SHEmptyRecycleBin).
+> - Reading per-user (HKCU) registry keys for Registry Care, and writing only to
+>   HKCU: registry backups are taken with reg.exe before any value is removed.
+> - Reading HKLM in a strictly read-only manner to list all-users startup
+>   entries and installed applications. The app never writes to HKLM; removing
+>   an all-users startup entry is refused with a message stating that
+>   administrator rights would be required.
+> - Registering per-user scheduled tasks and reading Explorer StartupApproved
+>   values in HKCU.
 >
-> The app is distributed solely through the Microsoft Store and contains no
-> advertising, no telemetry and no third-party analytics.
+> What it does not do: it does not download, install or execute code, does not
+> access the network at all, does not communicate with any server, and does not
+> request administrator rights. app.manifest declares
+> `requestedExecutionLevel level="asInvoker"`, and scheduled tasks are created
+> with /RL LIMITED, so the app runs entirely at standard user privilege. It does
+> not read or modify files belonging to other users' accounts, and it never
+> touches the Windows component store.
+>
+> All cleanup is review-first: every deletion is displayed to the user before it
+> happens, protected, recently modified, locked and reparse-point paths are
+> refused, and registry changes can always be restored from the backup the app
+> writes first. The app ships no secure-erase or drive-wiping tool, contains no
+> advertising, no telemetry and no third-party analytics, and makes no network
+> connections. Its only persistent storage is a settings, statistics, history
+> and backup folder under %LOCALAPPDATA%\CleanMachine, outside the package.
+
+Every claim above is checkable against the source: `app.manifest` sets
+`asInvoker`; all registry writes open `RegistryHive.CurrentUser`; the HKLM paths
+in `InstalledAppsService` and `StartupAppsService` open without `writable: true`
+and the all-users removal path returns before any write; and the project has no
+`HttpClient`, `WebClient` or socket usage and only two package references, both
+Microsoft build/runtime tooling. Keep it accurate - an inaccurate justification
+is far more likely to fail certification than a plain one.
 
 Because the Store listing is public, destructive features that attract
 certification scrutiny have been removed from the app entirely: there is no
