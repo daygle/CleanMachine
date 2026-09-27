@@ -41,11 +41,11 @@
                TextWrapping="Wrap" FontSize="12" Padding="8" LostFocus="Setting_LostFocus"/>
 
       <!-- Windows' own package removal cannot ask first, so CleanMachine offers a
-           confirmation that offers to clean up and keep the data. -->
+           confirmation that offers to clean up and keep the data. That dialog
+           spells out what the button does, so no static explainer is needed
+           here. -->
       <StackPanel x:Name="UninstallSection" Spacing="6" Visibility="Collapsed">
         <TextBlock Text="UNINSTALL" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
-        <TextBlock Text="Also removes the scheduled tasks and desktop shortcut Windows leaves behind, and asks what to do with your data."
-                   FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
         <Button x:Name="UninstallButton" Content="Uninstall CleanMachine..." Click="Uninstall_Click"
                 Padding="16,9" HorizontalAlignment="Left"/>
       </StackPanel>

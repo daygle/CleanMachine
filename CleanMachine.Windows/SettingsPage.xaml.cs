@@ -108,7 +108,10 @@ public sealed partial class SettingsPage : Page
         var confirm = new ContentDialog
         {
             Title = "Uninstall CleanMachine?",
-            Content = "The app will close and the package will be removed for this user.",
+            Content = "The app will close and the package will be removed for this user. " +
+                      "Windows' own removal leaves some of our work behind, so this also " +
+                      "clears the desktop shortcut, the startup entry, and any scheduled " +
+                      "cleanup tasks.",
             PrimaryButtonText = "Uninstall",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
