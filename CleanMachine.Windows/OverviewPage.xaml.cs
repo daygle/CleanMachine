@@ -92,10 +92,9 @@ public sealed partial class OverviewPage : Page
         {
             var outcome = await QuickCleanService.RunAsync(area);
             result.Visibility = Visibility.Visible;
-            result.Text = outcome.Items == 0 && outcome.Bytes == 0 && outcome.Note is not null
-                ? outcome.Note
-                : $"{outcome.Items:N0} item(s) removed, {AppNotifications.FormatBytes(outcome.Bytes)} recovered"
-                  + (outcome.Issues.Count > 0 ? $" - {outcome.Issues.Count} skipped." : ".");
+            // SummaryText owns the wording so a run that cleaned nothing still says
+            // why, the same way its activity entry does.
+            result.Text = QuickCleanService.SummaryText(outcome);
             await LoadStatsAsync();
             _ = LoadAvailabilityAsync(forceRefresh: true); // refresh the summaries in the background
         }

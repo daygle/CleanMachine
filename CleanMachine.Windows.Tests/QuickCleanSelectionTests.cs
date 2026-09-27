@@ -5,8 +5,9 @@ namespace CleanMachine.Windows.Tests;
 
 /// <summary>Covers the Quick Clean selection rules: which Windows categories are
 /// eligible, and how the Review-risk Recycle Bin is opted in (explicit tick in
-/// the Quick Clean picker only). These tests are read-only - they exercise the
-/// selection logic, never an actual Quick Clean run.</summary>
+/// the Quick Clean picker only), plus what a Quick Clean run records in the
+/// activity log. These tests are read-only - they exercise the selection and
+/// reporting logic, never an actual Quick Clean run.</summary>
 public sealed class QuickCleanSelectionTests
 {
     [Fact]
@@ -117,5 +118,123 @@ public sealed class QuickCleanSelectionTests
             .ToList();
 
         Assert.All(selected, c => Assert.Equal(CleanupRisk.Safe, c.Risk));
+    }
+
+    // ---- Activity recording: a run that removed nothing must not be silent ----
+
+    /// <summary>Regression: Registry Care Quick Clean that examined candidates but
+    /// removed none used to write no activity entry at all, so it was
+    /// indistinguishable from a Quick Clean that never ran.</summary>
+    [Fact]
+    public void ANoOpRunThatExaminedCandidatesIsStillRecorded()
+    {
+        var result = new QuickCleanResult(0, 0, ["Software\\Foo: Key not found (already clean)"],
+            Examined: 42);
+
+        Assert.True(QuickCleanService.ShouldRecordActivity(result));
+    }
+
+    [Fact]
+    public void ARunWithNothingConfiguredRecordsNothing()
+    {
+        // The user selected no categories at all: a no-op, not an event.
+        var result = new QuickCleanResult(0, 0, [], "No categories selected.");
+
+        Assert.False(QuickCleanService.ShouldRecordActivity(result));
+    }
+
+    [Fact]
+    public void ACleaningRunIsNotTreatedAsANoOp()
+    {
+        // The cleaning branch in RunAsync handles these; ShouldRecordActivity must
+        // not also fire or the run would log itself twice.
+        Assert.False(QuickCleanService.ShouldRecordActivity(new QuickCleanResult(7, 0, [])));
+        Assert.False(QuickCleanService.ShouldRecordActivity(new QuickCleanResult(0, 1024, [])));
+    }
+
+    [Fact]
+    public void TheNoOpEntryNamesTheCandidateCountSkipsAndReason()
+    {
+        var result = new QuickCleanResult(0, 0, ["a", "b", "c"],
+            "Registry cleanup was refused: no restore point.", Examined: 12);
+
+        var detail = QuickCleanService.NothingRemovedDetail(result);
+
+        Assert.Equal("Nothing removed from 12 candidate(s) - 3 skipped - Registry cleanup was refused: no restore point.", detail);
+    }
+
+    [Fact]
+    public void TheNoOpEntryOmitsPartsThatAreAbsent()
+    {
+        var detail = QuickCleanService.NothingRemovedDetail(
+            new QuickCleanResult(0, 0, [], Examined: 3));
+
+        Assert.Equal("Nothing removed from 3 candidate(s)", detail);
+    }
+
+    [Fact]
+    public void TheOverviewCardAndTheActivityEntryUseTheSameWording()
+    {
+        // The card must not say "0 item(s) removed" while the log explains the run.
+        var result = new QuickCleanResult(0, 0, ["x", "y"], Examined: 9);
+
+        Assert.Equal(QuickCleanService.NothingRemovedDetail(result) + ".", QuickCleanService.SummaryText(result));
+        Assert.Equal("Nothing removed from 9 candidate(s) - 2 skipped.", QuickCleanService.SummaryText(result));
+    }
+
+    [Fact]
+    public void TheOverviewCardPrefersTheAreasOwnReason()
+    {
+        // A reason from the area itself beats the generic no-op sentence, because
+        // "No browsers selected." tells the user what to change and the generic
+        // one does not.
+        Assert.Equal("No browsers selected.",
+            QuickCleanService.SummaryText(new QuickCleanResult(0, 0, [], "No browsers selected.")));
+        Assert.Equal("No registry values were removed.",
+            QuickCleanService.SummaryText(new QuickCleanResult(0, 0, [], "No registry values were removed.", Examined: 4)));
+    }
+
+    [Fact]
+    public void TheOverviewCardStillSummarizesASuccessfulClean()
+    {
+        Assert.Equal("5 item(s) removed, 1.0 KB recovered - 2 skipped.",
+            QuickCleanService.SummaryText(new QuickCleanResult(5, 1024, ["a", "b"])));
+    }
+
+    [Fact]
+    public void RegistryCleanBreakdownIsGroupedByCategoryLargestFirst()
+    {
+        var cleaned = new[]
+        {
+            new RegistryFinding("HKCU", @"Control Panel\Desktop\MuiCached\a", "x", true, 90, "MUI Cache"),
+            new RegistryFinding("HKCU", @"Control Panel\Desktop\MuiCached\b", "x", true, 90, "MUI Cache"),
+            new RegistryFinding("HKCU", @"AppEvents\Schemes\Apps\z", "x", true, 90, "Sound AppEvents")
+        };
+
+        var lines = QuickCleanService.RegistryDetailLines(cleaned);
+
+        Assert.NotNull(lines);
+        Assert.Equal(2, lines!.Count);
+        Assert.Equal("MUI Cache - 2 item(s)", lines[0]);
+        Assert.Equal("Sound AppEvents - 1 item(s)", lines[1]);
+    }
+
+    [Fact]
+    public void RegistryCleanBreakdownIsAbsentWhenNothingWasCleaned()
+    {
+        // Keeps the Activity card un-expandable rather than showing an empty list.
+        Assert.Null(QuickCleanService.RegistryDetailLines([]));
+        Assert.Null(QuickCleanService.RegistryDetailLines(null));
+    }
+
+    [Fact]
+    public void ExaminedDefaultsToZeroSoTheRecordStaysSourceCompatible()
+    {
+        // Every pre-existing construction site passes five arguments; the new
+        // candidate count must not be required of any of them.
+        var legacy = new QuickCleanResult(3, 100, [], null, null);
+
+        Assert.Equal(0, legacy.Examined);
+        Assert.False(QuickCleanService.ShouldRecordActivity(legacy));
     }
 }

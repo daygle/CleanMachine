@@ -4,8 +4,13 @@ namespace CleanMachine.Windows;
 public enum QuickCleanArea { Browsers, Windows, Registry, Apps }
 
 /// <summary>Result of one area's Quick Clean. <see cref="Note"/> carries a short
-/// explanation when nothing was cleaned (e.g. no items selected).</summary>
-public sealed record QuickCleanResult(int Items, long Bytes, IReadOnlyList<string> Issues, string? Note = null, IReadOnlyList<string>? Details = null);
+/// explanation when nothing was cleaned (e.g. no items selected).
+/// <para><see cref="Examined"/> is how many cleanup candidates the run actually
+/// looked at. It separates "the user configured nothing, so nothing happened"
+/// (0) from "the run inspected real candidates and removed none" (&gt; 0) -
+/// see <see cref="ShouldRecordActivity"/>. Defaults to 0 so every existing
+/// construction site keeps compiling.</para></summary>
+public sealed record QuickCleanResult(int Items, long Bytes, IReadOnlyList<string> Issues, string? Note = null, IReadOnlyList<string>? Details = null, int Examined = 0);
 
 /// <summary>Runs a single Overview area's Quick Clean using the user's saved per-area
 /// item selection (<see cref="AppSettings.QuickCleanWindowsCategories"/> and friends).
@@ -13,8 +18,11 @@ public sealed record QuickCleanResult(int Items, long Bytes, IReadOnlyList<strin
 /// Windows categories, application temp files, and registry findings that pass the
 /// safety gate (backed up first). The one exception is the Windows Recycle Bin,
 /// offered as an explicit opt-in in the Quick Clean picker; ticking it there is
-/// the confirmation required for its Review risk. Each run records one stats +
-/// activity entry.</summary>
+/// the confirmation required for its Review risk. A run that cleaned something
+/// records one stats + activity entry; a run that examined candidates but
+/// removed nothing still records an activity entry explaining why (see
+/// <see cref="ShouldRecordActivity"/>), because a Quick Clean that quietly
+/// writes nothing is indistinguishable from one that never ran.</summary>
 public static class QuickCleanService
 {
     /// <summary>The Windows Cleanup catalog id for the Recycle Bin, offered in the
@@ -51,11 +59,61 @@ public static class QuickCleanService
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
                 $"Quick Clean - {Title(area)}",
-                $"Cleaned {result.Items:N0} item(s), {AppNotifications.FormatBytes(result.Bytes)} recovered"
-                + (result.Issues.Count > 0 ? $" - {result.Issues.Count} skipped" : string.Empty),
+                CleanedDetail(result),
                 result.Details));
         }
+        else if (ShouldRecordActivity(result))
+        {
+            // Examined candidates but reclaimed nothing. No stats entry (nothing
+            // was reclaimed), but the activity log must say the run happened and
+            // why it came back empty - otherwise a zero-item Registry Care Quick
+            // Clean looks exactly like a Quick Clean that never ran.
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                $"Quick Clean - {Title(area)}",
+                NothingRemovedDetail(result)));
+        }
         return result;
+    }
+
+    /// <summary>Whether a run that removed nothing still belongs in the activity
+    /// log. True when it examined real candidates (<see cref="QuickCleanResult.Examined"/>
+    /// &gt; 0); false when the user simply configured nothing for this area, which
+    /// is a no-op rather than an event.</summary>
+    internal static bool ShouldRecordActivity(QuickCleanResult result)
+        => result.Items == 0 && result.Bytes == 0 && result.Examined > 0;
+
+    /// <summary>Detail line for a run that reclaimed something.</summary>
+    internal static string CleanedDetail(QuickCleanResult result)
+        => $"Cleaned {result.Items:N0} item(s), {AppNotifications.FormatBytes(result.Bytes)} recovered"
+            + (result.Issues.Count > 0 ? $" - {result.Issues.Count} skipped" : string.Empty);
+
+    /// <summary>The one-line outcome shown under the Overview card's Quick Clean
+    /// button. Shares the <see cref="NothingRemovedDetail"/> wording with the
+    /// activity entry so the card and the log can never disagree about what a
+    /// zero-item run did.</summary>
+    internal static string SummaryText(QuickCleanResult result)
+    {
+        if (result.Items == 0 && result.Bytes == 0)
+        {
+            if (!string.IsNullOrWhiteSpace(result.Note)) return result.Note;
+            if (ShouldRecordActivity(result)) return NothingRemovedDetail(result) + ".";
+            return $"0 item(s) removed, {AppNotifications.FormatBytes(result.Bytes)} recovered";
+        }
+        return $"{result.Items:N0} item(s) removed, {AppNotifications.FormatBytes(result.Bytes)} recovered"
+            + (result.Issues.Count > 0 ? $" - {result.Issues.Count} skipped." : ".");
+    }
+
+    /// <summary>Detail line for a run that examined candidates and removed none.
+    /// Always names the candidate count, then the skip count, then the area's own
+    /// reason (<see cref="QuickCleanResult.Note"/>) when it has one - so the entry
+    /// explains itself instead of leaving the user guessing.</summary>
+    internal static string NothingRemovedDetail(QuickCleanResult result)
+    {
+        var parts = new List<string> { $"Nothing removed from {result.Examined:N0} candidate(s)" };
+        if (result.Issues.Count > 0) parts.Add($"{result.Issues.Count} skipped");
+        if (!string.IsNullOrWhiteSpace(result.Note)) parts.Add(result.Note);
+        return string.Join(" - ", parts);
     }
 
     private static async Task<QuickCleanResult> RunBrowsersAsync(AppSettings settings, CancellationToken token)
@@ -68,7 +126,8 @@ public static class QuickCleanService
         // so Quick Clean does not require browsers to be closed.
         var report = await service.CleanWithReportAsync(
             targets, new BrowserCleanupOptions(settings.ExcludedPaths, RequireBrowsersClosed: false), token: token);
-        return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped));
+        return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped),
+            Examined: targets.Count);
     }
 
     private static async Task<QuickCleanResult> RunWindowsAsync(AppSettings settings, CancellationToken token)
@@ -92,7 +151,10 @@ public static class QuickCleanService
                 ExcludedPaths: settings.ExcludedPaths),
             cancellationToken: token);
         return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped),
-            Details: ActivityStore.BreakdownLines(report.Breakdown));
+            Details: ActivityStore.BreakdownLines(report.Breakdown),
+            // Windows categories are cleaned wholesale and the service reports no
+            // candidate count, so there is no "examined" number to log here.
+            Examined: 0);
     }
 
     private static async Task<QuickCleanResult> RunRegistryAsync(AppSettings settings, CancellationToken token)
@@ -104,16 +166,40 @@ public static class QuickCleanService
         var selected = scan.Findings.Where(f => categories.Contains(f.Category)).ToArray();
         if (selected.Length == 0) return new QuickCleanResult(0, 0, [], "Nothing to clean.");
         var review = await service.PrepareReviewAsync(selected, token);
+        // PrepareReviewAsync drops anything failing the safety gate (LowRisk and
+        // confidence >= 70). Say so explicitly: without a note the caller fell back
+        // to a bare "0 item(s) removed" and the run looked like it never happened.
+        if (review.Findings.Count == 0)
+            return new QuickCleanResult(0, 0, [],
+                $"No registry findings were eligible: all {selected.Length:N0} failed the safety gate.",
+                Examined: selected.Length);
         // Same rule as the Registry Care page: never clean the registry without a backup.
         if (review.Findings.Count > 0 && review.Backups.Count == 0)
             return new QuickCleanResult(0, 0,
                 [string.IsNullOrWhiteSpace(review.BackupFailure)
                     ? "Skipped: no registry backup could be created."
                     : $"Skipped: {review.BackupFailure}"],
-                "Registry cleanup was refused: no restore point.");
+                "Registry cleanup was refused: no restore point.",
+                Examined: review.Findings.Count);
         var clean = await service.CleanAsync(review, token);
-        return new QuickCleanResult(clean.Removed, 0, Summarize(clean.Skipped));
+        return new QuickCleanResult(clean.Removed, 0, Summarize(clean.Skipped),
+            clean.Removed == 0 ? "No registry values were removed." : null,
+            RegistryDetailLines(clean.Cleaned),
+            review.Findings.Count);
     }
+
+    /// <summary>Per-category drill-down for a Registry Quick Clean entry, matching
+    /// the shape <see cref="ActivityStore.BreakdownLines"/> produces for the other
+    /// areas (largest contributor first, registry values carry no byte count).</summary>
+    internal static IReadOnlyList<string>? RegistryDetailLines(IReadOnlyList<RegistryFinding>? cleaned)
+        => cleaned is { Count: > 0 }
+            ? cleaned
+                .GroupBy(f => f.Category, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(g => $"{g.Key} - {g.Count():N0} item(s)")
+                .ToList()
+            : null;
 
     private static async Task<QuickCleanResult> RunAppsAsync(AppSettings settings, CancellationToken token)
     {
@@ -125,7 +211,8 @@ public static class QuickCleanService
             .ToList();
         if (selection.Count == 0) return new QuickCleanResult(0, 0, [], "Nothing to clean.");
         var report = await new AppCleanupService().CleanAsync(selection, token);
-        return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped));
+        return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped),
+            Examined: selection.Count);
     }
 
     /// <summary>Whether a Windows category is included in Quick Clean: the user's
