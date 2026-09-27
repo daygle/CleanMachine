@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10" IgnorableNamespaces="uap desktop rescap com">
+  <!-- Name, Publisher and Version are all stamped per run by the release
+       workflow from the Partner Center Identity page. The reserved identity NAME
+       is not the app name: Partner Center issues it as
+       "<publisher display name>.<app name>" (e.g. daygle.CleanMachine).
+       DisplayName below is the user-facing app name and stays "CleanMachine". -->
   <Identity Name="CleanMachine" Publisher="CN=CleanMachine Publisher" Version="1.0.46.0" />
   <Properties>
     <DisplayName>CleanMachine</DisplayName>

@@ -38,6 +38,11 @@ jobs:
       # rejects the upload when <PublisherDisplayName> does not match it exactly,
       # so it is stamped per run rather than hardcoded in the manifest.
       STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+      # The reserved identity NAME from the same Identity page. It is NOT the app
+      # name: Partner Center issues it as "<publisher display name>.<app name>"
+      # (e.g. daygle.CleanMachine) and rejects any package whose Identity Name is
+      # the bare app name. DisplayName stays the user-facing "CleanMachine".
+      STORE_APP_NAME: ${{ vars.STORE_APP_NAME }}
       # Optional. Leave unset to submit an unsigned package (the Store signs it).
       STORE_CERT_BASE64: ${{ secrets.STORE_SIGNING_CERTIFICATE_BASE64 }}
       STORE_CERT_PASSWORD: ${{ secrets.STORE_SIGNING_CERTIFICATE_PASSWORD }}
@@ -72,6 +77,9 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER_DISPLAY_NAME)) {
             throw "Set the STORE_PUBLISHER_DISPLAY_NAME repository variable to the publisher DISPLAY name shown on the Partner Center Identity page (Product > Identity). It is NOT the Publisher string and NOT the app name - Partner Center rejects any package whose <PublisherDisplayName> differs from it."
           }
+          if ([string]::IsNullOrWhiteSpace($env:STORE_APP_NAME)) {
+            throw "Set the STORE_APP_NAME repository variable to the identity NAME reserved in Partner Center (Product > Identity). It is NOT the app name: Partner Center issues it as '<publisher display name>.<app name>' (e.g. daygle.CleanMachine) and rejects a package whose Identity Name is the bare app name."
+          }
           "VERSION3=$version"   | Out-File $env:GITHUB_ENV -Append
           "VERSION4=$version.0" | Out-File $env:GITHUB_ENV -Append
 
@@ -97,11 +105,14 @@ jobs:
           [xml]$manifest = Get-Content $manifestPath
           $manifest.Package.Identity.Publisher = $env:STORE_PUBLISHER
           $manifest.Package.Identity.Version = $env:VERSION4
+          # Reserved identity name, e.g. daygle.CleanMachine. DisplayName and
+          # VisualElements DisplayName keep the user-facing "CleanMachine".
+          $manifest.Package.Identity.Name = $env:STORE_APP_NAME
           # Must equal the Partner Center publisher DISPLAY name exactly, or
           # ingestion rejects the package before certification is ever reached.
           $manifest.Package.Properties.PublisherDisplayName = $env:STORE_PUBLISHER_DISPLAY_NAME
           $manifest.Save((Resolve-Path $manifestPath))
-          Write-Host "Stamped publisher: $env:STORE_PUBLISHER; version: $env:VERSION4; publisher display name: $env:STORE_PUBLISHER_DISPLAY_NAME"
+          Write-Host "Stamped publisher: $env:STORE_PUBLISHER; version: $env:VERSION4; publisher display name: $env:STORE_PUBLISHER_DISPLAY_NAME; identity name: $env:STORE_APP_NAME"
 
       - name: Import the optional signing certificate
         shell: pwsh
@@ -203,6 +214,9 @@ jobs:
           $displayNameNode = $manifest.SelectSingleNode("//*[local-name()='Properties']/*[local-name()='PublisherDisplayName']")
           $publisherDisplayName = if ($null -ne $displayNameNode) { $displayNameNode.InnerText } else { "<missing>" }
           Write-Host "Package identity: Name=$name Publisher=$publisher Version=$version PublisherDisplayName=$publisherDisplayName"
+          if ($name -ne $env:STORE_APP_NAME) {
+            throw "Identity Name in the package ('$name') does not match the identity name reserved in Partner Center ('$($env:STORE_APP_NAME)'). Partner Center expects '<publisher display name>.<app name>', not the bare app name. Set STORE_APP_NAME to the name on the Partner Center Identity page."
+          }
           if ($publisher -ne $env:STORE_PUBLISHER) {
             throw "Publisher in the package ('$publisher') does not match STORE_PUBLISHER ('$($env:STORE_PUBLISHER)')."
           }

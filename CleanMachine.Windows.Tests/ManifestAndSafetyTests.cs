@@ -984,28 +984,54 @@ public sealed class ManifestAndSafetyTests
         Assert.Equal(new[] { "runFullTrust" }, restricted);
     }
 
-    /// <summary>Partner Center compares the package's <c>PublisherDisplayName</c>
-    /// against the publisher DISPLAY name on its Identity page and fails ingestion
-    /// on a mismatch - after a 175 MB upload, with an error that does not name the
-    /// variable to fix. The release workflow now stamps it per run, and the verify
-    /// step asserts it; this pins the wiring so the stamp cannot be quietly dropped
-    /// from the workflow (which would let the checked-in placeholder through).</summary>
+    /// <summary>Three separate Partner Center Identity values are validated at
+    /// ingestion, and a mismatch in any of them is only reported after the whole
+    /// 175 MB package has uploaded. All three are stamped per run and re-checked in
+    /// the built package; this pins that wiring so a stamp cannot be quietly dropped
+    /// from the workflow and the checked-in placeholders shipped again.</summary>
     [Fact]
-    public void PublisherDisplayNameIsStampedFromTheRepositoryVariable()
+    public void EveryPartnerCenterIdentityFieldIsStampedAndVerified()
     {
         var root = FindRepoRoot();
         Assert.True(root is not null, "Repo root was not found above the test output directory.");
 
         var workflow = File.ReadAllText(
             Path.Combine(root!, ".github", "workflows", "release-windows.yml"));
-        Assert.Contains("STORE_PUBLISHER_DISPLAY_NAME", workflow,
-            StringComparison.Ordinal);
-        // Both the stamping and the post-build assertion are required: stamping
-        // alone would let a typo'd variable through unnoticed.
-        Assert.Contains("Properties.PublisherDisplayName", workflow,
-            StringComparison.Ordinal);
-        Assert.Contains("does not match the publisher display name", workflow,
-            StringComparison.Ordinal);
+
+        foreach (var variable in new[] { "STORE_PUBLISHER", "STORE_PUBLISHER_DISPLAY_NAME", "STORE_APP_NAME" })
+            Assert.Contains(variable, workflow, StringComparison.Ordinal);
+
+        // Each field is stamped ...
+        Assert.Contains("Properties.PublisherDisplayName", workflow, StringComparison.Ordinal);
+        Assert.Contains("Identity.Name", workflow, StringComparison.Ordinal);
+        Assert.Contains("Identity.Publisher", workflow, StringComparison.Ordinal);
+
+        // ... and each is re-checked against the variable after the build. Stamping
+        // alone would let a wrong variable value through unnoticed.
+        Assert.Contains("does not match the publisher display name", workflow, StringComparison.Ordinal);
+        Assert.Contains("does not match the identity name reserved", workflow, StringComparison.Ordinal);
+        Assert.Contains("does not match STORE_PUBLISHER", workflow, StringComparison.Ordinal);
+    }
+
+    /// <summary>The user-facing app name is not the reserved identity name:
+    /// Partner Center issues the latter as "&lt;publisher&gt;.&lt;app&gt;". The
+    /// workflow stamps Identity/@Name, so DisplayName must keep saying
+    /// "CleanMachine" or the listing and Start menu entry would read
+    /// "daygle.CleanMachine".</summary>
+    [Fact]
+    public void DisplayNameStaysTheAppNameWhileIdentityNameIsPublisherPrefixed()
+    {
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
+
+        var appx = XDocument.Load(Path.Combine(root!, "CleanMachine.Windows", "Package.appxmanifest"));
+        var displayName = appx.Descendants().FirstOrDefault(e => e.Name.LocalName == "Properties")?
+            .Elements().FirstOrDefault(e => e.Name.LocalName == "DisplayName")?.Value;
+        var visualName = appx.Descendants().FirstOrDefault(e => e.Name.LocalName == "VisualElements")?
+            .Attribute("DisplayName")?.Value;
+
+        Assert.Equal("CleanMachine", displayName);
+        Assert.Equal("CleanMachine", visualName);
     }
 
     /// <summary>The manifest Description is the public Store listing copy. Developer-

@@ -22,7 +22,7 @@ internal static class MsixUninstallService
 
     /// <summary>The target a desktop shortcut must use for an MSIX install: the
     /// package identity, not the executable. A shortcut aimed at
-    /// C:\Program Files\WindowsApps\CleanMachine_1.0.0.0_x64__&lt;hash&gt;\CleanMachine.exe
+    /// C:\Program Files\WindowsApps\daygle.CleanMachine_1.0.0.0_x64__&lt;hash&gt;\CleanMachine.exe
     /// breaks on the very next update, because that version-stamped folder is deleted
     /// when the package is replaced. shell:AppsFolder\&lt;PFN&gt;!App is resolved by the
     /// shell on every launch and therefore survives every future update.</summary>

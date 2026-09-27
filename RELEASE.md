@@ -41,7 +41,7 @@ publisher is part of the package identity.
 
 ## Prerequisites
 
-1. **Reserve an app identity in Partner Center** (Product → Identity) and set two
+1. **Reserve an app identity in Partner Center** (Product → Identity) and set three
    repository **variables** (Settings → Secrets and variables → Actions →
    Variables — not the Secrets tab) from that page:
 
@@ -49,13 +49,19 @@ publisher is part of the package identity.
    |---|---|
    | `STORE_PUBLISHER` | the exact **Publisher** string, e.g. `CN=...` |
    | `STORE_PUBLISHER_DISPLAY_NAME` | the **publisher display name**, e.g. `Contoso` |
+   | `STORE_APP_NAME` | the reserved **identity name**, e.g. `Contoso.CleanMachine` |
 
-   These are three different strings and they are easy to confuse. The publisher
-   display name is neither the Publisher string nor the app name: Partner Center
-   fails ingestion when the package's `<PublisherDisplayName>` differs from it, and
-   the rejection only appears *after* the whole package has uploaded. The workflow
-   stamps both per run and re-checks them in the built package, and refuses to
-   build if either is unset.
+   These are three different strings and they are easy to confuse. Note in
+   particular that the identity name is *not* the app name: Partner Center issues
+   it as `<publisher display name>.<app name>`, so an app called `CleanMachine`
+   under publisher `daygle` is reserved as `daygle.CleanMachine`. The app's
+   user-facing name (`DisplayName`, Start menu, listing) stays `CleanMachine`;
+   only the package identity is prefixed.
+
+   Partner Center fails ingestion when any of the three differ, and the rejection
+   only appears *after* the whole package has uploaded. The workflow stamps all
+   three per run, re-checks them in the built package, and refuses to build if any
+   is unset.
 2. **A Partner Center developer account.** Free for individual and company
    accounts.
 3. **Approve `runFullTrust`.** The manifest declares it, and Partner Center warns
@@ -105,6 +111,7 @@ ARM64) plus crash symbols.
 | Signing | unsigned (the Store signs it) - optional to self-sign |
 | Publisher | an identity **reserved in Partner Center** (`STORE_PUBLISHER`) |
 | Publisher display name | the publisher display name from the same page (`STORE_PUBLISHER_DISPLAY_NAME`) |
+| Identity name | the reserved identity name, `<publisher>.<app>` (`STORE_APP_NAME`) |
 
 ## `runFullTrust` capability justification
 
@@ -139,8 +146,8 @@ never touched.
 
 ## Submission checklist
 
-- [ ] `STORE_PUBLISHER` and `STORE_PUBLISHER_DISPLAY_NAME` set from the Partner
-      Center Identity page (two *variables*, not secrets)
+- [ ] `STORE_PUBLISHER`, `STORE_PUBLISHER_DISPLAY_NAME` and `STORE_APP_NAME` set
+      from the Partner Center Identity page (three *variables*, not secrets)
 - [ ] Tag pushed as `vX.Y.Z`; `store-package` job green
 - [ ] `CleanMachine-StoreUpload.msixupload` uploaded in Partner Center
 - [ ] Listing: description, screenshots, privacy policy URL, support contact
