@@ -243,12 +243,12 @@ public sealed class AppSettings
         DisabledCleanupCategories = CapSet(DisabledCleanupCategories, []);
         EnabledCleanupCategories = CapSet(EnabledCleanupCategories, []);
         QuickCleanBrowsers = CapSet(QuickCleanBrowsers, ["chrome", "edge", "firefox"]);
-        QuickCleanWindowsCategories = CapSet(QuickCleanWindowsCategories, null);
-        QuickCleanRegistryCategories = CapSet(QuickCleanRegistryCategories, null);
-        QuickCleanApps = CapSet(QuickCleanApps, null);
-        StartupCleanCategories = CapSet(StartupCleanCategories, null);
-        IdleCleanCategories = CapSet(IdleCleanCategories, null);
-        SystemMonitorCategories = CapSet(SystemMonitorCategories, null);
+        QuickCleanWindowsCategories = CapSetOrNull(QuickCleanWindowsCategories);
+        QuickCleanRegistryCategories = CapSetOrNull(QuickCleanRegistryCategories);
+        QuickCleanApps = CapSetOrNull(QuickCleanApps);
+        StartupCleanCategories = CapSetOrNull(StartupCleanCategories);
+        IdleCleanCategories = CapSetOrNull(IdleCleanCategories);
+        SystemMonitorCategories = CapSetOrNull(SystemMonitorCategories);
 
         if (BrowserCleanupSelection is null || BrowserCleanupSelection.Count > MaxCollectionEntries)
             BrowserCleanupSelection = [];
@@ -320,14 +320,25 @@ public sealed class AppSettings
     /// <summary>Bounds a set of ids, falling back to the default when the stored
     /// one is absent or implausibly large. Entries are capped in length because
     /// they end up compared against and matched to catalog ids and paths.</summary>
-    private static HashSet<string>? CapSet(HashSet<string>? stored, HashSet<string>? fallback)
-    {
-        if (stored is null || stored.Count > MaxCollectionEntries) return fallback;
-        return stored
-            .Where(value => !string.IsNullOrWhiteSpace(value) && value.Length <= MaxEntryLength)
-            .Take(MaxCollectionEntries)
-            .ToHashSet();
-    }
+    private static HashSet<string> CapSet(HashSet<string>? stored, HashSet<string> fallback)
+        => stored is null || stored.Count > MaxCollectionEntries
+            ? fallback
+            : stored
+                .Where(value => !string.IsNullOrWhiteSpace(value) && value.Length <= MaxEntryLength)
+                .Take(MaxCollectionEntries)
+                .ToHashSet();
+
+    /// <summary>The nullable-property form of <see cref="CapSet"/>. Null has to
+    /// stay null here: to the callers a null set means "not configured, use the
+    /// default", while an empty set means "the user chose nothing", and those
+    /// are different decisions that must not collapse into each other.</summary>
+    private static HashSet<string>? CapSetOrNull(HashSet<string>? stored)
+        => stored is null || stored.Count > MaxCollectionEntries
+            ? null
+            : stored
+                .Where(value => !string.IsNullOrWhiteSpace(value) && value.Length <= MaxEntryLength)
+                .Take(MaxCollectionEntries)
+                .ToHashSet();
 
     private static List<string> CapList(List<string>? stored)
         => stored is null || stored.Count > MaxCollectionEntries

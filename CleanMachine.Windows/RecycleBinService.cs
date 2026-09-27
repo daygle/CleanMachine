@@ -99,7 +99,9 @@ public static class RecycleBinService
         try
         {
             using var stream = File.Open(metaPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            Span<byte> header = stackalloc byte[24];
+            // A byte[] rather than stackalloc: BitConverter's read helpers take
+            // byte[] only, and 24 bytes is not worth a BinaryPrimitives import.
+            byte[] header = new byte[24];
             if (stream.ReadAtLeast(header, 24, throwOnEndOfStream: false) < 24) return null;
             var offset = BitConverter.ToInt32(header, 0) == 1 ? 12 : 16;
             var fileTime = BitConverter.ToInt64(header, offset);

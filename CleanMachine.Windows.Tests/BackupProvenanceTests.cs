@@ -304,7 +304,7 @@ public sealed class BackupProvenanceTests
             [
                 new CleanupSchedule { Id = "abc123", Hour = 99, Minute = 77, DayOfMonth = 400, Trigger = (ScheduleTrigger)42, AfterClean = (ScheduleAction)42 },
                 new CleanupSchedule { Id = "bad id with spaces & symbols", Name = "" },
-                new CleanupSchedule { Id = "-_" }
+                new CleanupSchedule { Id = "bad;id" }
             ]
         };
 
@@ -316,7 +316,9 @@ public sealed class BackupProvenanceTests
         Assert.Equal(15, sanitized.IdleCleanMinutes);
         Assert.Equal(30, sanitized.RecycleBinAutoEmptyDays);
         Assert.NotNull(sanitized.ExcludedPaths);
-        Assert.NotNull(sanitized.QuickCleanWindowsCategories);
+        // A null set means "not configured" to the callers, so sanitizing must
+        // leave it null rather than turning it into an empty "chose nothing".
+        Assert.Null(sanitized.QuickCleanWindowsCategories);
 
         // A schedule id is embedded in a task name and a cmd.exe line, so it is
         // filtered by the same rule the builders enforce.
