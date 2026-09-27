@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 
@@ -37,16 +39,42 @@ public static class SingleInstance
     /// two people sharing a session (RDP, a shared or family machine) would
     /// otherwise share one mutex and one pair of events: either could suppress
     /// the other's app from launching, and either could signal it to exit. A
-    /// per-user suffix removes that.
+    /// per-user suffix removes the collision.
     /// </para>
     /// <para>
-    /// This is deliberately described as what it is and no more. It stops one
-    /// account from interfering with another's, not a process impersonating this
-    /// user: anything running as this user can read the same folder path, derive
-    /// the same suffix, and signal these objects. Constraining that further needs
-    /// an explicit DACL on the objects, which is a larger change than this fix
-    /// claims to be.</para></summary>
+    /// The suffix is the naming half of the fix; <see cref="RestrictToCurrentUser"/>
+    /// is the half that actually enforces it, because a name alone is not a
+    /// boundary - a process as this user can derive the same suffix. Neither half
+    /// stops code already running as this user, which is a limit of the process
+    /// model rather than of this code.</para></summary>
     internal static string UserScope { get; } = ComputeUserScope();
+
+    /// <summary>Builds a DACL granting full control to this user and to SYSTEM,
+    /// and to nobody else.
+    /// <para>
+    /// A named kernel object with no explicit security descriptor gets one derived
+    /// from the creating token, which in practice means another account in the
+    /// same session can open and signal it. These objects are a control channel -
+    /// setting the shutdown event makes the running app exit - so they are created
+    /// with an explicit, minimal ACL instead. A fresh ObjectSecurity starts with no
+    /// ACEs, so the two allow rules below are the whole policy: anything not named
+    /// is denied.
+    /// </para></summary>
+    private static TSecurity RestrictToCurrentUser<TSecurity>(TSecurity security) where TSecurity : ObjectSecurity
+    {
+        // SYSTEM, because a scheduled task or an installer helper may legitimately
+        // need to reach these. Administrators are deliberately NOT granted: the app
+        // is per-user and runs unelevated, so nothing in it needs that reach.
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        security.AddAccessRule(new SystemAccessRule(
+            system, SystemAccessRights.FullControl, AccessControlType.Allow));
+
+        var user = WindowsIdentity.GetCurrent().User;
+        if (user is not null)
+            security.AddAccessRule(new SystemAccessRule(
+                user, SystemAccessRights.FullControl, AccessControlType.Allow));
+        return security;
+    }
 
     /// <summary>The kernel object name for <paramref name="baseName"/>, scoped to
     /// the current user and optionally to a test scope so unit tests never touch
@@ -81,7 +109,9 @@ public static class SingleInstance
         {
             // For an existing mutex the initiallyOwned flag is ignored, so this
             // never blocks; createdNew tells us whether we are the first instance.
-            var mutex = new Mutex(initiallyOwned: true, Name(MutexName, scope), out var createdNew);
+            var mutex = new Mutex(
+                initiallyOwned: true, Name(MutexName, scope), out var createdNew,
+                RestrictToCurrentUser(new MutexSecurity()));
             if (createdNew) return mutex;
             mutex.Dispose(); // another instance owns it
             return null;
@@ -159,8 +189,15 @@ public static class SingleInstance
     {
         try
         {
-            var shutdown = new EventWaitHandle(initialState: false, mode: EventResetMode.AutoReset, Name(ShutdownEventName, scope));
-            var activate = new EventWaitHandle(initialState: false, mode: EventResetMode.AutoReset, Name(ActivateEventName, scope));
+            // EventWaitHandleAcl rather than EventWaitHandle: this is the only way
+            // to hand the object an explicit DACL instead of the one inherited from
+            // this token.
+            var shutdown = new EventWaitHandleAcl(
+                initialState: false, mode: EventResetMode.AutoReset, Name(ShutdownEventName, scope),
+                RestrictToCurrentUser(new EventWaitHandleSecurity()));
+            var activate = new EventWaitHandleAcl(
+                initialState: false, mode: EventResetMode.AutoReset, Name(ActivateEventName, scope),
+                RestrictToCurrentUser(new EventWaitHandleSecurity()));
             return new InstanceEvents(shutdown, activate);
         }
         catch { return null; }

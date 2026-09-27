@@ -1,4 +1,6 @@
 using CleanMachine.Windows;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Xunit;
 
 namespace CleanMachine.Windows.Tests;
@@ -71,6 +73,53 @@ public sealed class SingleInstanceTests
         // be non-empty.
         Assert.False(string.IsNullOrWhiteSpace(SingleInstance.UserScope));
         Assert.Equal(SingleInstance.Name(SingleInstance.MutexName), SingleInstance.Name(SingleInstance.MutexName));
+    }
+
+    /// <summary>The events are a control channel - setting the shutdown event
+    /// makes the running app exit - so they carry an explicit DACL granting this
+    /// user and SYSTEM, and nobody else. A named kernel object left to default
+    /// security gets a descriptor derived from the creating token, which another
+    /// account in the same session can open.
+    /// <para>
+    /// This is a regression guard for the whole control: a plain EventWaitHandle
+    /// exposes no DACL API at all, so the cast below fails if the code ever
+    /// silently falls back to one, which is what the catch block would do.
+    /// </para></summary>
+    [Fact]
+    public void TheEventsAreNotAccessibleToOtherAccounts()
+    {
+        var scope = Scope();
+        using var events = SingleInstance.TryCreateEvents(scope);
+        Assert.NotNull(events);
+
+        var acl = events!.Shutdown as EventWaitHandleAcl;
+        Assert.NotNull(acl);
+
+        var security = acl!.GetAccessControl(includeSections: true);
+        var granted = new List<SecurityIdentifier>();
+        foreach (var raw in security.GetAccessRules(
+                     includeExplicit: true, includeInherited: true, targetType: typeof(SecurityIdentifier)))
+        {
+            if (raw is SystemAccessRule rule) granted.Add((SecurityIdentifier)rule.IdentityReference);
+        }
+
+        foreach (var wellKnown in new[]
+                 {
+                     WellKnownSidType.WorldSid,
+                     WellKnownSidType.AnonymousSid,
+                     WellKnownSidType.BuiltinUsersSid
+                 })
+        {
+            Assert.False(granted.Any(sid => sid.IsWellKnown(wellKnown)),
+                $"the shutdown event must not grant access to {wellKnown}.");
+        }
+
+        // And it must still be usable by us, or the app could never signal itself
+        // and the single-instance path would be broken by its own security.
+        var me = WindowsIdentity.GetCurrent().User;
+        Assert.NotNull(me);
+        Assert.True(granted.Any(sid => sid.Equals(me)),
+            "the current user must retain access to its own event.");
     }
 
     [Fact]
