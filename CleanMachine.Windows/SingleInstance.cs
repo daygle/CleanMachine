@@ -62,23 +62,24 @@ public static class SingleInstance
     /// is denied.
     /// </para>
     /// <para>
-    /// The rights are the ones the app uses plus ChangePermissions, which is not
-    /// optional: <see cref="EventWaitHandleAcl.Create"/> and
-    /// <see cref="MutexAcl.Create"/> open an already-existing object with the
-    /// rights of the descriptor being applied, so an ACL without WRITE_DAC makes
-    /// the second instance fail to open and fall into the catch that deliberately
-    /// does not lock the user out. ChangePermissions on an object only this user
-    /// and SYSTEM can already open is not a meaningful widening.
+    /// The granted rights are FullControl, and that is not a stylistic choice.
+    /// <see cref="EventWaitHandleAcl.Create"/> and <see cref="MutexAcl.Create"/>
+    /// are thin wrappers over CreateMutexEx/CreateEvent, and they request
+    /// <c>ALL_ACCESS</c> whether they are creating the object or opening an
+    /// existing one (see the dotnet/runtime source for MutexAcl.Create, which
+    /// passes <c>(uint)MutexRights.FullControl</c> to the P/Invoke). A narrower
+    /// ACL therefore does not merely restrict the holder - it stops the *second
+    /// instance* from reopening the object at all, which lands in TryAcquire's
+    /// deliberate "never lock the user out" fallback and makes a second launch
+    /// silently believe it was the first. FullControl to the current user and
+    /// SYSTEM on an object nobody else can open is the whole point of the change;
+    /// the restriction is in *who* is granted it, not in how much.
     /// </para>
     /// <para>Internal rather than private so a test can assert the policy itself.</para></summary>
     internal static EventWaitHandleSecurity BuildEventSecurity()
     {
         var security = new EventWaitHandleSecurity();
-        const EventWaitHandleRights rights =
-            EventWaitHandleRights.Synchronize
-            | EventWaitHandleRights.Modify
-            | EventWaitHandleRights.ReadPermissions
-            | EventWaitHandleRights.ChangePermissions;
+        const EventWaitHandleRights rights = EventWaitHandleRights.FullControl;
         foreach (var sid in AccessOwners())
             security.AddAccessRule(new EventWaitHandleAccessRule(sid, rights, AccessControlType.Allow));
         return security;
@@ -89,11 +90,8 @@ public static class SingleInstance
     internal static MutexSecurity BuildMutexSecurity()
     {
         var security = new MutexSecurity();
-        const MutexRights rights =
-            MutexRights.Synchronize
-            | MutexRights.Modify
-            | MutexRights.ReadPermissions
-            | MutexRights.ChangePermissions;
+        // FullControl for the same reason as the event ACL - see BuildEventSecurity.
+        const MutexRights rights = MutexRights.FullControl;
         foreach (var sid in AccessOwners())
             security.AddAccessRule(new MutexAccessRule(sid, rights, AccessControlType.Allow));
         return security;
