@@ -16,8 +16,11 @@ public sealed partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent();
-        // The in-app uninstall flow exists only for MSIX: the .exe flavor's
-        // uninstaller already closes the app, cleans up, and asks about data.
+        // Every install is MSIX now that the Store is the only channel, so this
+        // section always shows. The guard is kept because it is what makes the
+        // section's behaviour honest: the flow below cleans up package-external
+        // state (shortcut, scheduled tasks, startup entry) and asks about the
+        // data folder, none of which Windows' own uninstall does.
         if (ScheduleService.IsMsix) UninstallSection.Visibility = Visibility.Visible;
         Loaded += async (_, _) => await LoadAsync();
     }

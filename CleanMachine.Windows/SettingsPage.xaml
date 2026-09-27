@@ -44,7 +44,7 @@
            confirmation that offers to clean up and keep the data. -->
       <StackPanel x:Name="UninstallSection" Spacing="6" Visibility="Collapsed">
         <TextBlock Text="UNINSTALL" FontSize="10" Foreground="#7F9189" Margin="0,8,0,0"/>
-        <TextBlock Text="Windows' own MSIX uninstall can't ask first and leaves the desktop shortcut behind. This removes CleanMachine completely - desktop shortcut, scheduled tasks, startup entry - and lets you decide what happens to your data."
+        <TextBlock Text="Also removes the scheduled tasks and desktop shortcut Windows leaves behind, and asks what to do with your data."
                    FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
         <Button x:Name="UninstallButton" Content="Uninstall CleanMachine..." Click="Uninstall_Click"
                 Padding="16,9" HorizontalAlignment="Left"/>
