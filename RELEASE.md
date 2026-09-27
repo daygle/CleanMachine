@@ -41,12 +41,27 @@ publisher is part of the package identity.
 
 ## Prerequisites
 
-1. **Reserve an app identity in Partner Center** (Product → Identity) and put the
-   exact `Publisher` string in the `STORE_PUBLISHER` repository variable. The
-   workflow refuses to guess it: a wrong publisher uploads cleanly and then fails
-   certification.
+1. **Reserve an app identity in Partner Center** (Product → Identity) and set two
+   repository **variables** (Settings → Secrets and variables → Actions →
+   Variables — not the Secrets tab) from that page:
+
+   | Variable | Value |
+   |---|---|
+   | `STORE_PUBLISHER` | the exact **Publisher** string, e.g. `CN=...` |
+   | `STORE_PUBLISHER_DISPLAY_NAME` | the **publisher display name**, e.g. `Contoso` |
+
+   These are three different strings and they are easy to confuse. The publisher
+   display name is neither the Publisher string nor the app name: Partner Center
+   fails ingestion when the package's `<PublisherDisplayName>` differs from it, and
+   the rejection only appears *after* the whole package has uploaded. The workflow
+   stamps both per run and re-checks them in the built package, and refuses to
+   build if either is unset.
 2. **A Partner Center developer account.** Free for individual and company
    accounts.
+3. **Approve `runFullTrust`.** The manifest declares it, and Partner Center warns
+   that it needs approval on every submission. It is completed in the
+   submission's *Submission options → Restricted capabilities* field, using the
+   justification below.
 
 ## Release checklist
 
@@ -89,6 +104,7 @@ ARM64) plus crash symbols.
 | Bundling | `AppxBundle=Always`, `AppxBundlePlatforms=x64\|arm64` |
 | Signing | unsigned (the Store signs it) - optional to self-sign |
 | Publisher | an identity **reserved in Partner Center** (`STORE_PUBLISHER`) |
+| Publisher display name | the publisher display name from the same page (`STORE_PUBLISHER_DISPLAY_NAME`) |
 
 ## `runFullTrust` capability justification
 
@@ -123,11 +139,12 @@ never touched.
 
 ## Submission checklist
 
-- [ ] `STORE_PUBLISHER` set to the Partner Center-reserved publisher string
+- [ ] `STORE_PUBLISHER` and `STORE_PUBLISHER_DISPLAY_NAME` set from the Partner
+      Center Identity page (two *variables*, not secrets)
 - [ ] Tag pushed as `vX.Y.Z`; `store-package` job green
 - [ ] `CleanMachine-StoreUpload.msixupload` uploaded in Partner Center
 - [ ] Listing: description, screenshots, privacy policy URL, support contact
-- [ ] `runFullTrust` justification entered (see above)
+- [ ] `runFullTrust` justification entered and approved (see above)
 - [ ] Age rating completed
 - [ ] Notes for certification entered (optionally referencing the justification above)
 

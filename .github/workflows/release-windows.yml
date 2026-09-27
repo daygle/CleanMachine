@@ -33,6 +33,11 @@ jobs:
       # (Product > Identity). Deliberately not defaulted: a guessed publisher
       # produces a package that uploads cleanly and then fails certification.
       STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+      # The publisher's DISPLAY name from the same Partner Center Identity page
+      # (it is not the Publisher string, and not the app name). Partner Center
+      # rejects the upload when <PublisherDisplayName> does not match it exactly,
+      # so it is stamped per run rather than hardcoded in the manifest.
+      STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
       # Optional. Leave unset to submit an unsigned package (the Store signs it).
       STORE_CERT_BASE64: ${{ secrets.STORE_SIGNING_CERTIFICATE_BASE64 }}
       STORE_CERT_PASSWORD: ${{ secrets.STORE_SIGNING_CERTIFICATE_PASSWORD }}
@@ -64,6 +69,9 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER)) {
             throw "Set the STORE_PUBLISHER repository variable to the Publisher string reserved for this app in Partner Center (Product > Identity). Refusing to build a package with a guessed publisher."
           }
+          if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER_DISPLAY_NAME)) {
+            throw "Set the STORE_PUBLISHER_DISPLAY_NAME repository variable to the publisher DISPLAY name shown on the Partner Center Identity page (Product > Identity). It is NOT the Publisher string and NOT the app name - Partner Center rejects any package whose <PublisherDisplayName> differs from it."
+          }
           "VERSION3=$version"   | Out-File $env:GITHUB_ENV -Append
           "VERSION4=$version.0" | Out-File $env:GITHUB_ENV -Append
 
@@ -89,8 +97,11 @@ jobs:
           [xml]$manifest = Get-Content $manifestPath
           $manifest.Package.Identity.Publisher = $env:STORE_PUBLISHER
           $manifest.Package.Identity.Version = $env:VERSION4
+          # Must equal the Partner Center publisher DISPLAY name exactly, or
+          # ingestion rejects the package before certification is ever reached.
+          $manifest.Package.Properties.PublisherDisplayName = $env:STORE_PUBLISHER_DISPLAY_NAME
           $manifest.Save((Resolve-Path $manifestPath))
-          Write-Host "Stamped publisher: $env:STORE_PUBLISHER; version: $env:VERSION4"
+          Write-Host "Stamped publisher: $env:STORE_PUBLISHER; version: $env:VERSION4; publisher display name: $env:STORE_PUBLISHER_DISPLAY_NAME"
 
       - name: Import the optional signing certificate
         shell: pwsh
@@ -189,12 +200,19 @@ jobs:
           $publisher = $identity.GetAttribute("Publisher")
           $version = $identity.GetAttribute("Version")
           $name = $identity.GetAttribute("Name")
-          Write-Host "Package identity: Name=$name Publisher=$publisher Version=$version"
+          $displayNameNode = $manifest.SelectSingleNode("//*[local-name()='Properties']/*[local-name()='PublisherDisplayName']")
+          $publisherDisplayName = if ($null -ne $displayNameNode) { $displayNameNode.InnerText } else { "<missing>" }
+          Write-Host "Package identity: Name=$name Publisher=$publisher Version=$version PublisherDisplayName=$publisherDisplayName"
           if ($publisher -ne $env:STORE_PUBLISHER) {
             throw "Publisher in the package ('$publisher') does not match STORE_PUBLISHER ('$($env:STORE_PUBLISHER)')."
           }
           if ($version -ne $env:VERSION4) {
             throw "Version in the package ('$version') does not match the tag ($($env:VERSION4))."
+          }
+          # Partner Center fails ingestion on a mismatch here, which is expensive:
+          # the package is only rejected after a 175 MB upload.
+          if ($publisherDisplayName -ne $env:STORE_PUBLISHER_DISPLAY_NAME) {
+            throw "PublisherDisplayName in the package ('$publisherDisplayName') does not match the publisher display name reserved in Partner Center ('$($env:STORE_PUBLISHER_DISPLAY_NAME)'). Set STORE_PUBLISHER_DISPLAY_NAME to the display name on the Partner Center Identity page."
           }
 
           $sig = Get-AuthenticodeSignature "CleanMachine-StoreUpload.msixupload"

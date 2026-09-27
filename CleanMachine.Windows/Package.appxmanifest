@@ -3,6 +3,10 @@
   <Identity Name="CleanMachine" Publisher="CN=CleanMachine Publisher" Version="1.0.46.0" />
   <Properties>
     <DisplayName>CleanMachine</DisplayName>
+    <!-- Placeholder only. Partner Center rejects any package whose
+         PublisherDisplayName is not the publisher DISPLAY name from its Identity
+         page (which is neither this value nor the app name), so the release
+         workflow stamps it per run from STORE_PUBLISHER_DISPLAY_NAME. -->
     <PublisherDisplayName>CleanMachine</PublisherDisplayName>
     <Description>Review-first cleanup for your PC: browser caches, temporary files, app leftovers, and a read-only look at registry clutter - all shown to you before anything is removed.</Description>
     <Logo>Assets\StoreLogo.png</Logo>

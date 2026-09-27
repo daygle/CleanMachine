@@ -984,6 +984,30 @@ public sealed class ManifestAndSafetyTests
         Assert.Equal(new[] { "runFullTrust" }, restricted);
     }
 
+    /// <summary>Partner Center compares the package's <c>PublisherDisplayName</c>
+    /// against the publisher DISPLAY name on its Identity page and fails ingestion
+    /// on a mismatch - after a 175 MB upload, with an error that does not name the
+    /// variable to fix. The release workflow now stamps it per run, and the verify
+    /// step asserts it; this pins the wiring so the stamp cannot be quietly dropped
+    /// from the workflow (which would let the checked-in placeholder through).</summary>
+    [Fact]
+    public void PublisherDisplayNameIsStampedFromTheRepositoryVariable()
+    {
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
+
+        var workflow = File.ReadAllText(
+            Path.Combine(root!, ".github", "workflows", "release-windows.yml"));
+        Assert.Contains("STORE_PUBLISHER_DISPLAY_NAME", workflow,
+            StringComparison.Ordinal);
+        // Both the stamping and the post-build assertion are required: stamping
+        // alone would let a typo'd variable through unnoticed.
+        Assert.Contains("Properties.PublisherDisplayName", workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("does not match the publisher display name", workflow,
+            StringComparison.Ordinal);
+    }
+
     /// <summary>The manifest Description is the public Store listing copy. Developer-
     /// internal wording shipped there once ("Private, review-first...") and read badly
     /// in a public listing, so the phrasing is pinned to something customer-facing.</summary>
