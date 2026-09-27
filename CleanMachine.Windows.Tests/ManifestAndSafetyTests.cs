@@ -665,6 +665,103 @@ public sealed class ManifestAndSafetyTests
         }
     }
 
+    /// <summary>A Store update deletes the old version-stamped package folder but
+    /// leaves the HKCU Run value pointing into it, so the app stops auto-starting
+    /// and its own entry is flagged as a dead reference. Sync must repair that -
+    /// but only when the stored path is genuinely unusable, and never against the
+    /// user's choice. Both halves are asserted here because either one alone is a
+    /// silent failure: repairing unconditionally would fight a second install,
+    /// and never repairing would leave the app dead after every update.</summary>
+    [Fact]
+    public void StartupSyncRepairsADeadEntryAndLeavesAHealthyOneAlone()
+    {
+        var executable = Path.Combine(Path.GetTempPath(), $"cleanmachine-startup-{Guid.NewGuid():N}.exe");
+        File.WriteAllText(executable, string.Empty);
+        var runKeyPath = $@"{StartupRegistration.RunPath}\CleanMachineSyncTest";
+        const string scratch = "CleanMachineSyncTest";
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        try
+        {
+            // A dead path (a package folder the Store already removed) is rewritten.
+            using (var key = root.CreateSubKey(runKeyPath))
+            {
+                key.SetValue(scratch, "\"C:\\Gone\\daygle.CleanMachine_1.0.0.0_x64__old\\CleanMachine.exe\" --background");
+            }
+            Assert.True(StartupRegistration.SyncForTest(true, executable, runKeyPath, scratch));
+            using (var key = root.OpenSubKey(runKeyPath))
+            {
+                Assert.Equal($"\"{executable}\" --background", key?.GetValue(scratch) as string);
+            }
+
+            // A live path is left exactly as it is: no churn on every launch.
+            Assert.False(StartupRegistration.SyncForTest(true, executable, runKeyPath, scratch));
+
+            // An unknown executable is never written.
+            Assert.False(StartupRegistration.SyncForTest(true, Path.Combine(Path.GetTempPath(), "definitely-missing-xyz.exe"), runKeyPath, scratch));
+        }
+        finally
+        {
+            root.DeleteSubKeyTree(runKeyPath, throwOnMissingSubKey: false);
+            try { File.Delete(executable); } catch { }
+        }
+    }
+
+    /// <summary>Sync must never resurrect the entry when the user has startup
+    /// switched off - the failure mode being a cleanup tool (or a repair pass)
+    /// quietly re-enabling something the user deliberately turned off.</summary>
+    [Fact]
+    public void StartupSyncNeverRegistersWhenTheUserHasStartupOff()
+    {
+        var runKeyPath = $@"{StartupRegistration.RunPath}\CleanMachineSyncTest";
+        const string scratch = "CleanMachineSyncTest";
+        var executable = Path.Combine(Path.GetTempPath(), $"cleanmachine-startup-{Guid.NewGuid():N}.exe");
+        File.WriteAllText(executable, string.Empty);
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        try
+        {
+            using (var key = root.CreateSubKey(runKeyPath))
+                key.SetValue(scratch, $"\"{executable}\" --background");
+
+            // Off + an existing entry: the entry is removed, and doing so is
+            // reported as a change.
+            Assert.True(StartupRegistration.SyncForTest(false, executable, runKeyPath, scratch));
+            using (var key = root.OpenSubKey(runKeyPath))
+                Assert.Null(key?.GetValue(scratch));
+
+            // Off + nothing there: no change, and crucially nothing written.
+            Assert.False(StartupRegistration.SyncForTest(false, executable, runKeyPath, scratch));
+            using (var key = root.OpenSubKey(runKeyPath))
+                Assert.Null(key?.GetValue(scratch));
+        }
+        finally
+        {
+            root.DeleteSubKeyTree(runKeyPath, throwOnMissingSubKey: false);
+            try { File.Delete(executable); } catch { }
+        }
+    }
+
+    /// <summary>Registry Care must not offer to delete CleanMachine's own startup
+    /// entry. The app re-registers that value, so listing it produced a cleanup
+    /// that appeared to fail: the user removed it and it came straight back. The
+    /// scanner is the only place that decides what is offered, so the exclusion
+    /// is pinned there rather than in the delete path.</summary>
+    [Fact]
+    public void RegistryCareNeverOffersToDeleteTheAppsOwnStartupEntry()
+    {
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
+
+        var source = File.ReadAllText(Path.Combine(root!, "CleanMachine.Windows", "CleanupService.cs"));
+        var scan = source[source.IndexOf("ScanStartupEntries", StringComparison.Ordinal)..];
+        scan = scan[..scan.IndexOf("private static void ScanSoundAppEvents", StringComparison.Ordinal)];
+
+        // The skip must name our own value, not bail out of the whole key: other
+        // apps' dead entries are exactly what this scan exists to find.
+        Assert.Contains("StartupRegistration.ValueName", scan, StringComparison.Ordinal);
+        Assert.Contains("continue", scan, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (path == StartupRegistration.RunPath) continue", scan, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ScheduleTaskArgumentsCoverEveryTrigger()
     {

@@ -76,6 +76,12 @@ public partial class App : Application
             await RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, settings.StartupCleanNotify, CancellationToken.None);
         if (settings.RequiresBackgroundAgent)
             StartBackgroundAgent(settings);
+        // Repair a startup entry left pointing at a package folder the Store has
+        // since deleted. Without this the app silently stops auto-starting after
+        // every update, and its own entry shows up as a dead reference in
+        // Registry Care. Mirrors SyncAllAsync for the OS task store below.
+        try { StartupRegistration.Sync(settings.ShouldStartWithWindows, Environment.ProcessPath); }
+        catch { /* startup registration is best-effort */ }
         // Keep the OS task store in step with whatever schedules are saved.
         _ = ScheduleService.SyncAllAsync(settings);
     }

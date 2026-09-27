@@ -286,6 +286,12 @@ public sealed class CleanupService
             if (key is null) continue;
             foreach (var valueName in key.GetValueNames())
             {
+                // Never offer to delete CleanMachine's own autostart entry. The app
+                // re-registers it (StartupRegistration.Sync), so removing it here
+                // just made it reappear and read as a failed cleanup. It is also
+                // the wrong tool for the job: Settings owns that choice.
+                if (path == StartupRegistration.RunPath && valueName == StartupRegistration.ValueName) continue;
+
                 var command = key.GetValue(valueName) as string;
                 if (string.IsNullOrWhiteSpace(command)) continue;
                 var exe = ResolveStartupExecutable(command);
