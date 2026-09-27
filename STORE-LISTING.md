@@ -94,11 +94,50 @@ Enter these one per row (up to 20):
 17. No advertising, no telemetry, no third-party analytics
 18. Runs in your own user account and never requests administrator rights
 
+## Store logo (1:1 app tile icon)
+
+**Optional for apps, and recommended.** The Partner Center form offers three
+logo slots. For an app only one applies:
+
+| Slot | Size | Applies to you? |
+|---|---|---|
+| 1:1 app tile icon | 300 x 300 | **Yes - use this** |
+| 2:3 poster art | 720 x 1080 | Games only |
+| 1:1 box art | 1080 x 1080 | Games only |
+
+If you leave the 300 x 300 slot empty the Store falls back to the icon inside
+your package, which already validated - so nothing is blocked. Uploading it is
+worth doing anyway, because a supplied icon **takes priority over** the one in
+the package and renders crisper on high-DPI Store surfaces.
+
+[`store/Square300x300AppTileIcon.png`](store/Square300x300AppTileIcon.png) is
+ready to upload: 300 x 300 PNG, 21 KB, rendered from the same
+`Assets/generate_icons.py` "Fresh Screen" mark as the in-package icons, so the
+Store icon and the app icon are the same artwork.
+
+It lives in `store/` rather than `Assets/` on purpose. The project only globs
+`Assets/**` into the MSIX package, so a Store-only asset cannot accidentally
+bloat the submission package.
+
+To regenerate it after an icon change:
+
+```powershell
+pip install Pillow
+python -c "import sys; sys.path.insert(0, 'CleanMachine.Windows/Assets'); import generate_icons as g; g.render_mark(300).save('store/Square300x300AppTileIcon.png')"
+```
+
 ## Screenshots
 
-Requirements: **Desktop minimum 1366 x 768**, up to 3840 x 2160 (4K). PNG or
-JPG. One is required; four or more is recommended. Ignore the **Xbox** tab -
-this app is not published to Xbox.
+Requirements: **Desktop minimum 1366 x 768**, up to 3840 x 2160 (4K). PNG only,
+up to 10 desktop screenshots, 50 MB each. One is required; four or more is
+recommended. Ignore the **Xbox** tab - this app is not published to Xbox.
+
+Two guidelines that are easy to get wrong: keep important text and UI in the
+**top two-thirds** of the image, because the Store overlays text on the bottom
+third; and do not bake your own logos, captions or marketing text into the
+screenshot. Each one also takes an optional caption of 200 characters or less,
+and the order you upload is the order they display - drag to reorder after
+uploading.
 
 Capture at 1920 x 1080 or larger, in this order (first one is the hero shot):
 
