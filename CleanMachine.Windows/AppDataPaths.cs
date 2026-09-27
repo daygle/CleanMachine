@@ -104,6 +104,12 @@ internal static class AppDataPaths
     /// is bounded because this runs on every first launch.</summary>
     private static void CopyTree(string source, string target, int depth = 0)
     {
+        // File.Copy does not create intermediate directories: without this, every
+        // file in a nested folder (the Backups folder of registry restore points)
+        // fails with DirectoryNotFoundException - an IOException, so the catch
+        // below swallowed it and the restore points were silently dropped.
+        Directory.CreateDirectory(target);
+
         foreach (var file in SafeEnumerate(source, SearchOption.TopDirectoryOnly))
         {
             var destination = Path.Combine(target, Path.GetFileName(file));
