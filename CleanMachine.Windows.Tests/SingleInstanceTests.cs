@@ -95,7 +95,11 @@ public sealed class SingleInstanceTests
     public void TheMutexAclGrantsOnlyThisUserAndSystem()
         => AssertMinimalAcl(SingleInstance.BuildMutexSecurity());
 
-    private static void AssertMinimalAcl(ObjectSecurity security)
+    // CommonObjectSecurity, not ObjectSecurity: GetAccessRules is declared on
+    // the former, and both EventWaitHandleSecurity and MutexSecurity reach it by
+    // way of NativeObjectSecurity. Typing the parameter as the base class is what
+    // made this fail to compile.
+    private static void AssertMinimalAcl(CommonObjectSecurity security)
     {
         var granted = security
             .GetAccessRules(includeExplicit: true, includeInherited: true, targetType: typeof(SecurityIdentifier))
