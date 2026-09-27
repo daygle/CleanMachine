@@ -26,6 +26,79 @@ public sealed class ManifestAndSafetyTests
         Assert.Empty(review.Findings);
     }
 
+    /// <summary>The export destination is proven writable before reg.exe runs, so a
+    /// failure names the folder instead of reg.exe's "There may be a disk or file
+    /// system error" - which blames the disk for what is usually a missing or
+    /// redirected directory.</summary>
+    [Fact]
+    public void ExportTargetProbeAcceptsAWritableDestinationAndLeavesNothingBehind()
+    {
+        var scope = Path.Combine(Path.GetTempPath(), $"cm-export-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(scope);
+            var target = Path.Combine(scope, "registry-test.reg");
+
+            RegistryCareService.EnsureExportTargetUsable(target);
+
+            // No placeholder left for reg.exe to trip over, and no empty .reg file
+            // that ValidateBackupAsync could later mistake for a restore point.
+            Assert.False(File.Exists(target));
+        }
+        finally
+        {
+            Directory.Delete(scope, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ExportTargetProbeNamesTheFolderWhenTheDestinationCannotBeCreated()
+    {
+        var scope = Path.Combine(Path.GetTempPath(), $"cm-export-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(scope);
+            var blocker = Path.Combine(scope, "not-a-directory");
+            File.WriteAllText(blocker, "x");
+            // The parent is a file, so the destination can never be created.
+            var target = Path.Combine(blocker, "registry-test.reg");
+
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => RegistryCareService.EnsureExportTargetUsable(target));
+
+            Assert.Contains(blocker, ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(scope, recursive: true);
+        }
+    }
+
+    /// <summary>A packaged (MSIX) build redirects this process's %LOCALAPPDATA%
+    /// writes into the package folder while reg.exe - a child process outside the
+    /// package - writes to the literal path, so the app's own folder is one reg.exe
+    /// cannot use. The backup directories must therefore offer somewhere outside
+    /// every redirected known folder, or Registry Care can never clean anything.</summary>
+    [Fact]
+    public void BackupDirectoriesStartWithTheAppFolderAndOfferANonRedirectedFallback()
+    {
+        var directories = RegistryCareService.BackupDirectories;
+
+        // The app's own folder stays first so unpackaged builds are unaffected.
+        Assert.Equal(RegistryCareService.BackupsDirectory, directories[0]);
+        Assert.Equal("Backups", Path.GetFileName(directories[0]));
+
+        // At least one candidate must sit outside %LOCALAPPDATA%, which is the
+        // whole point: that is where the user profile entry and temp come from.
+        Assert.Contains(directories,
+            d => !d.Contains(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                StringComparison.OrdinalIgnoreCase));
+
+        // Duplicates would make the export spawn reg.exe twice per candidate for
+        // nothing and double-count backups in the Backups page.
+        Assert.Equal(directories.Count, directories.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
     [Fact]
     public async Task RegistryBackupExportRetriesOnceAfterATransientFailure()
     {

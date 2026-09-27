@@ -264,17 +264,49 @@ public sealed class RegistryCareService
     private static string ParentKeyPath(string path) => path[..path.LastIndexOf('\\')];
     private static string LeafKeyName(string path) => path[(path.LastIndexOf('\\') + 1)..];
 
-    /// <summary>The directory registry backups are written to. Every reader and
-    /// writer must go through this property instead of guessing at %LOCALAPPDATA%:
-    /// the root comes from <see cref="AppDataPaths"/>, which migrates MSIX installs
-    /// out of the package's virtualized LocalCache so an uninstall can honor the
-    /// keep/delete choice.</summary>
+    /// <summary>The preferred directory registry backups are written to. Every
+    /// reader and writer must go through <see cref="BackupDirectories"/> rather
+    /// than guessing at %LOCALAPPDATA%; this is simply its first entry. On a
+    /// packaged install the app's own writes here are redirected into the
+    /// package folder, so this directory is not always usable - see
+    /// <see cref="BackupDirectories"/>.</summary>
     public static string BackupsDirectory => Path.Combine(
         AppDataPaths.Root, "Backups");
 
-    /// <summary>How many .reg backup files exist in the backups directory
-    /// (0 when it does not exist or cannot be read).</summary>
-    public static int CountBackups() => CountBackups(BackupsDirectory);
+    /// <summary>Every directory a restore point may live in, most preferred
+    /// first, without duplicates.
+    /// <para>Index 0 is <see cref="BackupsDirectory"/>, which is correct for
+    /// unpackaged builds and for any machine where this process and the tools it
+    /// spawns agree on where %LOCALAPPDATA% really is. The later entries exist
+    /// because on a packaged (MSIX) install they demonstrably do not: the app's
+    /// own writes under %LOCALAPPDATA% are redirected into the package folder,
+    /// while reg.exe - a child process outside the package - writes to the
+    /// literal path, which therefore does not physically exist and reg.exe fails
+    /// with "Unable to write to the file". The user profile root sits outside
+    /// every redirected known folder, so the app and reg.exe can both write
+    /// there; %TEMP% is the last resort.</para>
+    /// <para>The export walks this list and keeps the first directory reg.exe
+    /// actually succeeds in, and the Backups page reads all of them, so a
+    /// restore point is never invisible just because the machine forced it
+    /// somewhere unexpected.</para></summary>
+    internal static IReadOnlyList<string> BackupDirectories
+    {
+        get
+        {
+            var directories = new List<string> { BackupsDirectory };
+            var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (!string.IsNullOrWhiteSpace(profile))
+                directories.Add(Path.Combine(profile, AppDataPaths.FolderName, "Backups"));
+            var temp = Path.GetTempPath();
+            if (!string.IsNullOrWhiteSpace(temp))
+                directories.Add(Path.Combine(temp, AppDataPaths.FolderName, "Backups"));
+            return directories.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    /// <summary>How many .reg backup files exist across every backup directory
+    /// (0 when none exists or cannot be read).</summary>
+    public static int CountBackups() => BackupDirectories.Sum(CountBackups);
 
     internal static int CountBackups(string directory)
     {
@@ -290,11 +322,15 @@ public sealed class RegistryCareService
         }
     }
 
-    /// <summary>Lists the .reg restore-point files in the backups directory,
-    /// newest first. Empty (never throws) when the directory is missing or
-    /// cannot be read. CreatedAt comes from the file's last-write time, which
-    /// matches the stamp in its name.</summary>
-    public static IReadOnlyList<RegistryBackup> ListBackups() => ListBackups(BackupsDirectory);
+    /// <summary>Lists the .reg restore-point files across every backup directory,
+    /// newest first. Empty (never throws) when they are missing or cannot be
+    /// read. CreatedAt comes from the file's last-write time, which matches the
+    /// stamp in its name.</summary>
+    public static IReadOnlyList<RegistryBackup> ListBackups()
+        => BackupDirectories
+            .SelectMany(ListBackups)
+            .OrderByDescending(b => b.CreatedAt)
+            .ToList();
 
     internal static IReadOnlyList<RegistryBackup> ListBackups(string directory)
     {
@@ -328,8 +364,10 @@ public sealed class RegistryCareService
         IReadOnlyList<RegistryFinding> findings, CancellationToken token)
     {
         var backups = new List<RegistryBackup>();
+        // The preferred directory. Each candidate is created on demand inside
+        // TryExportAsync, because a directory the app can create is not
+        // necessarily one reg.exe can write to.
         var directory = BackupsDirectory;
-        Directory.CreateDirectory(directory);
         var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
 
         if (findings.Any(f => f.Path.StartsWith(UninstallRoot + @"\", StringComparison.OrdinalIgnoreCase)))
@@ -374,7 +412,9 @@ public sealed class RegistryCareService
     // with a live process, antivirus scanning the new file); the backup is the
     // restore point the whole clean depends on, so one flaky attempt must not
     // block it. One retry after a short delay covers that without turning a real
-    // failure (missing key, access denied) into a long stall.
+    // failure (missing key, access denied) into a long stall. Each attempt walks
+    // every <see cref="BackupDirectories"/> candidate, so the worst case is a
+    // handful of short-lived processes before the clean is refused.
     internal static readonly TimeSpan ExportRetryDelay = TimeSpan.FromSeconds(1);
     internal const int ExportAttempts = 2;
 
@@ -408,6 +448,58 @@ public sealed class RegistryCareService
 
     private static async Task<RegistryBackup> ExportKeyAsync(string keyPath, string filePath, CancellationToken token)
     {
+        var fileName = Path.GetFileName(filePath);
+        var failures = new List<string>();
+        foreach (var directory in BackupDirectories)
+        {
+            var target = Path.Combine(directory, fileName);
+            var (backup, failure) = await TryExportAsync(keyPath, target, token);
+            if (backup is null)
+            {
+                failures.Add($"{target}: {failure}");
+                continue;
+            }
+
+            // Prefer the app's own folder when it can also hold the file, so the
+            // Backups page has one obvious place to look.
+            if (!string.Equals(target, filePath, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    File.Copy(target, filePath, overwrite: true);
+                    return new RegistryBackup(filePath, backup.CreatedAt);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // The restore point is valid where it is; losing it because the
+                    // app's own folder is unwritable would be worse than the tidier
+                    // layout, and ListBackups reads every directory anyway.
+                }
+            }
+            return backup;
+        }
+
+        throw new InvalidOperationException(
+            $"Registry backup export failed for HKCU\\{keyPath}"
+            + $" ({string.Join("; ", failures)}).");
+    }
+
+    private static async Task<(RegistryBackup? Backup, string? Failure)> TryExportAsync(
+        string keyPath, string filePath, CancellationToken token)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            EnsureExportTargetUsable(filePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                       or NotSupportedException or ArgumentException
+                                       or InvalidOperationException)
+        {
+            return (null, ex.Message);
+        }
+
         var psi = new ProcessStartInfo("reg.exe")
         {
             UseShellExecute = false,
@@ -426,11 +518,33 @@ public sealed class RegistryCareService
         await process.WaitForExitAsync(token);
 
         if (process.ExitCode != 0 || !File.Exists(filePath) || new FileInfo(filePath).Length == 0)
-            throw new InvalidOperationException(
-                $"Registry backup export failed (exit code {process.ExitCode}"
-                + (string.IsNullOrWhiteSpace(stderr) ? ")." : $": {stderr.Trim()})."));
+            return (null, $"exit code {process.ExitCode}"
+                + (string.IsNullOrWhiteSpace(stderr) ? $", no output file at {filePath}" : $": {stderr.Trim()}"));
 
-        return new RegistryBackup(filePath, DateTimeOffset.UtcNow);
+        return (new RegistryBackup(filePath, DateTimeOffset.UtcNow), null);
+    }
+
+    /// <summary>Proves the export destination is creatable and writable <i>before</i>
+    /// reg.exe runs, then removes the placeholder.
+    /// <para>CreateDirectory succeeding does not prove reg.exe can write there -
+    /// a redirected write lands somewhere else entirely - so the destination is
+    /// touched directly. This separates "the app cannot write here" from "only
+    /// reg.exe cannot", which is the difference between a fixable path and a
+    /// dead end. The placeholder is removed so no empty .reg file is left for
+    /// ValidateBackupAsync to later mistake for a restore point.</para></summary>
+    internal static void EnsureExportTargetUsable(string filePath)
+    {
+        try
+        {
+            using (File.Create(filePath)) { }
+            File.Delete(filePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                       or NotSupportedException or ArgumentException)
+        {
+            throw new InvalidOperationException(
+                $"The registry backup folder '{Path.GetDirectoryName(filePath)}' is not writable ({ex.Message}).");
+        }
     }
 
     public static async Task<bool> ValidateBackupAsync(
