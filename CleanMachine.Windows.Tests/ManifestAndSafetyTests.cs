@@ -762,6 +762,51 @@ public sealed class ManifestAndSafetyTests
         Assert.DoesNotContain("if (path == StartupRegistration.RunPath) continue", scan, StringComparison.Ordinal);
     }
 
+    /// <summary>A removal that did not happen must not be reported as one. The
+    /// original code opened the Run key with "?.", so a null handle made the
+    /// delete a silent no-op that still returned success - the user was told the
+    /// entry was gone, and it was still listed on the very next scan. This proves
+    /// Remove deletes a real value, and is the guard for the "it came back"
+    /// report that could not otherwise be told apart from an external re-add.</summary>
+    [Fact]
+    public void StartupEntryRemovalActuallyDeletesTheValue()
+    {
+        var service = new StartupAppsService();
+        const string scratch = "CleanMachineRemoveTest";
+        const string keyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64);
+        try
+        {
+            using (var key = root.CreateSubKey(keyPath))
+                key.SetValue(scratch, "\"C:\\Definitely\\Missing\\removed.exe\" --flag 'quoted'", RegistryValueKind.String);
+
+            var entry = new StartupEntry(
+                Name: scratch,
+                Command: "\"C:\\Definitely\\Missing\\removed.exe\" --flag 'quoted'",
+                ExecutablePath: @"C:\Definitely\Missing\removed.exe",
+                Source: StartupSource.RegistryCurrentUser,
+                Enabled: true,
+                Section: "Current User",
+                IsOrphan: true,
+                RegistryPath: $@"HKCU\{keyPath}",
+                ValueName: scratch);
+
+            Assert.True(service.Remove(entry, out var error), $"Remove reported a failure: {error}");
+
+            using var verify = root.OpenSubKey(keyPath, writable: false);
+            Assert.Null(verify?.GetValue(scratch));
+        }
+        finally
+        {
+            using (var key = root.OpenSubKey(keyPath, writable: true))
+                key?.DeleteValue(scratch, throwOnMissingValue: false);
+            using (var approved = root.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run", writable: true))
+                approved?.DeleteValue(scratch, throwOnMissingValue: false);
+        }
+    }
+
     [Fact]
     public void ScheduleTaskArgumentsCoverEveryTrigger()
     {

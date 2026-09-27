@@ -258,8 +258,32 @@ public sealed class StartupAppsService
             var valueName = entry.ValueName;
             if (string.IsNullOrEmpty(valueName)) return false;
 
+            // A null key handle used to make this a silent no-op that still
+            // reported success, so a failed removal looked exactly like a
+            // successful one - and the entry was still there on the next scan.
+            // Refuse rather than claim to have done something we did not do.
             using (var runKey = root.OpenSubKey(keyPath, writable: true))
-                runKey?.DeleteValue(valueName, throwOnMissingValue: false);
+            {
+                if (runKey is null)
+                {
+                    error = $"The startup key {keyPath} could not be opened for writing.";
+                    return false;
+                }
+                runKey.DeleteValue(valueName, throwOnMissingValue: false);
+            }
+
+            // Confirm the value is really gone rather than trusting the call.
+            // Something else re-creating the value later is outside our control,
+            // but a removal that did not take effect must not be reported as done.
+            using (var verify = root.OpenSubKey(keyPath, writable: false))
+            {
+                if (verify?.GetValue(valueName) is not null)
+                {
+                    error = $"The startup entry \"{valueName}\" could not be removed from {keyPath}.";
+                    return false;
+                }
+            }
+
             using (var approved = root.OpenSubKey(keyPath.EndsWith("RunOnce", StringComparison.Ordinal) ? ExplorerRunOnceKey : ExplorerRunKey, writable: true))
                 approved?.DeleteValue(valueName, throwOnMissingValue: false);
 
