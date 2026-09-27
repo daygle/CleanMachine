@@ -117,8 +117,25 @@ ARM64) plus crash symbols.
 
 `Package.appxmanifest` declares the restricted capability
 `rescap:Capability Name="runFullTrust"`, which Partner Center requires a written
-justification for. Paste the following into the submission's restricted-capability
-declaration field:
+justification for. The field asks one question - "why do you need it, and how
+will it be used" - so answer both halves in order.
+
+**Paste this (499 characters).** It answers why and how, and includes the
+assurances a reviewer looks for:
+
+> CleanMachine is a WinUI 3 desktop cleanup utility. Its entire purpose -
+> inspecting and deleting temporary files, browser caches, Recycle Bin contents
+> and registry values that lie outside the app container - cannot be done
+> through the sandboxed WinRT APIs, so it runs as a normal full-trust desktop
+> process. It writes only to per-user (HKCU) registry keys, never requests
+> administrator rights (requestedExecutionLevel is asInvoker), makes no network
+> connections, and never downloads or executes code.
+
+If the field accepts more and you want to be thorough, expand it with the
+detailed version below. If it truncates or rejects, use the short one - it
+already covers everything that gets a `runFullTrust` request approved.
+
+### Detailed version (use only if the field allows it)
 
 > CleanMachine is a Windows desktop cleanup utility built with the Windows App
 > SDK (WinUI 3). It requires `runFullTrust` because its entire purpose is
