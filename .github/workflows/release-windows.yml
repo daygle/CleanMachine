@@ -2,15 +2,15 @@ name: Release Windows app
 
 # The Microsoft Store is the only distribution channel (see RELEASE.md). This
 # workflow therefore builds exactly one artifact: the .msixupload that Partner
-# Center accepts. There is no self-signed certificate, no .exe installer
+# Center accepts. There is no certificate, no .exe installer
 # and no GitHub release - the Store installs and updates the app.
 #
-# No code-signing certificate is required. Partner Center accepts an UNSIGNED
-# .msixupload and signs it with Microsoft's own certificate as part of
-# ingestion. Signing it yourself is optional and only useful if you want the
-# package to be verifiable before it reaches the Store; set
-# STORE_CERT_BASE64/STORE_CERT_PASSWORD and the job will sign and then verify
-# the signature chains to a trusted root.
+# No code-signing certificate is required, and none is used. Partner Center
+# accepts an UNSIGNED .msixupload and signs it with Microsoft's own certificate
+# as part of ingestion. There is deliberately no optional self-signing path:
+# the retired sideload channel it served is gone, an unsigned package is what
+# the Store wants, and a certificate configured here would only invite the
+# question of why a Store submission needs one.
 
 on:
   push:
@@ -43,9 +43,6 @@ jobs:
       # (e.g. daygle.CleanMachine) and rejects any package whose Identity Name is
       # the bare app name. DisplayName stays the user-facing "CleanMachine".
       STORE_APP_NAME: ${{ vars.STORE_APP_NAME }}
-      # Optional. Leave unset to submit an unsigned package (the Store signs it).
-      STORE_CERT_BASE64: ${{ secrets.STORE_SIGNING_CERTIFICATE_BASE64 }}
-      STORE_CERT_PASSWORD: ${{ secrets.STORE_SIGNING_CERTIFICATE_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -114,25 +111,6 @@ jobs:
           $manifest.Save((Resolve-Path $manifestPath))
           Write-Host "Stamped publisher: $env:STORE_PUBLISHER; version: $env:VERSION4; publisher display name: $env:STORE_PUBLISHER_DISPLAY_NAME; identity name: $env:STORE_APP_NAME"
 
-      - name: Import the optional signing certificate
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if ([string]::IsNullOrWhiteSpace($env:STORE_CERT_BASE64) -or [string]::IsNullOrWhiteSpace($env:STORE_CERT_PASSWORD)) {
-            Write-Host "No Store signing certificate configured - building an UNSIGNED package. The Store signs it on ingestion."
-            "SIGN_PACKAGE=false" | Out-File $env:GITHUB_ENV -Append
-            return
-          }
-          $pfx = Join-Path $env:RUNNER_TEMP "store.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:STORE_CERT_BASE64))
-          $password = ConvertTo-SecureString $env:STORE_CERT_PASSWORD -AsPlainText -Force
-          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password |
-            Where-Object HasPrivateKey | Select-Object -First 1
-          if ($null -eq $cert) { throw "Store certificate could not be imported (no private key)." }
-          Write-Host "Signing with $($cert.Subject) [$($cert.Thumbprint)]"
-          "SIGN_PACKAGE=true"                     | Out-File $env:GITHUB_ENV -Append
-          "STORE_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append
-
       - name: Build the .msixupload bundle
         shell: pwsh
         run: |
@@ -150,16 +128,15 @@ jobs:
           # build with MSB6011 in WinAppSdkCheckFastlinkPdb. A symbol package is
           # optional for Store submission - it only affects de-minifying crash
           # dumps - so it is not worth a toolchain dependency to produce.
-          $signArgs = @("/p:AppxPackageSigningEnabled=false", "/p:AppxSymbolPackageEnabled=false")
-          if ("$env:SIGN_PACKAGE" -eq "true") {
-            $signArgs = @("/p:AppxPackageSigningEnabled=true", "/p:PackageCertificateThumbprint=$env:STORE_THUMBPRINT", "/p:AppxSymbolPackageEnabled=false")
-          }
+          # AppxPackageSigningEnabled=false is explicit, not incidental: the Store
+          # signs on ingestion, and an unsigned package is what it accepts.
           dotnet msbuild $env:PROJECT /t:Publish `
             /p:Configuration=Release /p:Platform=x64 `
             /p:UapAppxPackageBuildMode=StoreUpload `
             "/p:ApplicationDisplayVersion=$env:VERSION3" `
             /p:GenerateAppxPackageOnBuild=true `
-            @signArgs
+            /p:AppxPackageSigningEnabled=false `
+            /p:AppxSymbolPackageEnabled=false
           if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }
           # The Publish targets stage the .msixupload under bin/AppPackages/,
           # which is the AppxPackageDir the project pins, so search the bin tree.
@@ -229,12 +206,19 @@ jobs:
             throw "PublisherDisplayName in the package ('$publisherDisplayName') does not match the publisher display name reserved in Partner Center ('$($env:STORE_PUBLISHER_DISPLAY_NAME)'). Set STORE_PUBLISHER_DISPLAY_NAME to the display name on the Partner Center Identity page."
           }
 
+          # The package must be UNSIGNED: the Store signs it during ingestion.
+          # Guard against a stray signing setting upstream producing a
+          # pre-signed package, which Partner Center rejects at ingestion.
+          #
+          # Note the assertion is "not Valid", NOT "is NotSigned":
+          # Get-AuthenticodeSignature reports UnknownError on a .msixupload,
+          # because that file is a ZIP container rather than a PE and has no
+          # Authenticode signature area to inspect. Observed on the runner, and
+          # pinning the exact status string would fail every build.
           $sig = Get-AuthenticodeSignature "CleanMachine-StoreUpload.msixupload"
-          Write-Host "Signature status: $($sig.Status)"
-          if ("$env:SIGN_PACKAGE" -eq "true" -and $sig.Status -ne 'Valid') {
-            # Only meaningful when a certificate was configured: a self-signed one
-            # reports NotTrusted, which the Store would reject.
-            throw "Store package is not validly signed ($($sig.Status)). A signed submission must chain to a CA in the Microsoft Trusted Root Program - or unset the certificate secrets to submit unsigned."
+          Write-Host "Signature status: $($sig.Status) (the Store signs on ingestion; this package is not pre-signed)"
+          if ($sig.Status -eq 'Valid') {
+            throw "Submission package is already signed. It must be uploaded unsigned so the Store can sign it with Microsoft's certificate; a pre-signed package is rejected at ingestion."
           }
           Write-Host "Submission package verified."
 

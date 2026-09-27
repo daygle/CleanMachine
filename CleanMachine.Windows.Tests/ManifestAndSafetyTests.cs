@@ -1105,7 +1105,8 @@ public sealed class ManifestAndSafetyTests
 
         // Phrases that only ever described the removed private/self-signed channel
         // or the removed updater. "self-signed" on its own is still legitimate: the
-        // release workflow supports optional self-signing and says so.
+        // docs and workflow explain that there is deliberately no signing path at
+        // all, which is a different claim from offering one.
         var retired = new[]
         {
             "WINDOWS_SIGNING_CERTIFICATE",   // the retired sideload secrets

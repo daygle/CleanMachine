@@ -19,25 +19,14 @@ being explicit:
 
 There is therefore no need to purchase a commercial (OV/EV) code-signing
 certificate, and no need for a paid artifact-signing subscription, in order to
-publish on the Store. The workflow defaults to building an **unsigned** package
-for exactly this reason. The only money involved is the one-off Partner Center
-developer account fee, which Microsoft waives for individual and company
-accounts.
+publish on the Store. The workflow builds an **unsigned** package for exactly
+this reason, and asserts that the result really is unsigned before uploading it.
+The only money involved is the one-off Partner Center developer account fee,
+which Microsoft waives for individual and company accounts.
 
-Signing the package yourself is *optional*. It buys you nothing user-visible -
-the package you upload is a build artifact, not something users ever run - so
-the recommended setup is to leave the certificate secrets unset. If you do set
-them, the workflow signs the package and then verifies that the signature chains
-to a CA in the Microsoft Trusted Root Program, failing the build early if it does
-not.
-
-| Secret | Required? | Value |
-|---|---|---|
-| `STORE_SIGNING_CERTIFICATE_BASE64` | No | Base64 of a PFX whose subject chains to a trusted root |
-| `STORE_SIGNING_CERTIFICATE_PASSWORD` | No | Password of that PFX |
-
-The certificate's subject must contain the package publisher, because the
-publisher is part of the package identity.
+There is no optional self-signing path. The retired sideload channel it served
+no longer exists, and keeping it would only invite the question of why a Store
+submission needs a certificate at all.
 
 ## Prerequisites
 
@@ -108,7 +97,7 @@ ARM64) plus crash symbols.
 | Package artifact | `*.msixupload` (package + crash symbols) |
 | Build mode | `UapAppxPackageBuildMode=StoreUpload` |
 | Bundling | `AppxBundle=Always`, `AppxBundlePlatforms=x64\|arm64` |
-| Signing | unsigned (the Store signs it) - optional to self-sign |
+| Signing | unsigned, and verified unsigned - the Store signs on ingestion |
 | Publisher | an identity **reserved in Partner Center** (`STORE_PUBLISHER`) |
 | Publisher display name | the publisher display name from the same page (`STORE_PUBLISHER_DISPLAY_NAME`) |
 | Identity name | the reserved identity name, `<publisher>.<app>` (`STORE_APP_NAME`) |

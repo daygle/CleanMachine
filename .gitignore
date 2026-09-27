@@ -30,10 +30,6 @@ artifacts/
 *.appxbundle
 *.msix
 *.msixbundle
-*.pfx
 
 # Local CleanMachine state
 CleanMachine.Backups/
-
-# Local signing cert material (never commit)
-.signing-cert/
