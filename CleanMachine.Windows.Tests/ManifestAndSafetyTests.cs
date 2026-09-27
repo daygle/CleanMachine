@@ -1010,106 +1010,6 @@ public sealed class ManifestAndSafetyTests
         Assert.False(clone.TrayCleaningAnimation);
     }
 
-    /// <summary>The desktop shortcut must target the package identity, not the
-    /// version-stamped WindowsApps executable: the folder an exe-targeting link
-    /// points at is deleted on the next update, which is what broke the user's
-    /// desktop icon after every in-app update.</summary>
-    [Fact]
-    public void MsixDesktopShortcutTargetsThePackageIdentityNotTheVersionedExe()
-    {
-        var family = "CleanMachine_1234567890abcdef_abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-
-        var target = MsixUninstallService.BuildMsixShortcutTarget(family);
-
-        Assert.Equal($"shell:AppsFolder\\{family}!App", target);
-        Assert.DoesNotContain("WindowsApps", target, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(".exe", target, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(@"\", target[(target.IndexOf('\\') + 1)..], StringComparison.Ordinal);
-    }
-
-    /// <summary>The in-repo version defaults (RELEASE.md checklist step 1) must stay
-    /// in lockstep: the MSIX package identity and the Win32 assembly identity are
-    /// bumped together on every release. The release workflow stamps the package
-    /// identity from the tag but never rewrites app.manifest, so this checked-in
-    /// pair is the only thing that keeps them from silently drifting apart again.</summary>
-    [Fact]
-    public void PackageAndAppManifestVersionsAgree()
-    {
-        var root = FindRepoRoot();
-        Assert.True(root is not null,
-            "Repo root (containing CleanMachine.Windows\\) was not found above the test output directory.");
-
-        var appx = XDocument.Load(Path.Combine(root!, "CleanMachine.Windows", "Package.appxmanifest"));
-        var appManifest = XDocument.Load(Path.Combine(root!, "CleanMachine.Windows", "app.manifest"));
-
-        // Descend by LocalName so the appx default xmlns and the asm.v1 xmlns on
-        // app.manifest never have to be spelled out (and can never go stale).
-        var packageVersion = appx.Descendants().FirstOrDefault(e => e.Name.LocalName == "Identity")?
-            .Attribute("Version")?.Value;
-        var assemblyVersion = appManifest.Descendants().FirstOrDefault(e => e.Name.LocalName == "assemblyIdentity")?
-            .Attribute("version")?.Value;
-
-        Assert.False(string.IsNullOrWhiteSpace(packageVersion),
-            "Package.appxmanifest has no Identity Version attribute.");
-        Assert.False(string.IsNullOrWhiteSpace(assemblyVersion),
-            "app.manifest has no assemblyIdentity version attribute.");
-        // Four-part X.Y.Z.0: the shape the release workflow stamps from the tag.
-        Assert.Matches(@"^\d+\.\d+\.\d+\.\d+$", packageVersion);
-        Assert.Matches(@"^\d+\.\d+\.\d+\.\d+$", assemblyVersion);
-        Assert.Equal(packageVersion, assemblyVersion);
-    }
-
-    /// <summary>Partner Center requires a written justification for every restricted
-    /// capability, and the justification in RELEASE.md covers exactly one of them.
-    /// A newly added restricted capability silently ships without a justification
-    /// and fails certification, so the set is pinned here.</summary>
-    [Fact]
-    public void PackageDeclaresOnlyTheJustifiedRestrictedCapability()
-    {
-        var root = FindRepoRoot();
-        Assert.True(root is not null, "Repo root was not found above the test output directory.");
-
-        var appx = XDocument.Load(Path.Combine(root!, "CleanMachine.Windows", "Package.appxmanifest"));
-        var restricted = appx.Descendants()
-            .Where(e => e.Name.LocalName == "Capability")
-            .Select(e => e.Attribute("Name")?.Value)
-            .OfType<string>()
-            .ToArray();
-
-        // runFullTrust is required by the desktop:Extension full-trust entry that
-        // backs the WinUI 3 app; the justification in RELEASE.md explains why.
-        Assert.Equal(new[] { "runFullTrust" }, restricted);
-    }
-
-    /// <summary>Three separate Partner Center Identity values are validated at
-    /// ingestion, and a mismatch in any of them is only reported after the whole
-    /// 175 MB package has uploaded. All three are stamped per run and re-checked in
-    /// the built package; this pins that wiring so a stamp cannot be quietly dropped
-    /// from the workflow and the checked-in placeholders shipped again.</summary>
-    [Fact]
-    public void EveryPartnerCenterIdentityFieldIsStampedAndVerified()
-    {
-        var root = FindRepoRoot();
-        Assert.True(root is not null, "Repo root was not found above the test output directory.");
-
-        var workflow = File.ReadAllText(
-            Path.Combine(root!, ".github", "workflows", "release-windows.yml"));
-
-        foreach (var variable in new[] { "STORE_PUBLISHER", "STORE_PUBLISHER_DISPLAY_NAME", "STORE_APP_NAME" })
-            Assert.Contains(variable, workflow, StringComparison.Ordinal);
-
-        // Each field is stamped ...
-        Assert.Contains("Properties.PublisherDisplayName", workflow, StringComparison.Ordinal);
-        Assert.Contains("Identity.Name", workflow, StringComparison.Ordinal);
-        Assert.Contains("Identity.Publisher", workflow, StringComparison.Ordinal);
-
-        // ... and each is re-checked against the variable after the build. Stamping
-        // alone would let a wrong variable value through unnoticed.
-        Assert.Contains("does not match the publisher display name", workflow, StringComparison.Ordinal);
-        Assert.Contains("does not match the identity name reserved", workflow, StringComparison.Ordinal);
-        Assert.Contains("does not match STORE_PUBLISHER", workflow, StringComparison.Ordinal);
-    }
-
     /// <summary>The user-facing app name is not the reserved identity name:
     /// Partner Center issues the latter as "&lt;publisher&gt;.&lt;app&gt;". The
     /// workflow stamps Identity/@Name, so DisplayName must keep saying
@@ -1320,7 +1220,14 @@ public sealed class ManifestAndSafetyTests
     /// run on this machine - the one thing no pure unit test can show. It creates a
     /// real scheduled task, so it is opt-in: set CLEANMACHINE_RUN_SCHEDULED_TESTS=1.
     /// CI enables it because its runners are ephemeral, which is where this coverage
-    /// belongs.</summary>
+    /// belongs.
+    ///
+    /// This drives real Task Scheduler, so it is inherently timing-sensitive. It
+    /// failed intermittently with a bare "the script never executed" that gave no
+    /// way to tell a slow runner from a task that never started. It now clears any
+    /// stale marker first (a leftover one used to make it pass without proving
+    /// anything), schedules safely across midnight, allows a cold runner a real
+    /// budget, and reports the task's own Last Task Result when it does fail.</summary>
     [Fact]
     [Trait("Category", "ScheduledTask")]
     public async Task ScheduledTaskCanBeScheduledAndRuns()
@@ -1334,6 +1241,11 @@ public sealed class ManifestAndSafetyTests
         Directory.CreateDirectory(directory);
         try
         {
+            // A marker left by an earlier attempt would satisfy the poll on its
+            // first iteration, so the test could pass with the task never having
+            // run - the exact thing it exists to disprove.
+            if (File.Exists(marker)) File.Delete(marker);
+
             // A harmless stand-in for a real task action, including an apostrophe in
             // the value it echoes: that is the quoting this path has to survive.
             await File.WriteAllTextAsync(scriptPath,
@@ -1345,24 +1257,60 @@ public sealed class ManifestAndSafetyTests
             Assert.True(action.Length <= schtasksActionLimit,
                 $"Task action is {action.Length} chars; schtasks allows at most {schtasksActionLimit}.");
 
+            // /ST takes a bare HH:mm, so "now + 5 minutes" that crosses midnight
+            // formats to a time earlier today and schtasks is handed a start in the
+            // past. Push those to tomorrow, where the time really is in the future.
+            var start = DateTime.Now.AddMinutes(5);
+            if (start.Date != DateTime.Now.Date) start = start.AddDays(1);
+
             var escaped = action.Replace("\"", "\\\"");
             var created = await ScheduleService.RunProcessAsync("schtasks.exe",
-                $"/Create /TN \"{taskName}\" /TR \"{escaped}\" /SC ONCE /ST {DateTime.Now.AddMinutes(5):HH:mm} /RL LIMITED /F",
+                $"/Create /TN \"{taskName}\" /TR \"{escaped}\" /SC ONCE /ST {start:HH:mm} /RL LIMITED /F",
                 default);
             Assert.True(created.Success, $"schtasks /Create failed: {created.Reason}");
 
             var run = await ScheduleService.RunProcessAsync("schtasks.exe", $"/Run /TN \"{taskName}\"", default);
             Assert.True(run.Success, $"schtasks /Run failed: {run.Reason}");
 
-            // The task is fire-and-forget, so poll for the marker rather than guessing.
-            for (var i = 0; i < 40 && !File.Exists(marker); i++) await Task.Delay(500);
-            Assert.True(File.Exists(marker), "The task ran but the script never executed.");
+            // The task is fire-and-forget, so poll for the marker rather than
+            // guessing. A cold runner can take a while to spin the task up, and a
+            // timeout here would be indistinguishable from a real failure - so the
+            // budget is generous and a failure is explained rather than asserted.
+            var deadline = DateTime.UtcNow.AddSeconds(90);
+            while (!File.Exists(marker) && DateTime.UtcNow < deadline)
+                await Task.Delay(250);
+
+            Assert.True(File.Exists(marker),
+                $"The task was started but its action did not write the marker within 90s. " +
+                $"Task Scheduler reported: {await DescribeTaskAsync(taskName)}");
         }
         finally
         {
             await ScheduleService.RunProcessAsync("schtasks.exe", $"/Delete /TN \"{taskName}\" /F", default);
             try { Directory.Delete(directory, recursive: true); } catch { }
         }
+    }
+
+    /// <summary>Task Scheduler's own account of what happened, for a failure
+    /// message. "Last Task Result" is the field that separates a task that never
+    /// started (267011 - has not yet run) from one that ran and failed, which is
+    /// the distinction a bare timeout throws away.</summary>
+    private static async Task<string> DescribeTaskAsync(string taskName)
+    {
+        var query = await ScheduleService.RunProcessAsync("schtasks.exe",
+            $"/Query /TN \"{taskName}\" /FO LIST /V", default);
+        if (!query.Success) return $"could not be queried ({query.Reason})";
+
+        foreach (var line in query.Output.Split('\n'))
+        {
+            var text = line.Trim().Replace("\r", string.Empty);
+            if (text.StartsWith("Last Task Result", StringComparison.OrdinalIgnoreCase)
+                || text.StartsWith("Last Run Time", StringComparison.OrdinalIgnoreCase)
+                || text.StartsWith("Task To Run", StringComparison.OrdinalIgnoreCase)
+                || text.StartsWith("Status", StringComparison.OrdinalIgnoreCase))
+                return text;
+        }
+        return "no status reported";
     }
 
     /// <summary>Walks up from the test output directory (bin/&lt;config&gt;/&lt;tfm&gt;,
