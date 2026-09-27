@@ -4,10 +4,10 @@ using Xunit;
 namespace CleanMachine.Windows.Tests;
 
 /// <summary>Tests for the data-root helpers behind MSIX uninstall keep/remove:
-/// stripping the package redirection from %LOCALAPPDATA%, the one-time migration
-/// of package-local data to the real folder (including its failure fallback),
-/// and the deferred package-removal command, whose quoting must be airtight
-/// because it embeds the package identity.</summary>
+/// stripping the package redirection from %LOCALAPPDATA%, the copy of package-local
+/// data into the durable user-profile folder (including the properties that keep it
+/// safe to run on every launch), and the deferred package-removal command, whose
+/// quoting must be airtight because it embeds the package identity.</summary>
 public sealed class AppDataPathsTests
 {
     [Fact]
@@ -27,85 +27,164 @@ public sealed class AppDataPathsTests
             AppDataPaths.RealLocalAppData(@"C:\Users\glen\AppData\Local"));
     }
 
+    /// <summary>The whole point of the durable folder: it must not sit under
+    /// %LOCALAPPDATA%, because that is the tree a packaged install has redirected
+    /// into the package (and therefore deletes on uninstall).</summary>
     [Fact]
-    public void MigrationMovesPackageDataToTheRealFolder()
+    public void ProfileRootIsOutsideTheRedirectedLocalAppDataTree()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        Assert.StartsWith(profile, AppDataPaths.ProfileRoot, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(AppDataPaths.FolderName, Path.GetFileName(AppDataPaths.ProfileRoot));
+        Assert.DoesNotContain(localAppData, AppDataPaths.ProfileRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MigrationCopiesPackageDataToTheDurableFolder()
     {
         var scope = TestScope();
         var packageLocal = Path.Combine(scope, "Packages", "Family", "LocalCache", "Local", "CleanMachine");
-        var real = Path.Combine(scope, "AppData", "Local", "CleanMachine");
+        var durable = Path.Combine(scope, "Profile", "CleanMachine");
+        try
+        {
+            Directory.CreateDirectory(packageLocal);
+            File.WriteAllText(Path.Combine(packageLocal, "settings.json"), "{\"seed\":true}");
+
+            var root = AppDataPaths.MigrateToDurableRoot(durable, packageLocal);
+
+            Assert.Equal(durable, root);
+            Assert.True(File.Exists(Path.Combine(durable, "settings.json")));
+            Assert.Equal("{\"seed\":true}", File.ReadAllText(Path.Combine(durable, "settings.json")));
+        }
+        finally { Directory.Delete(scope, recursive: true); }
+    }
+
+    /// <summary>Windows destroys the package folder at uninstall, so the copy must
+    /// never be a move. Losing the only copy of a user's settings is the one
+    /// unrecoverable outcome of this whole change.</summary>
+    [Fact]
+    public void MigrationNeverDeletesTheSource()
+    {
+        var scope = TestScope();
+        var packageLocal = Path.Combine(scope, "package", "CleanMachine");
+        var durable = Path.Combine(scope, "Profile", "CleanMachine");
         try
         {
             Directory.CreateDirectory(packageLocal);
             File.WriteAllText(Path.Combine(packageLocal, "settings.json"), "{}");
+            File.WriteAllText(Path.Combine(packageLocal, "activity.json"), "[]");
 
-            var root = AppDataPaths.MigrateMsixData(packageLocal, real);
+            AppDataPaths.MigrateToDurableRoot(durable, packageLocal);
 
-            Assert.Equal(real, root);
-            Assert.True(File.Exists(Path.Combine(real, "settings.json")));
-            Assert.False(Directory.Exists(packageLocal));
+            Assert.True(Directory.Exists(packageLocal), "package folder must be left intact");
+            Assert.True(File.Exists(Path.Combine(packageLocal, "settings.json")));
+            Assert.True(File.Exists(Path.Combine(packageLocal, "activity.json")));
+        }
+        finally { Directory.Delete(scope, recursive: true); }
+    }
+
+    /// <summary>Newer data wins: re-running the migration on every launch must
+    /// never resurrect an old settings file the user has since changed.</summary>
+    [Fact]
+    public void MigrationNeverOverwritesWhatIsAlreadyInTheDurableFolder()
+    {
+        var scope = TestScope();
+        var packageLocal = Path.Combine(scope, "package", "CleanMachine");
+        var durable = Path.Combine(scope, "Profile", "CleanMachine");
+        try
+        {
+            Directory.CreateDirectory(packageLocal);
+            File.WriteAllText(Path.Combine(packageLocal, "settings.json"), "stale");
+            Directory.CreateDirectory(durable);
+            File.WriteAllText(Path.Combine(durable, "settings.json"), "current");
+
+            AppDataPaths.MigrateToDurableRoot(durable, packageLocal);
+
+            Assert.Equal("current", File.ReadAllText(Path.Combine(durable, "settings.json")));
+        }
+        finally { Directory.Delete(scope, recursive: true); }
+    }
+
+    /// <summary>Registry restore points live in a Backups subfolder. If the copy
+    /// only walked top-level files the user's restore points would be the first
+    /// thing lost.</summary>
+    [Fact]
+    public void MigrationCarriesSubfoldersIncludingBackups()
+    {
+        var scope = TestScope();
+        var packageLocal = Path.Combine(scope, "package", "CleanMachine");
+        var durable = Path.Combine(scope, "Profile", "CleanMachine");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(packageLocal, "Backups"));
+            File.WriteAllText(Path.Combine(packageLocal, "Backups", "registry-test.reg"), "REGEDIT4");
+
+            AppDataPaths.MigrateToDurableRoot(durable, packageLocal);
+
+            Assert.True(File.Exists(Path.Combine(durable, "Backups", "registry-test.reg")));
         }
         finally { Directory.Delete(scope, recursive: true); }
     }
 
     [Fact]
-    public void MigrationKeepsExistingRealDataAndLeavesTheShadowAlone()
+    public void MigrationReadsFromEveryLegacyRootAndCreatesTheDurableFolder()
     {
         var scope = TestScope();
         var packageLocal = Path.Combine(scope, "package", "CleanMachine");
-        var real = Path.Combine(scope, "real", "CleanMachine");
+        var real = Path.Combine(scope, "AppData", "Local", "CleanMachine");
+        var durable = Path.Combine(scope, "Profile", "CleanMachine");
         try
         {
             Directory.CreateDirectory(packageLocal);
-            File.WriteAllText(Path.Combine(packageLocal, "old.json"), "old");
             Directory.CreateDirectory(real);
+            File.WriteAllText(Path.Combine(packageLocal, "activity.json"), "[]");
             File.WriteAllText(Path.Combine(real, "settings.json"), "{}");
 
-            var root = AppDataPaths.MigrateMsixData(packageLocal, real);
+            var root = AppDataPaths.MigrateToDurableRoot(durable, packageLocal, real);
 
-            Assert.Equal(real, root);
-            Assert.True(File.Exists(Path.Combine(packageLocal, "old.json")), "shadow copy must not be touched");
-            Assert.True(File.Exists(Path.Combine(real, "settings.json")));
+            Assert.Equal(durable, root);
+            Assert.True(File.Exists(Path.Combine(durable, "activity.json")));
+            Assert.True(File.Exists(Path.Combine(durable, "settings.json")));
         }
         finally { Directory.Delete(scope, recursive: true); }
     }
 
     [Fact]
-    public void MigrationReplacesAnEmptyRealPlaceholder()
+    public void MigrationIgnoresAMissingOrUnreadableSource()
     {
         var scope = TestScope();
-        var packageLocal = Path.Combine(scope, "package", "CleanMachine");
-        var real = Path.Combine(scope, "real", "CleanMachine");
+        var durable = Path.Combine(scope, "Profile", "CleanMachine");
+        var missing = Path.Combine(scope, "does-not-exist");
         try
         {
-            Directory.CreateDirectory(packageLocal);
-            File.WriteAllText(Path.Combine(packageLocal, "settings.json"), "{}");
-            Directory.CreateDirectory(real); // exists but has no content
+            var root = AppDataPaths.MigrateToDurableRoot(durable, missing, string.Empty);
 
-            var root = AppDataPaths.MigrateMsixData(packageLocal, real);
-
-            Assert.Equal(real, root);
-            Assert.True(File.Exists(Path.Combine(real, "settings.json")));
-            Assert.False(Directory.Exists(packageLocal));
+            Assert.Equal(durable, root);
+            Assert.True(Directory.Exists(durable));
         }
         finally { Directory.Delete(scope, recursive: true); }
     }
 
+    /// <summary>If the durable folder cannot be used the app must fall back to a
+    /// location that is actually reachable, rather than to an empty folder it
+    /// cannot write - the user would silently lose every setting.</summary>
     [Fact]
-    public void MigrationFallsBackToPackageDataWhenTheMoveFails()
+    public void MigrationFallsBackToAReachableLegacyFolderWhenTheDurableOneIsUnusable()
     {
         var scope = TestScope();
         var packageLocal = Path.Combine(scope, "package", "CleanMachine");
-        var real = Path.Combine(scope, "real", "CleanMachine"); // parent below is a FILE: Move throws
+        var blocked = Path.Combine(scope, "blocked", "CleanMachine"); // parent below is a FILE
         try
         {
             Directory.CreateDirectory(packageLocal);
             File.WriteAllText(Path.Combine(packageLocal, "settings.json"), "{}");
-            Directory.CreateDirectory(Path.GetDirectoryName(real)!);
-            File.WriteAllText(real, "not a directory");
+            Directory.CreateDirectory(Path.GetDirectoryName(blocked)!);
+            File.WriteAllText(blocked, "not a directory");
 
-            var root = AppDataPaths.MigrateMsixData(packageLocal, real);
+            var root = AppDataPaths.MigrateToDurableRoot(blocked, packageLocal);
 
-            // The move failed, so the data must stay reachable at the old location.
             Assert.Equal(packageLocal, root);
             Assert.True(File.Exists(Path.Combine(packageLocal, "settings.json")));
         }

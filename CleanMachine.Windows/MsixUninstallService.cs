@@ -64,8 +64,10 @@ internal static class MsixUninstallService
         Try(() => Process.Start(PowerShellInfo(
             "-NoProfile -ExecutionPolicy Bypass -Command \"Get-ScheduledTask -TaskPath '\\CleanMachine\\' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false\"")));
 
-        // 4. Leftover scratch files under %TEMP%\CleanMachine. Nothing writes there
-        //    anymore, but older installs did, and %TEMP% outlives the app.
+        // 4. Scratch files under %TEMP%\CleanMachine. Older installs wrote there,
+        //    and a registry backup that could not be written to the app's own
+        //    folder falls back to it - see RegistryCareService.BackupDirectories.
+        //    %TEMP% outlives the app, so sweep it either way.
         Try(() =>
         {
             var temp = Path.Combine(Path.GetTempPath(), FolderName);
@@ -76,17 +78,21 @@ internal static class MsixUninstallService
         {
             // 5a. The canonical data folder (user opted into deleting it).
             Try(DeleteData(AppDataPaths.Root));
-            // 5b. Plus any package-local copy, should the one-time migration have
-            //     failed; either way it would die with the package, and deleting it
-            //     now makes the choice honest for a reinstall.
+            // 5b. Plus any legacy copies. The package-local one would die with the
+            //     package anyway; deleting it now makes the choice honest for a
+            //     reinstall. The %LOCALAPPDATA% one can hold data written by
+            //     builds that predate the durable folder.
             Try(DeleteData(AppDataPaths.PackageLocalRoot));
+            Try(DeleteData(AppDataPaths.RealRoot));
         }
         else
         {
-            // 5c. "Keep" must be honest: data still sitting package-local (a failed
-            //     migration) would be destroyed by the package removal, so push it
-            //     out to the real folder before we go.
-            Try(() => AppDataPaths.MigrateMsixData(AppDataPaths.PackageLocalRoot, AppDataPaths.RealRoot));
+            // 5c. "Keep" must be honest: data still sitting package-local would be
+            //     destroyed by the package removal, so copy it out to the durable
+            //     folder first. This is a copy, never a move - the package removal
+            //     is not ours to interrupt, and the app may still be running when
+            //     the deferred helper gets to it.
+            Try(() => AppDataPaths.CopyToDurableRoot());
         }
 
         return true;

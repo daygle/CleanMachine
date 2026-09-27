@@ -19,7 +19,40 @@ public sealed partial class AboutPage : Page
     {
         InitializeComponent();
         VersionText.Text = "Version " + ResolveVersion();
+        DescribeDataFolder();
         Loaded += (_, _) => AttachRowFeedback();
+    }
+
+    /// <summary>Shows where the user's settings, statistics and history actually
+    /// live, and whether that folder survives an uninstall. Under MSIX both
+    /// %LOCALAPPDATA% locations are inside (or redirected into) the package
+    /// folder, which Windows deletes on removal - so saying "keep my data" is
+    /// only honest when the data is somewhere else. Surfacing the path makes
+    /// that checkable instead of something the user has to take on trust.</summary>
+    private void DescribeDataFolder()
+    {
+        var root = AppDataPaths.Root;
+        DataFolderPath.Text = root;
+        if (IsInsideThePackageFolder(root))
+        {
+            DataFolderStatus.Text =
+                "Warning: this folder is inside the app package, so uninstalling from Windows deletes it:";
+            DataFolderStatus.Foreground = BrushFromHex("#9A3412");
+        }
+        else
+        {
+            DataFolderStatus.Text =
+                "Outside the app package, so uninstalling CleanMachine keeps it:";
+        }
+    }
+
+    private static bool IsInsideThePackageFolder(string root)
+    {
+        var normalized = root.TrimEnd('\\');
+        foreach (var legacy in new[] { AppDataPaths.PackageLocalRoot, AppDataPaths.RealRoot })
+            if (normalized.Equals(legacy.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
     }
 
     /// <summary>The version shown in Settings > About, i.e. the one the user can

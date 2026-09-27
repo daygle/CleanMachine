@@ -122,7 +122,8 @@ public sealed partial class SettingsPage : Page
         var data = new ContentDialog
         {
             Title = "Also delete your CleanMachine data?",
-            Content = "Settings, cleanup statistics, activity history, and registry backup files. " +
+            Content = "Settings, cleanup statistics, activity history, and registry backup files, " +
+                      $"stored in:\n{AppDataPaths.Root}\n\n" +
                       "Keep them and a future reinstall picks up where you left off.",
             PrimaryButtonText = "Delete data",
             SecondaryButtonText = "Keep data",
