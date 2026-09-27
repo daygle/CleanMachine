@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Buffers.Binary;
 using System.Diagnostics;
 
 namespace CleanMachine.Windows;
@@ -239,8 +240,10 @@ public sealed class InstalledAppsService
         {
             var val = key.GetValue(name);
             if (val is int i) return i;
+            // REG_DWORD-as-bytes is little-endian; read it explicitly rather than
+            // relying on the platform's BitConverter endianness.
             if (val is byte[] b && b.Length >= 4)
-                return BitConverter.ToInt32(b, 0);
+                return BinaryPrimitives.ReadInt32LittleEndian(b);
         }
         catch { }
         return 0;
