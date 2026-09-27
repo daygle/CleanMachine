@@ -67,12 +67,22 @@ public sealed class AppCleanupService
                 var isDirectory = Directory.Exists(item.FullPath);
                 try
                 {
+                    // Never delete through a junction/symlink. The recursive walker skips
+                    // reparse points inside the tree, but the item's own root is not covered
+                    // by that, so prove it is a real entry before removing anything under (or
+                    // at) it. Fails closed: an uninspectable path counts as a link.
+                    if ((isDirectory || File.Exists(item.FullPath)) && NativeSafety.IsReparsePoint(item.FullPath))
+                    {
+                        skipped.Add(new(item.FullPath, "Reparse point (junction/symlink) - skipped"));
+                        continue;
+                    }
                     if (isDirectory)
                     {
                         foreach (var file in FileEnumeration.Files(item.FullPath))
                         {
                             try
                             {
+                                if (NativeSafety.IsReparsePoint(file)) { skipped.Add(new(file, "Reparse point (junction/symlink) - skipped")); continue; }
                                 var info = new FileInfo(file);
                                 if (info.IsReadOnly) { skipped.Add(new(file, "Read-only")); continue; }
                                 var len = info.Length;

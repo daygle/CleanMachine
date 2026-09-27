@@ -301,8 +301,21 @@ public sealed class RegistryCareService
         }
     }
 
-    private static string ParentKeyPath(string path) => path[..path.LastIndexOf('\\')];
-    private static string LeafKeyName(string path) => path[(path.LastIndexOf('\\') + 1)..];
+    // Split a key path into its parent and leaf. The scanner only ever produces
+    // multi-segment paths, but these are total functions regardless: a path with no
+    // backslash is treated as a top-level name (empty parent, whole string as leaf)
+    // rather than throwing ArgumentOutOfRangeException on a -1 slice.
+    private static string ParentKeyPath(string path)
+    {
+        var index = path.LastIndexOf('\\');
+        return index < 0 ? string.Empty : path[..index];
+    }
+
+    private static string LeafKeyName(string path)
+    {
+        var index = path.LastIndexOf('\\');
+        return index < 0 ? path : path[(index + 1)..];
+    }
 
     /// <summary>The preferred directory registry backups are written to. Every
     /// reader and writer must go through <see cref="BackupDirectories"/> rather

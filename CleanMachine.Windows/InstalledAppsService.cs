@@ -259,7 +259,7 @@ public sealed class InstalledAppsService
 
     /// <summary>Launches the uninstaller for the given app. Returns true if started.
     /// Store packages are removed through the deployment API.</summary>
-    public bool LaunchUninstall(InstalledApp app, bool quiet = false)
+    public async Task<bool> LaunchUninstallAsync(InstalledApp app, bool quiet = false)
     {
         if (app.Kind == AppEntryKind.Store)
         {
@@ -269,7 +269,7 @@ public sealed class InstalledAppsService
                 var package = manager.FindPackagesForUser(string.Empty)
                     .FirstOrDefault(p => p.Id.FullName == app.PackageFullName);
                 if (package is null) return false;
-                manager.RemovePackageAsync(package.Id.FullName).AsTask().GetAwaiter().GetResult();
+                await manager.RemovePackageAsync(package.Id.FullName).AsTask().ConfigureAwait(false);
                 return true;
             }
             catch { return false; }
@@ -283,6 +283,10 @@ public sealed class InstalledAppsService
 
         return LaunchCommand(cmd);
     }
+
+    /// <summary>Synchronous convenience wrapper for <see cref="LaunchUninstallAsync"/>.</summary>
+    public bool LaunchUninstall(InstalledApp app, bool quiet = false)
+        => LaunchUninstallAsync(app, quiet).GetAwaiter().GetResult();
 
     /// <summary>Starts a vendor command, splitting executable path from arguments
     /// correctly for both quoted and unquoted command strings.</summary>
@@ -327,14 +331,7 @@ public sealed class InstalledAppsService
                 }
             }
 
-            if (fileName.Length == 0) return false;
-
-            // Let the shell resolve the rest (e.g. msiexec, rundll32 templates).
-            if (!Path.IsPathRooted(fileName) && !File.Exists(fileName))
-            {
-                Process.Start(new ProcessStartInfo(trimmed) { UseShellExecute = true });
-                return true;
-            }
+            if (string.IsNullOrWhiteSpace(fileName)) return false;
 
             Process.Start(new ProcessStartInfo(fileName, arguments) { UseShellExecute = true });
             return true;

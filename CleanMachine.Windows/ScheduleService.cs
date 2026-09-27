@@ -276,7 +276,20 @@ public sealed class ScheduleService
         // completes, and whatever UI flow awaited registration freezes for good.
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync(token);
+        try
+        {
+            await process.WaitForExitAsync(token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancellation must not leave the helper running behind the caller's back:
+            // a cancelled registration could otherwise go on to register the task
+            // after the caller stopped waiting for it. Kill the child before the
+            // exception propagates. Best-effort - the process may already be gone.
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            catch { /* already gone, or not killable */ }
+            throw;
+        }
         string outText = string.Empty, errText = string.Empty;
         try { await Task.WhenAll(stdout, stderr); outText = stdout.Result; errText = stderr.Result; }
         catch { /* a partially read stream still leaves a usable exit code */ }

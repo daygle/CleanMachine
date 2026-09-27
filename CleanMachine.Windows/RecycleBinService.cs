@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace CleanMachine.Windows;
 
 /// <summary>Removes Recycle Bin items older than a given age. It only ever touches
@@ -99,12 +101,13 @@ public static class RecycleBinService
         try
         {
             using var stream = File.Open(metaPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            // A byte[] rather than stackalloc: BitConverter's read helpers take
-            // byte[] only, and 24 bytes is not worth a BinaryPrimitives import.
-            byte[] header = new byte[24];
+            // stackalloc + BinaryPrimitives: the header is a fixed 24-byte little-endian
+            // structure, and this runs across every Recycle Bin item, so there is no
+            // reason to heap-allocate a byte[] per file just to feed BitConverter.
+            Span<byte> header = stackalloc byte[24];
             if (stream.ReadAtLeast(header, 24, throwOnEndOfStream: false) < 24) return null;
-            var offset = BitConverter.ToInt32(header, 0) == 1 ? 12 : 16;
-            var fileTime = BitConverter.ToInt64(header, offset);
+            var offset = BinaryPrimitives.ReadInt32LittleEndian(header) == 1 ? 12 : 16;
+            var fileTime = BinaryPrimitives.ReadInt64LittleEndian(header.Slice(offset));
             if (fileTime <= 0) return null;
             return DateTime.FromFileTimeUtc(fileTime);
         }

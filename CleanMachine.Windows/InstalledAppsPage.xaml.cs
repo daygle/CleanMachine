@@ -341,7 +341,7 @@ public sealed partial class InstalledAppsPage : Page
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
 
-        var started = await Task.Run(() => _service.LaunchUninstall(app));
+        var started = await _service.LaunchUninstallAsync(app);
         await new ActivityStore().AddAsync(new ActivityEntry(
             DateTimeOffset.UtcNow,
             "Application Uninstall",

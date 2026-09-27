@@ -45,21 +45,25 @@ public sealed class BackgroundAgent : IDisposable
         {
             while (await _timer.WaitForNextTickAsync(linked.Token))
             {
-                // Current PIDs grouped by browser process name.
+                // Current PIDs grouped by browser process name. Query each browser
+                // by name instead of sweeping Process.GetProcesses(): the latter
+                // allocates a Process for every running process on the machine (hundreds
+                // of objects) on every 5-second tick just to throw almost all of them
+                // away. Targeted queries touch only the three browsers we monitor.
                 var current = new Dictionary<string, HashSet<int>>(StringComparer.OrdinalIgnoreCase);
-                foreach (var process in Process.GetProcesses())
+                foreach (var name in BrowserProcessNames)
                 {
-                    try
+                    foreach (var process in Process.GetProcessesByName(name))
                     {
-                        if (BrowserProcessNames.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
+                        try
                         {
-                            if (!current.TryGetValue(process.ProcessName, out var set))
-                                current[process.ProcessName] = set = [];
+                            if (!current.TryGetValue(name, out var set))
+                                current[name] = set = [];
                             set.Add(process.Id);
                         }
+                        catch { }
+                        finally { process.Dispose(); }
                     }
-                    catch { }
-                    finally { process.Dispose(); }
                 }
 
                 // A browser "exited" when it had processes last tick and none now.

@@ -88,8 +88,19 @@ public sealed class CleanupStatsStore
         var directory = Path.GetDirectoryName(FilePath)!;
         Directory.CreateDirectory(directory);
         var temp = FilePath + ".tmp";
-        await using (var stream = File.Create(temp))
-            await JsonSerializer.SerializeAsync(stream, stats, new JsonSerializerOptions { WriteIndented = true }, token);
-        File.Move(temp, FilePath, true);
+        try
+        {
+            await using (var stream = File.Create(temp))
+                await JsonSerializer.SerializeAsync(stream, stats, new JsonSerializerOptions { WriteIndented = true }, token);
+            File.Move(temp, FilePath, true);
+        }
+        finally
+        {
+            // A failed or interrupted write must not leave a stray .tmp to accumulate;
+            // on the success path the Move above already consumed it.
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 }

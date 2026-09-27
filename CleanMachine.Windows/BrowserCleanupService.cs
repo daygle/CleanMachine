@@ -137,14 +137,27 @@ public sealed class BrowserCleanupService
         finally { StateGate.Release(); }
     }
 
+    /// <summary>Process names of the browsers this tool monitors. Kept in one place
+    /// so every targeted query asks for exactly the same set.</summary>
+    private static readonly string[] BrowserProcessNames = ["chrome", "msedge", "firefox"];
+
     public static IReadOnlyList<string> GetRunningBrowsers()
     {
+        // Query each browser by name rather than sweeping Process.GetProcesses():
+        // the latter materialises a Process for every running process just to
+        // filter down to three. This only touches the browsers we care about.
         var result = new List<string>();
-        foreach (var process in Process.GetProcesses())
+        foreach (var name in BrowserProcessNames)
         {
-            try { if (process.ProcessName is "chrome" or "msedge" or "firefox") result.Add(process.ProcessName); }
-            catch { }
-            finally { process.Dispose(); }
+            var processes = Process.GetProcessesByName(name);
+            try
+            {
+                if (processes.Length > 0) result.Add(name);
+            }
+            finally
+            {
+                foreach (var process in processes) { try { process.Dispose(); } catch { } }
+            }
         }
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
@@ -175,18 +188,21 @@ public sealed class BrowserCleanupService
         // Tier 1: graceful. WM_CLOSE asks the app to close like the window's X
         // button; browsers with background mode (Chrome's "Continue running
         // background apps", Edge's "Startup Boost") may keep processes alive
-        // after closing their windows, which tier 2 handles.
-        foreach (var process in Process.GetProcesses())
+        // after closing their windows, which tier 2 handles. Each requested browser
+        // is queried by name rather than sweeping every process on the machine.
+        foreach (var name in names)
         {
-            try
+            foreach (var process in Process.GetProcessesByName(name))
             {
-                if (!names.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase)) continue;
-                // WM_CLOSE closes windows politely; return value is false when the
-                // process has no window (background mode) - tier 2 covers it.
-                process.CloseMainWindow();
+                try
+                {
+                    // WM_CLOSE closes windows politely; return value is false when the
+                    // process has no window (background mode) - tier 2 covers it.
+                    process.CloseMainWindow();
+                }
+                catch { }
+                finally { process.Dispose(); }
             }
-            catch { }
-            finally { process.Dispose(); }
         }
 
         // Give the graceful close a moment to work before escalating.
@@ -389,6 +405,15 @@ public sealed class BrowserCleanupService
         var skipped = new List<CleanupIssue>();
         try
         {
+            // Refuse to delete through a junction/symlink. The recursive walker below
+            // already skips reparse points inside the tree, but the top-level path (and
+            // a single-file target) is not covered by that, so prove it is a real entry
+            // before removing it. Fails closed: an uninspectable path counts as a link.
+            if (File.Exists(path) && NativeSafety.IsReparsePoint(path))
+            {
+                skipped.Add(new CleanupIssue(path, "Reparse point (junction/symlink) - skipped"));
+                return (0, 0, skipped);
+            }
             if (File.Exists(path))
             {
                 var length = new FileInfo(path).Length;
@@ -396,11 +421,21 @@ public sealed class BrowserCleanupService
                 return (1, length, skipped);
             }
             if (!Directory.Exists(path)) return (0, 0, skipped);
+            if (NativeSafety.IsReparsePoint(path))
+            {
+                skipped.Add(new CleanupIssue(path, "Reparse point (junction/symlink) - skipped"));
+                return (0, 0, skipped);
+            }
 
             foreach (var file in FileEnumeration.Files(path))
             {
                 try
                 {
+                    if (NativeSafety.IsReparsePoint(file))
+                    {
+                        skipped.Add(new CleanupIssue(file, "Reparse point (junction/symlink) - skipped"));
+                        continue;
+                    }
                     var length = new FileInfo(file).Length;
                     File.Delete(file);
                     removed++;
@@ -462,6 +497,7 @@ public sealed class BrowserCleanupService
 
     private static bool TryRemoveJsonKeys(string path, string section, string[] keys, List<CleanupIssue> skipped)
     {
+        var temp = path + ".cleanmachine.tmp";
         try
         {
             var root = JsonNode.Parse(File.ReadAllText(path)) as JsonObject;
@@ -471,7 +507,11 @@ public sealed class BrowserCleanupService
             if (!changed) return false;
 
             File.Copy(path, path + ".cleanmachine.bak", true);
-            File.WriteAllText(path, root.ToJsonString());
+            // Write the whole document to a temp file and swap it in atomically, so a
+            // crash or power loss mid-write can never leave a half-written Preferences
+            // that the browser would then discard (losing far more than we removed).
+            File.WriteAllText(temp, root.ToJsonString());
+            File.Move(temp, path, overwrite: true);
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
@@ -479,10 +519,19 @@ public sealed class BrowserCleanupService
             skipped.Add(new CleanupIssue(path, ex.Message));
             return false;
         }
+        finally
+        {
+            // A failed or abandoned write must not leave a stray temp behind; on the
+            // success path the Move above already consumed it.
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     private static bool TryRemovePrefsJsLines(string path, List<CleanupIssue> skipped)
     {
+        var temp = path + ".cleanmachine.tmp";
         try
         {
             var lines = File.ReadAllLines(path);
@@ -493,13 +542,21 @@ public sealed class BrowserCleanupService
             if (filtered.Length == lines.Length) return false;
 
             File.Copy(path, path + ".cleanmachine.bak", true);
-            File.WriteAllLines(path, filtered);
+            // Temp-then-swap so a crash mid-write can never truncate prefs.js.
+            File.WriteAllLines(temp, filtered);
+            File.Move(temp, path, overwrite: true);
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             skipped.Add(new CleanupIssue(path, ex.Message));
             return false;
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 }
