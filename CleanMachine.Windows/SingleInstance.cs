@@ -62,11 +62,13 @@ public static class SingleInstance
     /// is denied.
     /// </para>
     /// <para>
-    /// The rights are the three the app actually uses - signal and wait, and read
-    /// the descriptor back so the policy can be inspected. ChangePermissions and
-    /// TakeOwnership are deliberately absent: nothing here rewrites them, and
-    /// leaving them off means a compromised process as this user cannot widen the
-    /// ACL to admit a second one.
+    /// The rights are the ones the app uses plus ChangePermissions, which is not
+    /// optional: <see cref="EventWaitHandleAcl.Create"/> and
+    /// <see cref="MutexAcl.Create"/> open an already-existing object with the
+    /// rights of the descriptor being applied, so an ACL without WRITE_DAC makes
+    /// the second instance fail to open and fall into the catch that deliberately
+    /// does not lock the user out. ChangePermissions on an object only this user
+    /// and SYSTEM can already open is not a meaningful widening.
     /// </para>
     /// <para>Internal rather than private so a test can assert the policy itself.</para></summary>
     internal static EventWaitHandleSecurity BuildEventSecurity()
@@ -75,7 +77,8 @@ public static class SingleInstance
         const EventWaitHandleRights rights =
             EventWaitHandleRights.Synchronize
             | EventWaitHandleRights.Modify
-            | EventWaitHandleRights.ReadPermissions;
+            | EventWaitHandleRights.ReadPermissions
+            | EventWaitHandleRights.ChangePermissions;
         foreach (var sid in AccessOwners())
             security.AddAccessRule(new EventWaitHandleAccessRule(sid, rights, AccessControlType.Allow));
         return security;
@@ -87,7 +90,10 @@ public static class SingleInstance
     {
         var security = new MutexSecurity();
         const MutexRights rights =
-            MutexRights.Synchronize | MutexRights.Modify | MutexRights.ReadPermissions;
+            MutexRights.Synchronize
+            | MutexRights.Modify
+            | MutexRights.ReadPermissions
+            | MutexRights.ChangePermissions;
         foreach (var sid in AccessOwners())
             security.AddAccessRule(new MutexAccessRule(sid, rights, AccessControlType.Allow));
         return security;
