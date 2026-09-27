@@ -42,38 +42,67 @@ public static class SingleInstance
     /// per-user suffix removes the collision.
     /// </para>
     /// <para>
-    /// The suffix is the naming half of the fix; <see cref="RestrictToCurrentUser"/>
-    /// is the half that actually enforces it, because a name alone is not a
-    /// boundary - a process as this user can derive the same suffix. Neither half
-    /// stops code already running as this user, which is a limit of the process
-    /// model rather than of this code.</para></summary>
+    /// The suffix is the naming half of the fix; <see cref="BuildEventSecurity"/>
+    /// and <see cref="BuildMutexSecurity"/> are the half that actually enforces
+    /// it, because a name alone is not a boundary - a process as this user can
+    /// derive the same suffix. Neither half stops code already running as this
+    /// user, which is a limit of the process model rather than of this
+    /// code.</para></summary>
     internal static string UserScope { get; } = ComputeUserScope();
 
-    /// <summary>Builds a DACL granting full control to this user and to SYSTEM,
-    /// and to nobody else.
+    /// <summary>Builds a DACL for the named events granting this user and SYSTEM,
+    /// and nobody else.
     /// <para>
     /// A named kernel object with no explicit security descriptor gets one derived
     /// from the creating token, which in practice means another account in the
     /// same session can open and signal it. These objects are a control channel -
     /// setting the shutdown event makes the running app exit - so they are created
-    /// with an explicit, minimal ACL instead. A fresh ObjectSecurity starts with no
-    /// ACEs, so the two allow rules below are the whole policy: anything not named
+    /// with an explicit, minimal ACL instead. A fresh security object starts with
+    /// no ACEs, so the rules added here are the whole policy: anything not named
     /// is denied.
-    /// </para></summary>
-    private static TSecurity RestrictToCurrentUser<TSecurity>(TSecurity security) where TSecurity : ObjectSecurity
+    /// </para>
+    /// <para>
+    /// The rights are the three the app actually uses - signal and wait, and read
+    /// the descriptor back so the policy can be inspected. ChangePermissions and
+    /// TakeOwnership are deliberately absent: nothing here rewrites them, and
+    /// leaving them off means a compromised process as this user cannot widen the
+    /// ACL to admit a second one.
+    /// </para>
+    /// <para>Internal rather than private so a test can assert the policy itself.</para></summary>
+    internal static EventWaitHandleSecurity BuildEventSecurity()
     {
-        // SYSTEM, because a scheduled task or an installer helper may legitimately
-        // need to reach these. Administrators are deliberately NOT granted: the app
-        // is per-user and runs unelevated, so nothing in it needs that reach.
-        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
-        security.AddAccessRule(new SystemAccessRule(
-            system, SystemAccessRights.FullControl, AccessControlType.Allow));
-
-        var user = WindowsIdentity.GetCurrent().User;
-        if (user is not null)
-            security.AddAccessRule(new SystemAccessRule(
-                user, SystemAccessRights.FullControl, AccessControlType.Allow));
+        var security = new EventWaitHandleSecurity();
+        const EventWaitHandleRights rights =
+            EventWaitHandleRights.Synchronize
+            | EventWaitHandleRights.Modify
+            | EventWaitHandleRights.ReadPermissions;
+        foreach (var sid in AccessOwners())
+            security.AddAccessRule(new EventWaitHandleAccessRule(sid, rights, AccessControlType.Allow));
         return security;
+    }
+
+    /// <summary>The same policy for the single-instance mutex. Internal for the
+    /// same reason as <see cref="BuildEventSecurity"/>.</summary>
+    internal static MutexSecurity BuildMutexSecurity()
+    {
+        var security = new MutexSecurity();
+        const MutexRights rights =
+            MutexRights.Synchronize | MutexRights.Modify | MutexRights.ReadPermissions;
+        foreach (var sid in AccessOwners())
+            security.AddAccessRule(new MutexAccessRule(sid, rights, AccessControlType.Allow));
+        return security;
+    }
+
+    /// <summary>Who the ACLs above admit: SYSTEM, because a scheduled task or an
+    /// installer helper may legitimately need to reach these, and this user.
+    /// Administrators are deliberately NOT included - the app is per-user and runs
+    /// unelevated, so nothing in it needs that reach, and the smallest ACL that
+    /// still works is the one worth writing.</summary>
+    private static IEnumerable<SecurityIdentifier> AccessOwners()
+    {
+        yield return new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        var user = WindowsIdentity.GetCurrent().User;
+        if (user is not null) yield return user;
     }
 
     /// <summary>The kernel object name for <paramref name="baseName"/>, scoped to
@@ -109,9 +138,12 @@ public static class SingleInstance
         {
             // For an existing mutex the initiallyOwned flag is ignored, so this
             // never blocks; createdNew tells us whether we are the first instance.
-            var mutex = new Mutex(
+            // MutexAcl rather than the Mutex constructor: this is the only way to
+            // hand the object an explicit DACL instead of the one it would
+            // otherwise inherit from this token.
+            var mutex = MutexAcl.Create(
                 initiallyOwned: true, Name(MutexName, scope), out var createdNew,
-                RestrictToCurrentUser(new MutexSecurity()));
+                BuildMutexSecurity());
             if (createdNew) return mutex;
             mutex.Dispose(); // another instance owns it
             return null;
@@ -189,15 +221,17 @@ public static class SingleInstance
     {
         try
         {
-            // EventWaitHandleAcl rather than EventWaitHandle: this is the only way
-            // to hand the object an explicit DACL instead of the one inherited from
-            // this token.
-            var shutdown = new EventWaitHandleAcl(
-                initialState: false, mode: EventResetMode.AutoReset, Name(ShutdownEventName, scope),
-                RestrictToCurrentUser(new EventWaitHandleSecurity()));
-            var activate = new EventWaitHandleAcl(
-                initialState: false, mode: EventResetMode.AutoReset, Name(ActivateEventName, scope),
-                RestrictToCurrentUser(new EventWaitHandleSecurity()));
+            // EventWaitHandleAcl.Create rather than the EventWaitHandle
+            // constructor, for the same reason as MutexAcl above. The security
+            // applies only when the object is actually created; if it already
+            // exists, Create hands back the existing one untouched, which is the
+            // behaviour the single-instance protocol already relies on.
+            var shutdown = EventWaitHandleAcl.Create(
+                initialState: false, EventResetMode.AutoReset, Name(ShutdownEventName, scope),
+                out _, BuildEventSecurity());
+            var activate = EventWaitHandleAcl.Create(
+                initialState: false, EventResetMode.AutoReset, Name(ActivateEventName, scope),
+                out _, BuildEventSecurity());
             return new InstanceEvents(shutdown, activate);
         }
         catch { return null; }
