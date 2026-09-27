@@ -104,6 +104,12 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 - Persisted startup registration
 - All automatic/background cleaning preferences live on the Automatic Cleanup page
 
+### About
+- App identity, the installed Store version, and a link to the privacy policy
+- Optional sponsorship via [GitHub Sponsors](https://github.com/sponsors/daygle), with no ads, upsells, or tracking
+- Links to the source repository and issue tracker
+- Every outbound link opens in the user's own browser through the Windows shell; the app itself still opens no network connections
+
 ## Safety model
 
 All destructive workflows are review-first. Browser cleaning requires supported browsers to be closed; safe items (caches, sessions, crash reports) are selected by default, while destructive items (cookies, history, saved passwords) are opt-in behind a confirmation. Registry Care deletes only after a verified `.reg` backup and only from an allow-listed set of per-user paths. Windows Cleanup rejects protected, recently modified, locked, inaccessible, and reparse-point paths. Recycle Bin cleanup requires explicit confirmation. CleanMachine does not modify the protected Windows component store.

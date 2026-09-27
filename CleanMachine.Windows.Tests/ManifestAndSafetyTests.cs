@@ -1134,6 +1134,46 @@ public sealed class ManifestAndSafetyTests
             "Retired channels/features still described: " + string.Join(", ", offenders));
     }
 
+    /// <summary>The About page offers sponsorship, and the whole point of that
+    /// page is that a single wrong URL sends supporters somewhere useless while
+    /// looking completely normal in the UI. The link is stored as a Button Tag
+    /// rather than in visible text, so a typo in it compiles, renders, and ships
+    /// unnoticed - this pins the exact URL. It also pins the other outbound
+    /// links, and asserts the page opens them through the shell instead of
+    /// making a request of its own, which is what keeps the "no network
+    /// connections" privacy claim true now that the app links out.</summary>
+    [Fact]
+    public void AboutPageLinksOutThroughTheShellAndPinsTheSponsorshipUrl()
+    {
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
+
+        var markupPath = Path.Combine(root!, "CleanMachine.Windows", "AboutPage.xaml");
+        Assert.True(File.Exists(markupPath), $"Expected file is missing: {markupPath}");
+        var markup = File.ReadAllText(markupPath);
+
+        var expected = new[]
+        {
+            "https://github.com/sponsors/daygle",
+            "https://github.com/daygle/CleanMachine",
+            "https://github.com/daygle/CleanMachine/blob/main/PRIVACY.md",
+            "https://github.com/daygle/CleanMachine/issues",
+        };
+        foreach (var url in expected)
+            Assert.Contains($"Tag=\"{url}\"", markup, StringComparison.Ordinal);
+
+        // A sponsorship link that points at a plausible-but-wrong host (a typo, or
+        // someone else's profile) is the failure mode worth catching.
+        Assert.DoesNotContain("sponsors.github.com", markup, StringComparison.OrdinalIgnoreCase);
+
+        // Outbound links must go through the shell's default browser. An in-app
+        // web request would contradict the published privacy policy.
+        var code = File.ReadAllText(Path.Combine(root!, "CleanMachine.Windows", "AboutPage.xaml.cs"));
+        Assert.Contains("UseShellExecute = true", code, StringComparison.Ordinal);
+        foreach (var forbidden in new[] { "HttpClient", "WebClient", "HttpWebRequest", "WebRequest", "System.Net" })
+            Assert.DoesNotContain(forbidden, code, StringComparison.Ordinal);
+    }
+
     /// <summary>schtasks writes the reason it refused a task to stderr. Keeping the
     /// first meaningful line is what turns "something went wrong" into a diagnosable
     /// failure - it is the whole reason this bug was catchable after the fact.</summary>

@@ -125,6 +125,12 @@
 
         <!-- Row 2: always-visible bottom section (never clipped, never scrolled away) -->
         <StackPanel Grid.Row="2">
+          <Button x:Name="NavAbout" Style="{StaticResource NavButton}" Click="About_Click">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <FontIcon Glyph="&#xE946;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>
+              <TextBlock Text="About" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
           <Button x:Name="NavSettings" Style="{StaticResource NavButton}" Click="Settings_Click">
             <StackPanel Orientation="Horizontal" Spacing="10">
               <FontIcon Glyph="&#xE713;" FontSize="15" Foreground="#4B7769" VerticalAlignment="Center"/>

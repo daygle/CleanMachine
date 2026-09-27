@@ -32,6 +32,12 @@ the app opens a network connection.
   temporary files and caches you explicitly select for cleaning.
 - It does not request administrator rights. It runs entirely in your own user
   account and only touches per-user (HKCU) registry locations.
+- It does not embed a web browser or send anything over the network. The About
+  page links to the project's source code, issue tracker, and GitHub Sponsors
+  page; clicking one hands the address to Windows, which opens it in your own
+  browser. Only if you click does anything leave your PC, and that request goes
+  to GitHub from your browser, under GitHub's privacy policy, not from
+  CleanMachine.
 
 ## Permissions
 
