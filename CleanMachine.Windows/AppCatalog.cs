@@ -62,9 +62,10 @@ public static class AppCatalog
         new("notepadpp", "Notepad++", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Notepad++\\backup", "Backup Files"),
-                new("Notepad++\\cache", "Cache Files"),
-                new("Notepad++\\session.xml", "Old Session Data")
+                // Not "backup" or "session.xml": the backup folder holds the
+                // contents of unsaved tabs and the session file is the list of open
+                // tabs. Neither is a cache, and deleting either loses user work.
+                new("Notepad++\\cache", "Cache Files")
             ])
         ]),
 
@@ -101,8 +102,9 @@ public static class AppCatalog
         new("zoom", "Zoom", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
+                // Not "data": it holds Zoom's local settings database, so clearing
+                // it signs the user out and resets their preferences.
                 new("Zoom\\logs", "Log Files"),
-                new("Zoom\\data", "Cache Data"),
                 new("Zoom\\Updates", "Old Update Files")
             ])
         ]),

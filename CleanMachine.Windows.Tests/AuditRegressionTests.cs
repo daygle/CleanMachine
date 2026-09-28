@@ -119,4 +119,20 @@ public sealed class AuditRegressionTests
                 StartupAppsService.ResolveExecutable(command));
         }
     }
+
+    [Theory]
+    [InlineData("notepadpp", "backup")]
+    [InlineData("notepadpp", "session.xml")]
+    [InlineData("zoom", "data")]
+    public void AppCatalogNeverOffersUserDataAsTempFiles(string appId, string leaf)
+    {
+        // Application Cleanup selects every item by default, including in Quick
+        // Clean and schedules, so the catalog must only list recreatable data.
+        // These hold unsaved work, open tabs, or an app's settings database.
+        var app = AppCatalog.Definitions.Single(d => d.Id == appId);
+        var paths = app.TempLocations.SelectMany(l => l.Entries).Select(e => e.RelativePath);
+
+        Assert.DoesNotContain(paths, p =>
+            p.Split('\\', '/').Last().Equals(leaf, StringComparison.OrdinalIgnoreCase));
+    }
 }
