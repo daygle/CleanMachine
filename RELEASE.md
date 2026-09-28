@@ -32,7 +32,7 @@ submission needs a certificate at all.
 
 1. **Reserve an app identity in Partner Center** (Product → Identity) and set three
    repository **variables** (Settings → Secrets and variables → Actions →
-   Variables — not the Secrets tab) from that page:
+   Variables - not the Secrets tab) from that page:
 
    | Variable | Value |
    |---|---|

@@ -33,16 +33,24 @@ public sealed partial class AboutPage : Page
     {
         var root = AppDataPaths.Root;
         DataFolderPath.Text = root;
+        // "Your settings, statistics, activity history and registry backups live in
+        // the folder below." is deliberately a complete sentence before the clause
+        // about the package: the previous wording led with "Outside the app
+        // package, so uninstalling CleanMachine keeps it:", where "it" had no
+        // clear antecedent (the folder, or the user's data?) and the contents of
+        // the folder were never named.
+        DataFolderStatus.Text =
+            "Your settings, statistics, activity history and registry backups live in the folder below. ";
         if (IsInsideThePackageFolder(root))
         {
-            DataFolderStatus.Text =
-                "Warning: this folder is inside the app package, so uninstalling from Windows deletes it:";
+            DataFolderStatus.Text +=
+                "This one is inside the app package, so uninstalling CleanMachine from Windows deletes it:";
             DataFolderStatus.Foreground = BrushFromHex("#9A3412");
         }
         else
         {
-            DataFolderStatus.Text =
-                "Outside the app package, so uninstalling CleanMachine keeps it:";
+            DataFolderStatus.Text +=
+                "It sits outside the app package, so uninstalling CleanMachine leaves it in place:";
         }
     }
 

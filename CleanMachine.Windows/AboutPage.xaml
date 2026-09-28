@@ -63,7 +63,10 @@
             <FontIcon Glyph="&#xE8B7;" FontSize="18" Foreground="#286E58" VerticalAlignment="Center"/>
             <TextBlock Text="Your data" FontSize="16" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
           </StackPanel>
-          <TextBlock x:Name="DataFolderStatus" Text="Settings, statistics and history are stored in:"
+          <!-- Placeholder matches the durable-folder wording set in
+               DescribeDataFolder(), so the card never shows one sentence for a
+               frame before being replaced by another. -->
+          <TextBlock x:Name="DataFolderStatus" Text="Your settings, statistics, activity history and registry backups live in the folder below. It sits outside the app package, so uninstalling CleanMachine leaves it in place:"
                      FontSize="12" Foreground="#53635B" TextWrapping="Wrap"/>
           <TextBlock x:Name="DataFolderPath" Text="-" FontSize="11" Foreground="#6E8178"
                      TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
