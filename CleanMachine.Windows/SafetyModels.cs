@@ -11,8 +11,9 @@ internal static class CleanupCoordinator
     internal static readonly SemaphoreSlim Gate = new(1, 1);
 }
 /// <summary>Per-category (or per-item) contribution to a clean, used to build the
-/// Activity page's drill-down breakdown.</summary>
-public sealed record CleanupCategoryResult(string Category, int Removed, long Bytes);
+/// Activity page's drill-down breakdown. <see cref="Skipped"/> counts the files in
+/// the category that could not be removed (locked, access denied).</summary>
+public sealed record CleanupCategoryResult(string Category, int Removed, long Bytes, int Skipped = 0);
 public sealed record CleanupReport(
     CleanupResult Result,
     IReadOnlyList<CleanupIssue> Skipped,

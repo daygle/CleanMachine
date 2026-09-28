@@ -315,24 +315,6 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
-    public void BrowserCleanupOptionsDefaultsAreReasonable()
-    {
-        var options = new BrowserCleanupOptions();
-        Assert.True(options.RequireBrowsersClosed);
-        Assert.Null(options.ExcludedPaths);
-        Assert.Null(options.AdditionalProfileRoots);
-    }
-
-    [Fact]
-    public void BrowserCleanupOptionsSupportsExclusions()
-    {
-        HashSet<string> excluded = ["/tmp/skipped"];
-        var options = new BrowserCleanupOptions(ExcludedPaths: excluded);
-        Assert.NotNull(options.ExcludedPaths);
-        Assert.Contains("/tmp/skipped", options.ExcludedPaths!);
-    }
-
-    [Fact]
     public void WindowsCleanupRiskEnumHasExpectedValues()
     {
         Assert.Equal(0, (int)CleanupRisk.Safe);

@@ -602,7 +602,9 @@ public sealed partial class WindowsCleanupPage : Page
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
         });
-        var issues = result.Skipped.Where(s => s.Path == category.Path).Count();
+        // Skipped entries carry file paths, so they are counted per category by the
+        // service rather than matched against the category's folder here.
+        var issues = result.Breakdown?.FirstOrDefault(b => b.Category == category.Name)?.Skipped ?? 0;
         if (issues > 0)
         {
             row.Children.Add(new TextBlock

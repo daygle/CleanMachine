@@ -22,11 +22,10 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 - Each area's Quick Clean has a gear picker choosing exactly what it includes; the Windows picker also offers the Recycle Bin as an explicit opt-in (off by default, since it permanently removes deleted items)
 
 ### Browser Cleaner
-- Scans Chrome, Edge, and Firefox profiles including standard, custom, and portable installations
 - Multi-profile discovery across local and roaming application data
-- Configurable exclusion paths to skip specific directories
-- Interrupted-cleanup state persistence with recovery messaging
-- Process-lock detection requires browsers to be closed before cleaning
+- Configurable exclusion paths to skip specific directories (honoured by manual, Quick Clean, scheduled and browser-exit cleans)
+- Process-lock detection requires every supported browser to be closed before a manual clean
+- Quick Clean and scheduled runs clear only the cache item, never user data, and leave cache files written in the last 10 minutes alone so an open browser is not disturbed
 - Detects Chrome, Edge, Brave, Opera, Vivaldi, Firefox, and Internet Explorer in a two-pane list/detail view: browsers (with their items) on the left, a summary header, size/file/item chips, and a per-item drill-down on the right
 - Per-item selection: safe items (cache, sessions, crash reports, metrics, bookmark backups) are on by default; destructive items (cookies, history, downloads, autofill, saved passwords) are opt-in behind a confirmation. Your tick choices are remembered across navigation and restarts
 - The list re-scans after a clean so sizes reflect what was removed

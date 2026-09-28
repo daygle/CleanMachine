@@ -190,6 +190,7 @@ public sealed class WindowsCleanupService
             progress?.Report(new CleanupProgress($"Preparing {category.Name}", 0, 0, recovered));
             var files = GetCleanableFiles(category, options.ExcludedPaths);
             var categoryRemoved = 0;
+            var categorySkipped = 0;
             long categoryBytes = 0;
             for (var index = 0; index < files.Count; index++)
             {
@@ -204,11 +205,11 @@ public sealed class WindowsCleanupService
                     categoryRemoved++;
                     categoryBytes += length;
                 }
-                catch (IOException) { issues.Add(new(file, "Locked or unavailable")); }
-                catch (UnauthorizedAccessException) { issues.Add(new(file, "Access denied (administrator may be required)")); }
+                catch (IOException) { issues.Add(new(file, "Locked or unavailable")); categorySkipped++; }
+                catch (UnauthorizedAccessException) { issues.Add(new(file, "Access denied (administrator may be required)")); categorySkipped++; }
                 progress?.Report(new CleanupProgress(category.Name, index + 1, files.Count, recovered));
             }
-            if (categoryRemoved > 0) breakdown.Add(new CleanupCategoryResult(category.Name, categoryRemoved, categoryBytes));
+            if (categoryRemoved > 0) breakdown.Add(new CleanupCategoryResult(category.Name, categoryRemoved, categoryBytes, categorySkipped));
         }
 
         foreach (var category in selected.Where(c => c.Kind == CleanupKind.RegistryValues))

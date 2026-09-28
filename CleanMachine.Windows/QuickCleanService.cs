@@ -120,15 +120,36 @@ public static class QuickCleanService
     {
         if (settings.QuickCleanBrowsers.Count == 0)
             return new QuickCleanResult(0, 0, [], "No browsers selected.");
-        var service = new BrowserCleanupService();
-        var targets = await service.ScanAsync(settings.QuickCleanBrowsers, excludedPaths: settings.ExcludedPaths, token: token);
-        // Caches are safe to clear even with a browser open (locked files are skipped),
-        // so Quick Clean does not require browsers to be closed.
-        var report = await service.CleanWithReportAsync(
-            targets, new BrowserCleanupOptions(settings.ExcludedPaths, RequireBrowsersClosed: false), token: token);
+        var selection = BrowserCacheSelection(settings.QuickCleanBrowsers);
+        if (selection.Count == 0)
+            return new QuickCleanResult(0, 0, [], "None of the selected browsers is installed.");
+        // Caches are safe to clear even with a browser open (locked and recently
+        // written files are skipped), so Quick Clean does not require browsers to
+        // be closed.
+        var report = await new BrowserCleanupService().CleanItemsAsync(
+            selection, token, requireBrowsersClosed: false,
+            excludedPaths: settings.ExcludedPaths,
+            skipModifiedWithin: BrowserCacheRecentWindow);
         return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped),
-            Examined: targets.Count);
+            Examined: selection.Count);
     }
+
+    /// <summary>Cache files written this recently are left alone by the cache-only
+    /// browser cleans that run while a browser may still be open.</summary>
+    internal static readonly TimeSpan BrowserCacheRecentWindow = TimeSpan.FromMinutes(10);
+
+    /// <summary>The (browser, "cache") pairs for every installed catalog browser in
+    /// <paramref name="browserIds"/>. Only the non-destructive cache item is ever
+    /// chosen here: this backs Quick Clean and scheduled runs, which never delete
+    /// history, cookies or other user data.</summary>
+    internal static IReadOnlyList<(string BrowserId, string ItemId)> BrowserCacheSelection(IEnumerable<string> browserIds)
+        => browserIds
+            .Select(BrowserCatalog.Find)
+            .OfType<BrowserDefinition>()
+            .Where(b => b.Family != BrowserFamily.InternetExplorer && BrowserCatalog.IsInstalled(b))
+            .DistinctBy(b => b.Id)
+            .Select(b => (BrowserId: b.Id, ItemId: "cache"))
+            .ToList();
 
     private static async Task<QuickCleanResult> RunWindowsAsync(AppSettings settings, CancellationToken token)
     {
@@ -203,14 +224,12 @@ public static class QuickCleanService
 
     private static async Task<QuickCleanResult> RunAppsAsync(AppSettings settings, CancellationToken token)
     {
-        var scans = await new AppCleanupService().ScanAllAsync(token);
+        var service = new AppCleanupService();
+        var scans = await service.ScanAllAsync(token);
         var ids = settings.QuickCleanApps; // null = every installed app
-        var selection = scans
-            .Where(s => s.Installed && s.Items.Count > 0 && (ids is null || ids.Contains(s.Id)))
-            .SelectMany(s => s.Items.Select((_, index) => (s.Id, index)))
-            .ToList();
+        var selection = AppCleanupService.AllItems(scans.Where(s => ids is null || ids.Contains(s.Id)));
         if (selection.Count == 0) return new QuickCleanResult(0, 0, [], "Nothing to clean.");
-        var report = await new AppCleanupService().CleanAsync(selection, token);
+        var report = await service.CleanAsync(selection, token, excludedPaths: settings.ExcludedPaths);
         return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped),
             Examined: selection.Count);
     }

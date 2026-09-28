@@ -133,7 +133,10 @@ public static class ScheduledTask
     internal static bool IsValidScheduleId(string? scheduleId)
         => !string.IsNullOrWhiteSpace(scheduleId)
            && scheduleId.Length <= 64
-           && scheduleId.All(c => char.IsLetterOrDigit(c) || c is '-' or '_');
+           // ASCII only: char.IsLetterOrDigit also admits non-ASCII letters and
+           // digits, which have no business in a cmd.exe command line (some are
+           // "best fit" mapped to other characters on the way to the ANSI code page).
+           && scheduleId.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 
     private static void ValidateScheduleId(string scheduleId)
     {

@@ -32,7 +32,6 @@ public sealed partial class CleanerPage : Page
             // write the file straight back.
             AutoSelectAllCheck.IsChecked = _settings.AutoSelectAllBrowsers;
             _ready = true;
-            await CheckInterruptedAsync();
             await ScanAsync();
         };
     }
@@ -42,7 +41,8 @@ public sealed partial class CleanerPage : Page
     {
         if (!_ready) return;
         _settings.CloseOpenBrowsersAutomatically = CloseBrowsersCheck.IsChecked == true;
-        await _settings.SaveAsync();
+        try { await _settings.SaveAsync(); }
+        catch { /* the switch still applies for this session; saving is best-effort */ }
     }
 
     /// <summary>Ticks or clears every item box currently shown (all browsers, all
@@ -104,14 +104,6 @@ public sealed partial class CleanerPage : Page
             await _settings.SaveAsync();
         }
         catch { /* remembering the selection is best-effort */ }
-    }
-
-    private async Task CheckInterruptedAsync()
-    {
-        var state = await _service.LoadInterruptedStateAsync();
-        if (state is not null)
-            StatusText.Text = $"A previous cleanup ({state.Removed} files removed) was interrupted. " +
-                              $"{state.RemainingFiles.Count} files may remain.";
     }
 
     private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanAsync();
@@ -635,7 +627,7 @@ public sealed partial class CleanerPage : Page
         var beforeScan = _scans;
         try
         {
-            var report = await _service.CleanItemsAsync(selected);
+            var report = await _service.CleanItemsAsync(selected, excludedPaths: _settings.ExcludedPaths);
             await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered);
             var details = selected
                 .Where(selection => report.CleanedPaths?.Contains($"{selection.BrowserId}:{selection.ItemId}") == true)

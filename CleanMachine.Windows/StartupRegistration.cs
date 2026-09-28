@@ -92,23 +92,8 @@ public static class StartupRegistration
 
     /// <summary>The executable a stored Run command points at, or null when it
     /// cannot be resolved to a concrete local path (an env var, a bare name, or
-    /// a Store activation). Mirrors the resolver the cleanup scanners use so both
-    /// agree on what counts as a real path.</summary>
+    /// a Store activation). Uses the cleanup scanners' resolver so both agree on
+    /// what counts as a real path.</summary>
     private static string? ResolveExecutable(string command)
-    {
-        var trimmed = command.Trim();
-        if (trimmed.Length == 0) return null;
-        string? candidate;
-        if (trimmed.StartsWith('"'))
-        {
-            var end = trimmed.IndexOf('"', 1);
-            candidate = end > 1 ? trimmed[1..end] : null;
-        }
-        else
-        {
-            candidate = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
-        }
-        if (string.IsNullOrEmpty(candidate) || candidate.Contains('%')) return null;
-        return Path.IsPathFullyQualified(candidate) ? candidate : null;
-    }
+        => CleanupService.ResolveStartupExecutable(command);
 }

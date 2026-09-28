@@ -122,12 +122,13 @@ public sealed class ScheduleService
         {
             try
             {
-                var service = new BrowserCleanupService();
-                var targets = await service.ScanAsync(settings.ProtectedBrowsers, excludedPaths: settings.ExcludedPaths, token: token);
-                var report = await service.CleanWithReportAsync(
-                    targets,
-                    new BrowserCleanupOptions(settings.ExcludedPaths, RequireBrowsersClosed: false),
-                    token: token);
+                // Cache only, never user data, and without requiring the browsers
+                // to be closed - the same rules as the browser Quick Clean.
+                var report = await new BrowserCleanupService().CleanItemsAsync(
+                    QuickCleanService.BrowserCacheSelection(settings.ProtectedBrowsers),
+                    token, requireBrowsersClosed: false,
+                    excludedPaths: settings.ExcludedPaths,
+                    skipModifiedWithin: QuickCleanService.BrowserCacheRecentWindow);
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;
                 if (report.Result.ItemsRemoved > 0)
@@ -144,16 +145,10 @@ public sealed class ScheduleService
             try
             {
                 var appService = new AppCleanupService();
-                var scans = await appService.ScanAllAsync(token);
-                // Reuse the page's "apps with items" rule: nothing to clean, nothing to do.
-                var selection = scans
-                    .Where(s => s.Installed && s.Items.Count > 0)
-                    .SelectMany(s => s.Items.Select((_, index) => (s.Id, index)))
-                    .ToList();
+                var selection = AppCleanupService.AllItems(await appService.ScanAllAsync(token));
                 if (selection.Count > 0)
                 {
-                    var report = await Task.Run(
-                        () => appService.CleanAsync(selection, token), token);
+                    var report = await appService.CleanAsync(selection, token, excludedPaths: settings.ExcludedPaths);
                     items += report.Result.ItemsRemoved;
                     bytes += report.Result.BytesRecovered;
                     issues.AddRange(report.Skipped.Select(s => $"{s.Path}: {s.Reason}"));
@@ -196,8 +191,9 @@ public sealed class ScheduleService
             }
         }
 
-        // Record with a fresh (uncancellable) token and await it, so a cancelled run
-        // still persists its partial results before the headless process exits.
+        // Record (stats and activity) with a fresh, uncancellable token and await
+        // it, so a cancelled run still persists its partial results before the
+        // headless process exits.
         await new CleanupStatsStore().RecordAsync(items, bytes, CancellationToken.None);
         // Distinguish a manual "Run Now" from an automatic Task Scheduler run so the
         // Activity log makes the trigger clear.
@@ -206,7 +202,7 @@ public sealed class ScheduleService
             manual ? "Manual Cleanup" : "Scheduled Cleanup",
             $"'{schedule.Name}' cleaned {items:N0} item(s), {AppNotifications.FormatBytes(bytes)} recovered" +
             (issues.Count > 0 ? $" - {issues.Count} skipped" : string.Empty),
-            details.Count > 0 ? details : null), token);
+            details.Count > 0 ? details : null), CancellationToken.None);
 
         if (schedule.AfterClean == ScheduleAction.Notify && items > 0)
             AppNotifications.ShowSystemCleanupComplete(new CleanupResult(items, bytes));

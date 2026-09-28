@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Microsoft.Win32;
 using Windows.ApplicationModel;
 
 namespace CleanMachine.Windows;
@@ -50,13 +49,9 @@ internal static class MsixUninstallService
             if (File.Exists(shortcut)) File.Delete(shortcut);
         });
 
-        // 2. Startup registration: the HKCU Run value written by StartupRegistration.
-        Try(() =>
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
-            key?.DeleteValue("CleanMachine", throwOnMissingValue: false);
-        });
+        // 2. Startup registration: the HKCU Run value written by StartupRegistration,
+        //    together with its StartupApproved state (removed by the same call).
+        Try(() => StartupRegistration.SetEnabled(false, string.Empty));
 
         // 3. Scheduled cleanup tasks live in the real Task Scheduler (folder
         //    \CleanMachine\), outside the package. PowerShell because schtasks

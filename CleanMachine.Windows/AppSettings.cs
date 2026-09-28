@@ -102,8 +102,10 @@ public sealed class AppSettings
     public bool AutoSelectAllRegistry { get; set; }
 
     // Application Cleanup page: remembered per-item tick state keyed
-    // "appId:itemIndex" - the same identity AppCleanupService.CleanAsync takes.
-    // An absent key falls back to the default (selected).
+    // "appId|itemPath" - the same identity AppCleanupService.CleanAsync takes.
+    // An absent key falls back to the default (selected). Older versions keyed
+    // it "appId:itemIndex"; the page migrates such a key the first time it
+    // renders that item.
     public Dictionary<string, bool> AppCleanupSelection { get; set; } = [];
 
     // Registry Care page: remembered per-finding tick state keyed
@@ -248,6 +250,7 @@ public sealed class AppSettings
             }
         }
         catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
         catch (JsonException) { }
         return new AppSettings();
     }
@@ -336,6 +339,7 @@ public sealed class AppSettings
                     s.Minute = Math.Clamp(s.Minute, 0, 59);
                     s.DayOfMonth = Math.Clamp(s.DayOfMonth, 1, 31);
                     if (!Enum.IsDefined(s.Trigger)) s.Trigger = ScheduleTrigger.Weekly;
+                    if (!Enum.IsDefined(s.DayOfWeek)) s.DayOfWeek = DayOfWeek.Sunday;
                     if (!Enum.IsDefined(s.AfterClean)) s.AfterClean = ScheduleAction.Nothing;
                     s.WindowsCategoryIds = CapList(s.WindowsCategoryIds);
                     s.RegistryCategories = CapList(s.RegistryCategories);

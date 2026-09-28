@@ -24,6 +24,26 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        UnhandledException += OnUnhandledException;
+    }
+
+    /// <summary>Last-chance handler for exceptions escaping UI event handlers. Most
+    /// of the app's handlers are <c>async void</c>, so a transient failure in one
+    /// (a settings file briefly locked by an antivirus scan, say) would otherwise
+    /// take the whole process - tray icon, background agent and all - down with
+    /// it. The failure is recorded in the activity log instead, so it stays
+    /// visible without costing the user the running app.</summary>
+    private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        e.Handled = true;
+        try
+        {
+            _ = new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Unexpected Error",
+                e.Exception?.Message ?? e.Message));
+        }
+        catch { /* logging the failure is best-effort */ }
     }
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
@@ -70,10 +90,18 @@ public partial class App : Application
         StartInstanceEventsListener();
 
         var settings = await AppSettings.LoadAsync();
+        BrowserCleanupService.RemoveLegacyStateFile();
         // Run startup cleanup before enabling periodic/background cleanup so the two
-        // paths cannot mutate the same files concurrently on first launch.
+        // paths cannot mutate the same files concurrently on first launch. A failed
+        // startup clean must not stop the background services below from starting.
         if (settings.CleanAtStartup)
-            await RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, settings.StartupCleanNotify, CancellationToken.None);
+        {
+            try
+            {
+                await RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, settings.StartupCleanNotify, CancellationToken.None);
+            }
+            catch { /* the startup clean is best-effort, like every automatic run */ }
+        }
         if (settings.RequiresBackgroundAgent)
             StartBackgroundAgent(settings);
         // Repair a startup entry left pointing at a package folder the Store has
@@ -278,12 +306,13 @@ public partial class App : Application
                 await Task.Delay(TimeSpan.FromSeconds(2), token);
                 report = await cleanup.CleanItemsAsync(
                     itemIds.Select(id => (browser, id)),
-                    token, requireBrowsersClosed: false);
+                    token, requireBrowsersClosed: false,
+                    excludedPaths: settings.ExcludedPaths);
                 if (report.Result.ItemsRemoved > 0 || report.Skipped.Count == 0 || ++attempt >= 2) break;
             }
             await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
 
-            var displayName = char.ToUpperInvariant(browser[0]) + browser[1..];
+            var displayName = BrowserCatalog.Find(browser)?.Name ?? browser;
             if (monitor.AfterExit == ExitAction.CleanAndNotify && report.Result.ItemsRemoved > 0)
                 AppNotifications.ShowCleanupComplete("Browser cleanup complete", report.Result);
             await new ActivityStore().AddAsync(new ActivityEntry(
@@ -423,7 +452,9 @@ public partial class App : Application
     {
         try
         {
-            if (!settings.SystemMonitoringEnabled)
+            // "Then: Do nothing" is a real choice on the Automatic Cleanup page; it
+            // used to fall through to a silent clean.
+            if (!settings.SystemMonitoringEnabled || settings.SystemMonitorAction == ExitAction.DoNothing)
             {
                 _systemMonitorArmed = true;
                 return;
