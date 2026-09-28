@@ -100,9 +100,17 @@ public sealed class WindowsCleanupService
         new("downloads-other", "Windows Downloads", "Others", "Other downloaded files - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".dll", ".bin", ".dat", ".tmp"])
     ];
 
+    /// <summary>Whether a category is included in cleaning. An explicit tick or
+    /// untick always wins; otherwise the category's own default applies, widened to
+    /// "everything" when <see cref="AppSettings.AutoSelectAllCategories"/> is on -
+    /// the Windows Cleanup area's own switch, so it is independent of the Browser
+    /// and Registry areas. That is what lets a category stay selected while it is
+    /// still empty, and lets a category added by a future version be picked up
+    /// without the user revisiting the page.</summary>
     public static bool IsEnabled(CleanupCategory category, AppSettings settings)
         => settings.EnabledCleanupCategories.Contains(category.Id)
-           || (!settings.DisabledCleanupCategories.Contains(category.Id) && category.EnabledByDefault);
+           || (!settings.DisabledCleanupCategories.Contains(category.Id)
+               && (category.EnabledByDefault || settings.AutoSelectAllCategories));
 
     public IReadOnlyList<CleanupItem> Scan(IReadOnlySet<string>? excludedPaths = null)
     {

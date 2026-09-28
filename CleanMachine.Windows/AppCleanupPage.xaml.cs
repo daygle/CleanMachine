@@ -133,6 +133,19 @@ public sealed partial class AppCleanupPage : Page
             entry.Box.IsChecked = value;
     }
 
+    /// <summary>Persists one item's tick so an untick survives navigation and
+    /// restarts, instead of every item springing back to selected on the next
+    /// scan. Best-effort - a failed save just means the default is used next time.</summary>
+    private async void RememberSelection(string key, bool value)
+    {
+        try
+        {
+            _settings.AppCleanupSelection[key] = value;
+            await _settings.SaveAsync();
+        }
+        catch { /* remembering the selection is best-effort */ }
+    }
+
     private Expander BuildAppCard(AppScan scan)
     {
         var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
@@ -196,13 +209,20 @@ public sealed partial class AppCleanupPage : Page
             // The checkbox only decides whether the item is cleaned. Viewing its
             // files is a separate action on the label button, so opening the detail
             // card no longer toggles the tick (previously the two were the same click).
+            // Everything is selected by default, so an app that has nothing to clean
+            // today is already covered: the day it gains temp files its items appear
+            // here ticked. Only an explicit untick is remembered, keyed by the same
+            // appId:itemIndex identity AppCleanupService.CleanAsync takes.
+            var key = $"{scan.Id}:{i}";
             var box = new CheckBox
             {
-                IsChecked = true,
+                IsChecked = !_settings.AppCleanupSelection.TryGetValue(key, out var saved) || saved,
                 MinWidth = 0,
                 VerticalAlignment = VerticalAlignment.Center,
                 Tag = (scan.Id, i)
             };
+            box.Checked += (_, _) => RememberSelection(key, true);
+            box.Unchecked += (_, _) => RememberSelection(key, false);
             _itemBoxes.Add((scan.Id, i, box));
 
             var detailsButton = new Button

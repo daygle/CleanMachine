@@ -7,6 +7,15 @@ namespace CleanMachine.Windows;
 public sealed partial class RegistryCarePage : Page
 {
     private readonly RegistryCareService _service = new();
+    private AppSettings _settings = new();
+    // Suppresses the Auto-Select Everything handler while the switch is restored from
+    // settings, so loading does not immediately write the file back.
+    private bool _ready;
+    // Set while the sticky mode is being applied to the boxes, so the ticks it
+    // produces are treated as derived state rather than as the user having
+    // chosen them - otherwise switching Auto-Select Everything off would not take
+    // effect until each finding was unticked by hand.
+    private bool _applyingDefaults;
     // Source of truth for selection: each finding's left-hand checkbox. The right
     // detail card mirrors these, so the left list stays authoritative.
     private readonly List<(RegistryFinding Finding, CheckBox Box)> _findingBoxes = [];
@@ -18,9 +27,46 @@ public sealed partial class RegistryCarePage : Page
     public RegistryCarePage()
     {
         InitializeComponent();
-        // Analyze automatically when the page is opened.
-        Loaded += (_, _) => Scan_Click(this, new RoutedEventArgs());
+        // Load the remembered selection, then analyze automatically when the page
+        // is opened.
+        Loaded += async (_, _) =>
+        {
+            _settings = await AppSettings.LoadAsync();
+            // Restore the sticky mode before _ready so the assignment does not fire
+            // the handler and write the file straight back.
+            AutoSelectAllCheck.IsChecked = _settings.AutoSelectAllRegistry;
+            _ready = true;
+            Scan_Click(this, new RoutedEventArgs());
+        };
         UpdateBackupsLink();
+    }
+
+    /// <summary>Stable identity for a finding's remembered tick: the hive, the key
+    /// path and the value name together, because one key can carry several
+    /// value-level findings.</summary>
+    private static string SelectionKey(RegistryFinding finding) =>
+        $"{finding.Hive}|{finding.Path}|{finding.ValueName}";
+
+    /// <summary>The remembered choice if there is one, otherwise the default:
+    /// eligible findings are ticked and ineligible ones are not - unless
+    /// Auto-Select Everything is on, which opts those in as well.</summary>
+    private bool DefaultIsChecked(RegistryFinding finding, bool cleanable)
+        => _settings.RegistryCareSelection.TryGetValue(SelectionKey(finding), out var saved)
+            ? saved
+            : (cleanable || _settings.AutoSelectAllRegistry);
+
+    /// <summary>Persists one finding's tick so the Registry Care page restores the
+    /// user's selection next time. Best-effort - a failed save just means the
+    /// default is used next time.</summary>
+    private async void RememberSelection(string key, bool value)
+    {
+        if (_applyingDefaults) return;
+        try
+        {
+            _settings.RegistryCareSelection[key] = value;
+            await _settings.SaveAsync();
+        }
+        catch { /* remembering the selection is best-effort */ }
     }
 
     /// <summary>Keeps the Backups link's label showing how many restore-point
@@ -72,7 +118,7 @@ public sealed partial class RegistryCarePage : Page
 
     /// <summary>Builds the left category list: one expander per finding category with
     /// its findings as tickable rows. By default only findings eligible for automatic
-    /// cleaning are shown; Show All also lists ineligible ones, greyed out.</summary>
+    /// cleaning are shown; Show All also lists ineligible ones, dimmed.</summary>
     private void RenderFindings()
     {
         FindingsPanel.Children.Clear();
@@ -116,7 +162,7 @@ public sealed partial class RegistryCarePage : Page
             : ineligibleTotal == 0
                 ? $"{eligibleTotal} item(s) can be safely cleaned. Untick anything you want to keep. (All findings are eligible, so Show All has nothing extra to reveal.)"
                 : showAll
-                    ? $"{eligibleTotal} item(s) can be safely cleaned; {ineligibleTotal} ineligible finding(s) are shown greyed out. Untick anything you want to keep."
+                    ? $"{eligibleTotal} item(s) can be safely cleaned; {ineligibleTotal} ineligible finding(s) are shown dimmed and can only be skipped. Untick anything you want to keep."
                     : $"{eligibleTotal} item(s) can be safely cleaned. Untick anything you want to keep, or tick Show All to review {ineligibleTotal} ineligible finding(s).";
 
         // Show the first category's detail straight away so the right side is never blank.
@@ -136,14 +182,36 @@ public sealed partial class RegistryCarePage : Page
         if (_findings.Count > 0) RenderFindings();
     }
 
-    /// <summary>Ticks or clears every cleanable finding currently shown; findings that
-    /// aren't eligible for cleaning are disabled and left untouched.</summary>
+    /// <summary>Ticks or clears every finding currently shown, including the ones
+    /// that are not eligible for automatic cleaning - leaving those behind made
+    /// "Select All Shown" look like it had not worked. Eligibility is re-checked by the
+    /// service when cleaning, so an ineligible finding is reported as skipped
+    /// rather than removed.</summary>
     private void SelectAll_Changed(object sender, RoutedEventArgs e)
     {
         var value = SelectAllCheck.IsChecked == true;
         foreach (var (_, box) in _findingBoxes)
-            if (box.IsEnabled)
-                box.IsChecked = value;
+            box.IsChecked = value;
+    }
+
+    /// <summary>Sticky "select everything" mode. Findings the user has never
+    /// touched follow the flag, so one that only becomes eligible later - or one a
+    /// future scan turns up - is included without coming back here. Eligibility is
+    /// still re-checked when cleaning, so an ineligible finding is skipped rather
+    /// than removed.</summary>
+    private async void AutoSelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_ready || _findings.Count == 0) return;
+        _settings.AutoSelectAllRegistry = AutoSelectAllCheck.IsChecked == true;
+        _applyingDefaults = true;
+        try
+        {
+            foreach (var (finding, box) in _findingBoxes)
+                box.IsChecked = DefaultIsChecked(finding, RegistryCareService.IsCleanable(finding));
+        }
+        finally { _applyingDefaults = false; }
+        try { await _settings.SaveAsync(); }
+        catch { /* remembering the mode is best-effort */ }
     }
 
     private Expander BuildCategoryExpander(string category, IReadOnlyList<RegistryFinding> findings)
@@ -184,13 +252,19 @@ public sealed partial class RegistryCarePage : Page
         foreach (var finding in findings)
         {
             var cleanable = RegistryCareService.IsCleanable(finding);
+            // Ineligible findings stay tickable (Select All Shown and Auto-Select Everything
+            // have to reach them) but are dimmed, and the label says why, so a tick
+            // is never mistaken for a promise that the value will be removed.
+            var key = SelectionKey(finding);
             var box = new CheckBox
             {
-                IsChecked = cleanable,
-                IsEnabled = cleanable,
+                IsChecked = DefaultIsChecked(finding, cleanable),
                 MinWidth = 0,
+                Opacity = cleanable ? 1.0 : 0.5,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            box.Checked += (_, _) => RememberSelection(key, true);
+            box.Unchecked += (_, _) => RememberSelection(key, false);
             _findingBoxes.Add((finding, box));
 
             var text = new StackPanel { Spacing = 0 };
@@ -268,8 +342,8 @@ public sealed partial class RegistryCarePage : Page
             var mirror = new CheckBox
             {
                 IsChecked = sourceBox?.IsChecked == true,
-                IsEnabled = cleanable,
                 MinWidth = 0,
+                Opacity = cleanable ? 1.0 : 0.5,
                 VerticalAlignment = VerticalAlignment.Center
             };
             mirror.Checked += (_, _) => { if (sourceBox is not null) sourceBox.IsChecked = true; };
@@ -385,6 +459,15 @@ public sealed partial class RegistryCarePage : Page
         if (selected.Length == 0)
         {
             StatusText.Text = "Nothing is ticked. Tick at least one item to clean.";
+            return;
+        }
+
+        // Ticking an ineligible finding (Select All Shown reaches them) is a no-op rather
+        // than a failure, so say that plainly instead of letting the empty backup
+        // review below report that no backup could be created.
+        if (selected.All(f => !RegistryCareService.IsCleanable(f)))
+        {
+            StatusText.Text = "None of the ticked findings are eligible for cleaning. Tick at least one that can be removed.";
             return;
         }
 

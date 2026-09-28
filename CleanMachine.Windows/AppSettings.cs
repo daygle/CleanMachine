@@ -85,6 +85,33 @@ public sealed class AppSettings
     // the user's last choice, so selections survive navigation and restarts.
     public Dictionary<string, bool> BrowserCleanupSelection { get; set; } = [];
 
+    // "Select everything, and keep selecting it", one switch per cleanup area so
+    // the user can opt in area by area. When an area's switch is on, that page
+    // defaults every item to selected - including the ones with nothing to clean
+    // right now, and any item or category a future version adds - so the user
+    // does not have to revisit the page each time something new is detected.
+    // An individual untick still wins over the switch (it is written to the
+    // area's own selection dictionary), so opting one item back out stays
+    // possible. Automatic and background cleans remain limited to Safe-risk
+    // categories regardless of these switches, so turning one on can never make
+    // a background run delete user data.
+    // Application Cleanup has no switch: its default is already "everything
+    // selected", so a clean app is covered the day it gains temp files.
+    public bool AutoSelectAllCategories { get; set; }
+    public bool AutoSelectAllBrowsers { get; set; }
+    public bool AutoSelectAllRegistry { get; set; }
+
+    // Application Cleanup page: remembered per-item tick state keyed
+    // "appId:itemIndex" - the same identity AppCleanupService.CleanAsync takes.
+    // An absent key falls back to the default (selected).
+    public Dictionary<string, bool> AppCleanupSelection { get; set; } = [];
+
+    // Registry Care page: remembered per-finding tick state keyed
+    // "Hive|Path|ValueName". An absent key falls back to whether the finding is
+    // eligible for automatic cleaning (or to AutoSelectAllRegistry, which includes
+    // the ineligible ones the user can only ever have skipped).
+    public Dictionary<string, bool> RegistryCareSelection { get; set; } = [];
+
     // Per-browser monitoring: entries use canonical ids (chrome, edge, firefox).
     public List<BrowserMonitorSetting> BrowserMonitors { get; set; } =
     [
@@ -252,6 +279,10 @@ public sealed class AppSettings
 
         if (BrowserCleanupSelection is null || BrowserCleanupSelection.Count > MaxCollectionEntries)
             BrowserCleanupSelection = [];
+        if (AppCleanupSelection is null || AppCleanupSelection.Count > MaxCollectionEntries)
+            AppCleanupSelection = [];
+        if (RegistryCareSelection is null || RegistryCareSelection.Count > MaxCollectionEntries)
+            RegistryCareSelection = [];
 
         // Thresholds and intervals. Each has a real bound: a negative or absurd
         // free-space value would make the low-disk monitor fire constantly or

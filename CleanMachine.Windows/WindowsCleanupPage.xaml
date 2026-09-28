@@ -133,9 +133,14 @@
         <Button x:Name="AnalyzeButton" Content="Analyze" Click="Analyze_Click"
                 Background="#286E58" Foreground="White" Padding="26,10"/>
         <CheckBox x:Name="ShowCleanCheck" Content="Show All" VerticalAlignment="Center"
-                  IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"/>
-        <CheckBox x:Name="SelectAllCheck" Content="Select All" VerticalAlignment="Center"
-                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
+                  IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"
+                  ToolTipService.ToolTip="Also list the categories that have nothing to clean, so you can see and select them"/>
+        <CheckBox x:Name="SelectAllCheck" Content="Select All Shown" VerticalAlignment="Center"
+                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"
+                  ToolTipService.ToolTip="Ticks or clears every category currently listed. Tick Show All first to include the empty ones."/>
+        <CheckBox x:Name="AutoSelectAllCheck" Content="Auto-Select Everything" VerticalAlignment="Center"
+                  Checked="AutoSelectAll_Changed" Unchecked="AutoSelectAll_Changed"
+                  ToolTipService.ToolTip="Keeps every category selected by default, including the ones with nothing to clean right now and any category added later. Unticking a single category still opts it out."/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
         <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsEnabled="False" Padding="18,10"/>

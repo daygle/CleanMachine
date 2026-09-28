@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace CleanMachine.Windows;
 
@@ -115,16 +116,28 @@ public sealed partial class OverviewPage : Page
     private async void BrowsersSettings_Click(object sender, RoutedEventArgs e)
     {
         var settings = await AppSettings.LoadAsync();
-        // Data-driven from the browser catalog so every supported browser (Chrome, Edge,
-        // Brave, Vivaldi, Opera, Firefox) is selectable, not just the default three.
-        // Internet Explorer is omitted: it has no profile cache of its own (its cache is
-        // the Windows Internet Cache, already a Windows Cleanup category).
-        var items = BrowserCatalog.Browsers
-            .Where(b => b.Family != BrowserFamily.InternetExplorer)
+        // Only the browsers actually present on this PC. Listing all six supported
+        // ones on a machine that has two of them just adds rows that can never do
+        // anything, and invites ticking one. Internet Explorer is excluded for a
+        // separate reason: it has no profile cache of its own (its cache is the
+        // Windows Internet Cache, already a Windows Cleanup category).
+        // The check is a profile-directory probe, so it is cheap enough to run here.
+        var installed = BrowserCatalog.Browsers
+            .Where(b => b.Family != BrowserFamily.InternetExplorer && BrowserCatalog.IsInstalled(b))
+            .ToList();
+        var items = installed
             .Select(b => (b.Id, b.Name, settings.QuickCleanBrowsers.Contains(b.Id)))
             .ToList();
+
+        // Hiding a row must not quietly delete a stored preference. A browser that
+        // is ticked but not installed keeps its tick, so installing it later brings
+        // the choice back rather than requiring it to be set again.
+        var keepHidden = settings.QuickCleanBrowsers
+            .Where(id => installed.All(b => !b.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
         await ShowPickerAsync("Browser Quick Clean", items,
-            (s, selected) => s.QuickCleanBrowsers = selected);
+            (s, selected) => s.QuickCleanBrowsers = selected, keepHidden);
     }
 
     private async void WindowsSettings_Click(object sender, RoutedEventArgs e)
@@ -162,11 +175,15 @@ public sealed partial class OverviewPage : Page
 
     /// <summary>Shows a checkbox picker and, on Save, applies the chosen keys to
     /// settings and persists them. The ticked keys are written verbatim (an empty
-    /// selection means "clean nothing for this area").</summary>
+    /// selection means "clean nothing for this area"). <paramref name="keepHidden"/>
+    /// carries keys the dialog could not show (e.g. a browser that is selected but not
+    /// installed): they are merged back in on save, so narrowing what is displayed
+    /// never silently drops a stored choice.</summary>
     private async Task ShowPickerAsync(
         string title,
         List<(string Key, string Label, bool Checked)> items,
-        Action<AppSettings, HashSet<string>> apply)
+        Action<AppSettings, HashSet<string>> apply,
+        IEnumerable<string>? keepHidden = null)
     {
         var panel = new StackPanel { Spacing = 6 };
         var boxes = new List<(string Key, CheckBox Box)>();
@@ -176,6 +193,15 @@ public sealed partial class OverviewPage : Page
             boxes.Add((key, box));
             panel.Children.Add(box);
         }
+
+        if (items.Count == 0)
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Nothing to choose from here - nothing was detected on this PC.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 0x89, 0x95, 0x8F))
+            });
 
         var dialog = new ContentDialog
         {
@@ -189,6 +215,9 @@ public sealed partial class OverviewPage : Page
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
 
         var selected = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (keepHidden is not null)
+            foreach (var key in keepHidden)
+                selected.Add(key);
         var settings = await AppSettings.LoadAsync();
         apply(settings, selected);
         await settings.SaveAsync();

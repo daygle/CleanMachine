@@ -14,6 +14,11 @@ public sealed partial class CleanerPage : Page
     // Detected browsers and the one whose detail is currently shown on the right.
     private IReadOnlyList<BrowserScan> _scans = [];
     private BrowserScan? _detailScan;
+    // Set while the sticky mode is being applied to the boxes, so the ticks it
+    // produces are treated as derived state rather than as the user having
+    // chosen them - otherwise switching Auto-Select Everything off would not take
+    // effect until each item was unticked by hand.
+    private bool _applyingDefaults;
 
     public CleanerPage()
     {
@@ -23,6 +28,9 @@ public sealed partial class CleanerPage : Page
         {
             _settings = await AppSettings.LoadAsync();
             CloseBrowsersCheck.IsChecked = _settings.CloseOpenBrowsersAutomatically;
+            // Restore the sticky mode before _ready so the assignment does not
+            // write the file straight back.
+            AutoSelectAllCheck.IsChecked = _settings.AutoSelectAllBrowsers;
             _ready = true;
             await CheckInterruptedAsync();
             await ScanAsync();
@@ -46,12 +54,50 @@ public sealed partial class CleanerPage : Page
             entry.Box.IsChecked = value;
     }
 
+    /// <summary>Sticky "select everything" mode. Items the user has never touched
+    /// follow the flag - so an item a future version adds, or one that was
+    /// destructive and therefore unticked by default, is included without coming
+    /// back here. An explicit past choice still wins. Cleaning a destructive item
+    /// is still confirmed by the "Delete user data?" prompt, and the browser-exit
+    /// automatic clean uses its own item list, so this cannot quietly delete
+    /// personal data in the background.</summary>
+    private async void AutoSelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_ready) return;
+        _settings.AutoSelectAllBrowsers = AutoSelectAllCheck.IsChecked == true;
+        ApplyStickyDefaults();
+        try { await _settings.SaveAsync(); }
+        catch { /* remembering the mode is best-effort */ }
+    }
+
+    /// <summary>Re-applies the remembered-or-default tick to every shown box, used
+    /// when the sticky mode is switched on or off.</summary>
+    private void ApplyStickyDefaults()
+    {
+        _applyingDefaults = true;
+        try
+        {
+            foreach (var entry in _itemBoxes)
+                entry.Box.IsChecked = DefaultIsChecked(entry.BrowserId, entry.ItemId, entry.Destructive);
+        }
+        finally { _applyingDefaults = false; }
+    }
+
+    /// <summary>The remembered choice if there is one, otherwise the default: safe
+    /// items are ticked, destructive ones are not - unless Auto-Select Everything is on,
+    /// which opts them in as well.</summary>
+    private bool DefaultIsChecked(string browserId, string itemId, bool destructive)
+        => _settings.BrowserCleanupSelection.TryGetValue($"{browserId}:{itemId}", out var saved)
+            ? saved
+            : (!destructive || _settings.AutoSelectAllBrowsers);
+
 
     /// <summary>Persists one item's tick state so the Browser Cleaner page restores
     /// the user's selection next time. Best-effort - a failed save just means the
     /// default is used next time.</summary>
     private async void RememberSelection(string key, bool value)
     {
+        if (_applyingDefaults) return;
         try
         {
             _settings.BrowserCleanupSelection[key] = value;
@@ -154,9 +200,7 @@ public sealed partial class CleanerPage : Page
             var key = $"{scan.Id}:{item.Id}";
             var box = new CheckBox
             {
-                IsChecked = _settings.BrowserCleanupSelection.TryGetValue(key, out var saved)
-                    ? saved
-                    : !item.Destructive,
+                IsChecked = DefaultIsChecked(scan.Id, item.Id, item.Destructive),
                 MinWidth = 0,
                 VerticalAlignment = VerticalAlignment.Center
             };

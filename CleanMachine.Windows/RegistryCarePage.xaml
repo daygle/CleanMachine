@@ -134,9 +134,13 @@
                 Background="#286E58" Foreground="White" Padding="26,10"/>
         <CheckBox x:Name="ShowAllCheck" Content="Show All" VerticalAlignment="Center"
                   IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"
-                  ToolTipService.ToolTip="Also show findings that aren't eligible for automatic cleaning"/>
-        <CheckBox x:Name="SelectAllCheck" Content="Select All" VerticalAlignment="Center"
-                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
+                  ToolTipService.ToolTip="Also list findings that aren't eligible for automatic cleaning"/>
+        <CheckBox x:Name="SelectAllCheck" Content="Select All Shown" VerticalAlignment="Center"
+                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"
+                  ToolTipService.ToolTip="Ticks or clears every finding currently listed. Tick Show All first to include the ineligible ones."/>
+        <CheckBox x:Name="AutoSelectAllCheck" Content="Auto-Select Everything" VerticalAlignment="Center"
+                  Checked="AutoSelectAll_Changed" Unchecked="AutoSelectAll_Changed"
+                  ToolTipService.ToolTip="Keeps every finding selected by default, including ones not yet eligible for automatic cleaning and any found later. Ineligible findings are still skipped rather than deleted."/>
         <HyperlinkButton x:Name="BackupsLink" Click="BackupsLink_Click" Padding="4,0"
                          VerticalAlignment="Center" ToolTipService.ToolTip="View and manage the .reg restore-point files created before each clean">
           <TextBlock x:Name="BackupsLinkText" Text="Backups" FontSize="12"/>

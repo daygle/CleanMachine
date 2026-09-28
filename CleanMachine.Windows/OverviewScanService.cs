@@ -168,8 +168,13 @@ public sealed class OverviewScanService
             var items = await ScanWindowsItemsAsync();
             if (items is null) return new AreaSummary("Scan failed");
             var settings = await AppSettings.LoadAsync();
+            // Match what Quick Clean can actually remove. Review/Advanced
+            // categories are listed and measurable on the Windows Cleanup page, but
+            // no automatic or Quick Clean run sweeps them, so counting their bytes
+            // here would overstate the reclaimable total - and AutoSelectAllCategories
+            // deliberately widens the page list to every category.
             var enabledIds = WindowsCleanupService.Catalog
-                .Where(c => WindowsCleanupService.IsEnabled(c, settings))
+                .Where(c => c.Risk == CleanupRisk.Safe && WindowsCleanupService.IsEnabled(c, settings))
                 .Select(c => c.Id)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var mine = items.Where(i => enabledIds.Contains(i.Category.Id)).ToList();

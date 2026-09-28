@@ -12,6 +12,9 @@ public sealed partial class WindowsCleanupPage : Page
     private readonly WindowsCleanupService _service = new();
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     private AppSettings _settings = new();
+    // Suppresses the Auto-Select Everything handler while the switch is being restored
+    // from settings, so loading does not immediately write the file back.
+    private bool _ready;
     private CancellationTokenSource? _cancel;
     private CleanupPreview? _lastPreview;
     private IReadOnlyList<CleanupItem> _lastScan = [];
@@ -26,14 +29,21 @@ public sealed partial class WindowsCleanupPage : Page
     private async Task LoadAsync()
     {
         _settings = await AppSettings.LoadAsync();
+        // Restore the sticky "keep everything selected" switch before _ready, so
+        // the assignment does not fire the handler and write the file straight
+        // back. BuildCategoryList below then renders the ticks it implies.
+        AutoSelectAllCheck.IsChecked = _settings.AutoSelectAllCategories;
+        _ready = true;
         BuildCategoryList();
     }
 
     /// <summary>Builds the left-hand category list from the latest analysis: only
     /// categories that have something to clean are shown, unless Show All is ticked
-    /// (empty categories are then listed, greyed out and not selectable). Before the
-    /// first Analyze the list is a prompt. Each enabled checkbox reflects and saves
-    /// whether that category is included in cleaning.</summary>
+    /// (empty categories are then listed, dimmed to mark them as "Clean"). Before the
+    /// first Analyze the list is a prompt. Every checkbox - including one for an
+    /// empty category - reflects and saves whether that category is included in
+    /// cleaning, so ticking an empty category now covers anything that appears in
+    /// it later.</summary>
     private void BuildCategoryList()
     {
         CategoryPanel.Children.Clear();
@@ -75,7 +85,8 @@ public sealed partial class WindowsCleanupPage : Page
                     IsChecked = WindowsCleanupService.IsEnabled(category, _settings),
                     Tag = category,
                     MinHeight = 30,
-                    IsEnabled = selectable,              // empty file categories are shown but not selectable
+                    // Empty categories stay selectable: "Clean" is a size readout,
+                    // not a statement that the category cannot be included.
                     Opacity = selectable ? 1.0 : 0.5
                 };
                 box.Checked += (_, _) => SetEnabled(category, true);
@@ -91,14 +102,28 @@ public sealed partial class WindowsCleanupPage : Page
 
     private void Filter_Changed(object sender, RoutedEventArgs e) => BuildCategoryList();
 
-    /// <summary>Ticks or clears every selectable category currently shown; empty
-    /// categories are disabled and left untouched.</summary>
+    /// <summary>Ticks or clears every category currently shown, including the ones
+    /// with nothing to clean - leaving those behind made "Select All Shown" look like it
+    /// had not worked. Each box's own handler persists the change.</summary>
     private void SelectAll_Changed(object sender, RoutedEventArgs e)
     {
         var value = SelectAllCheck.IsChecked == true;
         foreach (var box in CategoryPanel.Children.OfType<CheckBox>())
-            if (box.IsEnabled)
-                box.IsChecked = value;
+            box.IsChecked = value;
+    }
+
+    /// <summary>Sticky "select everything" mode. Rather than writing every category
+    /// into the saved sets - which would still miss categories added later - this
+    /// flips a single flag that <see cref="WindowsCleanupService.IsEnabled"/> reads,
+    /// so the empty categories and any future ones are covered automatically. The
+    /// list is rebuilt from that flag, which is why no per-category writes are
+    /// needed here.</summary>
+    private void AutoSelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_ready) return;
+        _settings.AutoSelectAllCategories = AutoSelectAllCheck.IsChecked == true;
+        _ = SaveSettingsAsync();
+        BuildCategoryList();
     }
 
     private static TextBlock Hint(string text) => new()

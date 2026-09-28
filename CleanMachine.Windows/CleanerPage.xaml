@@ -130,8 +130,12 @@
                 Background="#286E58" Foreground="White" Padding="20,10"/>
         <CheckBox x:Name="CloseBrowsersCheck" Content="Close Browsers First" VerticalAlignment="Center"
                   Checked="CloseBrowsers_Changed" Unchecked="CloseBrowsers_Changed"/>
-        <CheckBox x:Name="SelectAllCheck" Content="Select All" VerticalAlignment="Center"
-                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
+        <CheckBox x:Name="SelectAllCheck" Content="Select All Shown" VerticalAlignment="Center"
+                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"
+                  ToolTipService.ToolTip="Ticks or clears every browser item currently listed."/>
+        <CheckBox x:Name="AutoSelectAllCheck" Content="Auto-Select Everything" VerticalAlignment="Center"
+                  Checked="AutoSelectAll_Changed" Unchecked="AutoSelectAll_Changed"
+                  ToolTipService.ToolTip="Keeps every item selected by default, including destructive ones and any item added later. Cleaning still asks before deleting personal data."/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
         <Button x:Name="CleanButton" Content="Clean Selected" Click="Clean_Click"

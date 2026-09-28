@@ -134,9 +134,11 @@
         <Button x:Name="ScanButton" Content="Scan" Click="Scan_Click"
               Background="#286E58" Foreground="White" Padding="26,10"/>
         <CheckBox x:Name="ShowCleanCheck" Content="Show All" VerticalAlignment="Center"
-                  IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"/>
-        <CheckBox x:Name="SelectAllCheck" Content="Select All" VerticalAlignment="Center"
-                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"/>
+                  IsChecked="False" Checked="Filter_Changed" Unchecked="Filter_Changed"
+                  ToolTipService.ToolTip="Also list the applications that have nothing to clean"/>
+        <CheckBox x:Name="SelectAllCheck" Content="Select All Shown" VerticalAlignment="Center"
+                  Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"
+                  ToolTipService.ToolTip="Ticks or clears every application item currently listed."/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
         <Button x:Name="CleanButton" Content="Clean Selected" Click="Clean_Click"
