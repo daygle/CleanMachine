@@ -690,8 +690,13 @@ public sealed class RegistryCareService
         psi.ArgumentList.Add(backup.FilePath);
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Could not start the Windows registry restore tool.");
+        // Drain stderr before waiting, as the export does: a redirected pipe that is
+        // never read can stall the child, and reg.exe says there why an import failed.
+        var stderr = await process.StandardError.ReadToEndAsync(token);
         await process.WaitForExitAsync(token);
         if (process.ExitCode != 0)
-            throw new InvalidOperationException("Registry backup restore failed.");
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
+                ? "Registry backup restore failed."
+                : $"Registry backup restore failed: {stderr.Trim()}");
     }
 }

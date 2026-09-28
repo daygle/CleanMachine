@@ -31,9 +31,14 @@ public sealed class CleanupStatsStore
         {
             if (!File.Exists(FilePath)) return Empty;
             await using var stream = File.OpenRead(FilePath);
-            return await JsonSerializer.DeserializeAsync<CleanupStatsFile>(stream, cancellationToken: token) ?? Empty;
+            var stats = await JsonSerializer.DeserializeAsync<CleanupStatsFile>(stream, cancellationToken: token);
+            if (stats is null) return Empty;
+            // A file with "Runs": null (hand-edited or truncated) must not break every
+            // later RecordAsync, which appends to this list.
+            return stats.Runs is null ? stats with { Runs = [] } : stats;
         }
         catch (IOException) { return Empty; }
+        catch (UnauthorizedAccessException) { return Empty; }
         catch (JsonException) { return Empty; }
     }
 
@@ -87,7 +92,9 @@ public sealed class CleanupStatsStore
     {
         var directory = Path.GetDirectoryName(FilePath)!;
         Directory.CreateDirectory(directory);
-        var temp = FilePath + ".tmp";
+        // Unique per write: the gate only serializes this process, and a headless
+        // scheduled run can record at the same moment as the open app.
+        var temp = $"{FilePath}.{Guid.NewGuid():N}.tmp";
         try
         {
             await using (var stream = File.Create(temp))

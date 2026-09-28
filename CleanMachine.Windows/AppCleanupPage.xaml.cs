@@ -14,6 +14,9 @@ public sealed partial class AppCleanupPage : Page
     // item drilled into (null = the app-level view listing all of its items).
     private AppScan? _detailContext;
     private int? _detailItemIndex;
+    // Set when rendering adopted a remembered tick stored under the old
+    // position-based key, so the list render can persist the migration once.
+    private bool _selectionMigrated;
 
     public AppCleanupPage()
     {
@@ -116,6 +119,12 @@ public sealed partial class AppCleanupPage : Page
         var firstWithItems = visible.FirstOrDefault(s => s.Items.Count > 0);
         if (firstWithItems is not null)
             ShowAppDetail(firstWithItems);
+
+        if (_selectionMigrated)
+        {
+            _selectionMigrated = false;
+            _ = SaveSelectionAsync();
+        }
     }
 
     private void Filter_Changed(object sender, RoutedEventArgs e)
@@ -138,12 +147,35 @@ public sealed partial class AppCleanupPage : Page
     /// scan. Best-effort - a failed save just means the default is used next time.</summary>
     private async void RememberSelection(string key, bool value)
     {
-        try
-        {
-            _settings.AppCleanupSelection[key] = value;
-            await _settings.SaveAsync();
-        }
+        _settings.AppCleanupSelection[key] = value;
+        await SaveSelectionAsync();
+    }
+
+    private async Task SaveSelectionAsync()
+    {
+        try { await _settings.SaveAsync(); }
         catch { /* remembering the selection is best-effort */ }
+    }
+
+    /// <summary>Stable identity for an item's remembered tick: the app and the
+    /// item's own path. A scan lists only the items that currently hold files, so
+    /// a position in that list names a different item as soon as one above it
+    /// empties - which is how an untick used to slide onto its neighbour.</summary>
+    private static string SelectionKey(string appId, string itemPath) => $"{appId}|{itemPath}";
+
+    /// <summary>The remembered tick for an item, defaulting to selected. A tick
+    /// saved by an older version under the position-based "appId:index" key is
+    /// adopted for the item that position shows now - exactly what that version
+    /// applied it to - then re-keyed by path so it stops drifting.</summary>
+    private bool IsItemSelected(string appId, int index, string itemPath)
+    {
+        var selection = _settings.AppCleanupSelection;
+        var key = SelectionKey(appId, itemPath);
+        if (selection.TryGetValue(key, out var saved)) return saved;
+        if (!selection.Remove($"{appId}:{index}", out var legacy)) return true;
+        selection[key] = legacy;
+        _selectionMigrated = true;
+        return legacy;
     }
 
     private Expander BuildAppCard(AppScan scan)
@@ -211,12 +243,12 @@ public sealed partial class AppCleanupPage : Page
             // card no longer toggles the tick (previously the two were the same click).
             // Everything is selected by default, so an app that has nothing to clean
             // today is already covered: the day it gains temp files its items appear
-            // here ticked. Only an explicit untick is remembered, keyed by the same
-            // appId:itemIndex identity AppCleanupService.CleanAsync takes.
-            var key = $"{scan.Id}:{i}";
+            // here ticked. Only an explicit untick is remembered, keyed by the app
+            // and the item's path - the identity AppCleanupService.CleanAsync takes.
+            var key = SelectionKey(scan.Id, item.FullPath);
             var box = new CheckBox
             {
-                IsChecked = !_settings.AppCleanupSelection.TryGetValue(key, out var saved) || saved,
+                IsChecked = IsItemSelected(scan.Id, i, item.FullPath),
                 MinWidth = 0,
                 VerticalAlignment = VerticalAlignment.Center,
                 Tag = (scan.Id, i)
@@ -715,7 +747,15 @@ public sealed partial class AppCleanupPage : Page
                     ? $"{p.Phase}..."
                     : $"Cleaning in progress: {p.Phase} ({p.Completed:N0}/{p.Total:N0})";
             });
-            var report = await _service.CleanAsync(selected, progress: progress, token: default);
+            // Clean by path, resolved against the scan the user was looking at:
+            // CleanAsync rescans, and a list position could name a different item
+            // in that fresh scan.
+            var paths = selected
+                .Select(x => (x.AppId, ItemPath: beforeScan.FirstOrDefault(s => s.Id == x.AppId)?.Items.ElementAtOrDefault(x.ItemIndex)?.FullPath))
+                .Where(x => x.ItemPath is not null)
+                .Select(x => (x.AppId, ItemPath: x.ItemPath!))
+                .ToArray();
+            var report = await _service.CleanAsync(paths, progress: progress, excludedPaths: _settings.ExcludedPaths);
             await RecordManualCleanupAsync(selected, beforeScan, report);
             var completion = $"Complete: {report.Result.ItemsRemoved:N0} file(s) removed, " +
                              $"{WindowsCleanupPage.FormatBytes(report.Result.BytesRecovered)} recovered, " +

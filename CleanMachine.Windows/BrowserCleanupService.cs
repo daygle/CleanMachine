@@ -1,20 +1,7 @@
 using System.Diagnostics;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace CleanMachine.Windows;
-
-public sealed record BrowserCleanupOptions(
-    IReadOnlySet<string>? ExcludedPaths = null,
-    IReadOnlyList<string>? AdditionalProfileRoots = null,
-    bool RequireBrowsersClosed = true);
-
-public sealed record BrowserCleanupState(
-    string OperationId,
-    IReadOnlyList<string> RemainingFiles,
-    int Removed,
-    long BytesRecovered,
-    DateTimeOffset UpdatedAt);
 
 /// <summary>A cleanable item for one browser, sized for the UI.</summary>
 public sealed record BrowserItemInfo(string Id, string Name, bool Destructive, long Bytes, int FileCount, string Description);
@@ -24,128 +11,34 @@ public sealed record BrowserScan(string Id, string Name, bool Installed, IReadOn
 
 public sealed class BrowserCleanupService
 {
-    private static readonly SemaphoreSlim StateGate = new(1, 1);
-    private readonly CleanupService _cleanup = new();
-    private readonly string _statePath = Path.Combine(
-        AppDataPaths.Root, "browser-cleanup-state.json");
+    /// <summary>The interrupted-state file an older cleanup path wrote before every
+    /// Quick Clean or scheduled browser clean. Nothing writes it any more; it is
+    /// only named so <see cref="RemoveLegacyStateFile"/> can sweep a stale copy.</summary>
+    private static string LegacyStatePath => Path.Combine(AppDataPaths.Root, "browser-cleanup-state.json");
 
-    public Task<IReadOnlyList<BrowserCleanupTarget>> ScanAsync(
-        IEnumerable<string> browsers,
-        IEnumerable<string>? additionalRoots = null,
-        IReadOnlySet<string>? excludedPaths = null,
-        CancellationToken token = default)
-        => _cleanup.ScanBrowsersAsync(browsers, additionalRoots, excludedPaths, token);
-
-    public async Task<CleanupReport> CleanWithReportAsync(
-        IEnumerable<BrowserCleanupTarget> targets,
-        BrowserCleanupOptions? options = null,
-        IProgress<CleanupProgress>? progress = null,
-        CancellationToken token = default)
+    /// <summary>Best-effort removal of the obsolete interrupted-state file. It could
+    /// list every cache file of a run, so it is not worth leaving behind.</summary>
+    internal static void RemoveLegacyStateFile()
     {
-        using var cleaning = CleaningActivity.Begin();
-        await CleanupCoordinator.Gate.WaitAsync(token);
-        try
-        {
-            options ??= new BrowserCleanupOptions();
-            if (options.RequireBrowsersClosed)
-            {
-                var running = GetRunningBrowsers();
-                if (running.Count > 0)
-                    throw new InvalidOperationException(
-                        $"Close these browsers before cleaning: {string.Join(", ", running)}.");
-            }
-
-            var allowed = targets
-                .Where(t => t.Selected && !IsExcluded(t.Path, options.ExcludedPaths))
-                .ToArray();
-
-            var operationId = Guid.NewGuid().ToString("N");
-            var files = allowed
-                .SelectMany(t => FileEnumeration.Files(t.Path))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            await SaveInterruptedStateAsync(
-                new BrowserCleanupState(operationId, files, 0, 0, DateTimeOffset.UtcNow), token);
-
-            var report = await _cleanup.CleanBrowserTargetsAsync(allowed, progress, token);
-            // Fresh token: the clean SUCCEEDED, so the interrupted-state file must
-            // go even if the caller cancelled a moment later. Clearing it with the
-            // caller's token left a stale state file behind, and the next launch
-            // then reported a phantom "interrupted cleanup" over work already done.
-            await ClearStateAsync();
-            return report;
-        }
-        finally
-        {
-            CleanupCoordinator.Gate.Release();
-        }
-    }
-
-    public async Task<CleanupResult> CleanAsync(
-        IEnumerable<BrowserCleanupTarget> targets,
-        bool requireBrowsersClosed = true,
-        CancellationToken token = default)
-        => (await CleanWithReportAsync(targets, new BrowserCleanupOptions(RequireBrowsersClosed: requireBrowsersClosed), null, token)).Result;
-
-    public async Task<BrowserCleanupState?> LoadInterruptedStateAsync(CancellationToken token = default)
-    {
-        try
-        {
-            if (!File.Exists(_statePath)) return null;
-            await using var stream = File.OpenRead(_statePath);
-            return await JsonSerializer.DeserializeAsync<BrowserCleanupState>(stream, cancellationToken: token);
-        }
-        catch (IOException) { return null; }
-        catch (UnauthorizedAccessException) { return null; }
-        catch (JsonException) { return null; }
-    }
-
-    public async Task SaveInterruptedStateAsync(BrowserCleanupState state, CancellationToken token = default)
-    {
-        await StateGate.WaitAsync(token);
-        var temp = $"{_statePath}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(_statePath)!);
-            await using (var stream = File.Create(temp))
-                await JsonSerializer.SerializeAsync(stream, state with { UpdatedAt = DateTimeOffset.UtcNow }, cancellationToken: token);
-            File.Move(temp, _statePath, true);
-        }
-        finally
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-            StateGate.Release();
-        }
-    }
-
-    /// <summary>Removes the interrupted-state file. Takes no token on purpose: it
-    /// only runs after a clean that already succeeded, so a cancelled caller must
-    /// not be able to leave a stale state file behind (which would report a phantom
-    /// interrupted run on the next launch).</summary>
-    public async Task ClearStateAsync()
-    {
-        await StateGate.WaitAsync(CancellationToken.None);
-        try { if (File.Exists(_statePath)) File.Delete(_statePath); }
+        try { if (File.Exists(LegacyStatePath)) File.Delete(LegacyStatePath); }
         catch (IOException) { }
-        // Access-denied must be swallowed too: this runs right after a successful
-        // clean, and letting it escape would discard the report the caller is about
-        // to return (the same handling SaveInterruptedStateAsync already applies).
         catch (UnauthorizedAccessException) { }
-        finally { StateGate.Release(); }
     }
 
-    /// <summary>Process names of the browsers this tool monitors. Kept in one place
-    /// so every targeted query asks for exactly the same set.</summary>
-    private static readonly string[] BrowserProcessNames = ["chrome", "msedge", "firefox"];
+    /// <summary>Process names of every catalog browser. Derived from the catalog so
+    /// the "close your browsers first" check covers every browser the cleaner can
+    /// touch - a hand-kept list of three let Brave, Vivaldi and Opera be cleaned
+    /// while they were running.</summary>
+    private static readonly string[] BrowserProcessNames = BrowserCatalog.Browsers
+        .SelectMany(b => b.ProcessNames)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 
     public static IReadOnlyList<string> GetRunningBrowsers()
     {
         // Query each browser by name rather than sweeping Process.GetProcesses():
         // the latter materialises a Process for every running process just to
-        // filter down to three. This only touches the browsers we care about.
+        // filter down to a handful. This only touches the browsers we care about.
         var result = new List<string>();
         foreach (var name in BrowserProcessNames)
         {
@@ -275,11 +168,19 @@ public sealed class BrowserCleanupService
     /// The browser must be closed unless <paramref name="requireBrowsersClosed"/> is
     /// false - the browser-exit monitor uses that because it fires right after its
     /// browser closed, while another browser may still be open (its files belong to
-    /// it and are not touched). One item failing never aborts the rest.</summary>
+    /// it and are not touched), and Quick Clean / scheduled runs use it because they
+    /// only clear caches. One item failing never aborts the rest.
+    /// <para>Anything under <paramref name="excludedPaths"/> (the user's Settings
+    /// exclusions) is never deleted. <paramref name="skipModifiedWithin"/> leaves
+    /// files written that recently alone: a run that does not require the browser
+    /// to be closed passes it so a cache file the browser is using right now is
+    /// not pulled out from under it.</para></summary>
     public async Task<CleanupReport> CleanItemsAsync(
         IEnumerable<(string BrowserId, string ItemId)> selection,
         CancellationToken token = default,
-        bool requireBrowsersClosed = true)
+        bool requireBrowsersClosed = true,
+        IReadOnlySet<string>? excludedPaths = null,
+        TimeSpan? skipModifiedWithin = null)
     {
         using var cleaning = CleaningActivity.Begin();
         await CleanupCoordinator.Gate.WaitAsync(token);
@@ -298,6 +199,7 @@ public sealed class BrowserCleanupService
                 long bytes = 0;
                 var skipped = new List<CleanupIssue>();
                 var cleanedItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var modifiedCutoff = skipModifiedWithin is { } window ? DateTime.UtcNow - window : (DateTime?)null;
 
                 foreach (var (browserId, itemId) in selection.Distinct())
                 {
@@ -320,7 +222,8 @@ public sealed class BrowserCleanupService
 
                     foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
                     {
-                        var result = DeletePath(path);
+                        token.ThrowIfCancellationRequested();
+                        var result = DeletePath(path, excludedPaths, modifiedCutoff);
                         removed += result.Removed;
                         bytes += result.Bytes;
                         skipped.AddRange(result.Skipped);
@@ -398,11 +301,13 @@ public sealed class BrowserCleanupService
         return files;
     }
 
-    private static (int Removed, long Bytes, List<CleanupIssue> Skipped) DeletePath(string path)
+    private static (int Removed, long Bytes, List<CleanupIssue> Skipped) DeletePath(
+        string path, IReadOnlySet<string>? excludedPaths, DateTime? modifiedCutoff)
     {
         var removed = 0;
         long bytes = 0;
         var skipped = new List<CleanupIssue>();
+        if (IsExcluded(path, excludedPaths)) return (0, 0, skipped);
         try
         {
             // Refuse to delete through a junction/symlink. The recursive walker below
@@ -416,7 +321,13 @@ public sealed class BrowserCleanupService
             }
             if (File.Exists(path))
             {
-                var length = new FileInfo(path).Length;
+                var info = new FileInfo(path);
+                if (modifiedCutoff is { } fileCutoff && info.LastWriteTimeUtc > fileCutoff)
+                {
+                    skipped.Add(new CleanupIssue(path, "Recently modified"));
+                    return (0, 0, skipped);
+                }
+                var length = info.Length;
                 File.Delete(path);
                 return (1, length, skipped);
             }
@@ -431,12 +342,19 @@ public sealed class BrowserCleanupService
             {
                 try
                 {
+                    if (IsExcluded(file, excludedPaths)) continue;
                     if (NativeSafety.IsReparsePoint(file))
                     {
                         skipped.Add(new CleanupIssue(file, "Reparse point (junction/symlink) - skipped"));
                         continue;
                     }
-                    var length = new FileInfo(file).Length;
+                    var info = new FileInfo(file);
+                    if (modifiedCutoff is { } cutoff && info.LastWriteTimeUtc > cutoff)
+                    {
+                        skipped.Add(new CleanupIssue(file, "Recently modified"));
+                        continue;
+                    }
+                    var length = info.Length;
                     File.Delete(file);
                     removed++;
                     bytes += length;

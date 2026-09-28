@@ -307,25 +307,9 @@ public sealed class StartupAppsService
         return raw;
     }
 
-    /// <summary>Extracts a usable executable path from a registry Run command string,
-    /// resolving quoted paths and skipping environment variables.</summary>
+    /// <summary>Extracts a usable executable path from a registry Run command string.
+    /// Shares the Registry Care resolver so the Startup Apps page and the dead-entry
+    /// scanner can never disagree about which entries point at a missing program.</summary>
     internal static string? ResolveExecutable(string command)
-    {
-        var trimmed = command.Trim();
-        if (trimmed.Length == 0) return null;
-
-        string? candidate;
-        if (trimmed.StartsWith('"'))
-        {
-            var end = trimmed.IndexOf('"', 1);
-            candidate = end > 1 ? trimmed[1..end] : null;
-        }
-        else
-        {
-            candidate = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-        }
-
-        if (candidate is null || candidate.Contains('%')) return null;
-        return Path.IsPathFullyQualified(candidate) ? candidate : null;
-    }
+        => CleanupService.ResolveStartupExecutable(command);
 }

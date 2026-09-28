@@ -17,14 +17,23 @@ public sealed class ActivityStore
 
     public async Task<IReadOnlyList<ActivityEntry>> LoadAsync(CancellationToken token = default)
     {
-        try { if (!File.Exists(FilePath)) return []; await using var stream = File.OpenRead(FilePath); return await JsonSerializer.DeserializeAsync<List<ActivityEntry>>(stream, cancellationToken: token) ?? []; } catch (IOException) { return []; } catch (JsonException) { return []; }
+        try
+        {
+            if (!File.Exists(FilePath)) return [];
+            await using var stream = File.OpenRead(FilePath);
+            return await JsonSerializer.DeserializeAsync<List<ActivityEntry>>(stream, cancellationToken: token) ?? [];
+        }
+        catch (IOException) { return []; }
+        catch (UnauthorizedAccessException) { return []; }
+        catch (JsonException) { return []; }
     }
     public async Task AddAsync(ActivityEntry entry, CancellationToken token = default)
     {
         await AddGate.WaitAsync(token);
         try
         {
-            var items = (await LoadAsync(token)).Prepend(entry).Take(MaxEntries).ToList(); await SaveCoreAsync(items, token);
+            var items = (await LoadAsync(token)).Prepend(entry).Take(MaxEntries).ToList();
+            await SaveCoreAsync(items, token);
         }
         finally { AddGate.Release(); }
     }
@@ -49,10 +58,14 @@ public sealed class ActivityStore
             : null;
     private static async Task SaveCoreAsync(IReadOnlyList<ActivityEntry> items, CancellationToken token)
     {
-        var directory = Path.GetDirectoryName(FilePath)!; Directory.CreateDirectory(directory); var temp = FilePath + ".tmp";
+        Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+        // Unique per write: the gate above only serializes this process, and a
+        // headless scheduled run can log at the same moment as the open app.
+        var temp = $"{FilePath}.{Guid.NewGuid():N}.tmp";
         try
         {
-            await using (var stream = File.Create(temp)) await JsonSerializer.SerializeAsync(stream, items, new JsonSerializerOptions { WriteIndented = true }, token);
+            await using (var stream = File.Create(temp))
+                await JsonSerializer.SerializeAsync(stream, items, new JsonSerializerOptions { WriteIndented = true }, token);
             File.Move(temp, FilePath, true);
         }
         finally

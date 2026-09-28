@@ -23,11 +23,27 @@ public sealed class AppCleanupService
             return def is null ? null : ScanApp(def);
         }, token);
 
-    /// <summary>Cleans the selected app temp items. Returns files removed and bytes recovered.</summary>
+    /// <summary>Every item of every installed app in <paramref name="scans"/>, in the
+    /// shape <see cref="CleanAsync"/> takes. Used by the unattended runs (Quick
+    /// Clean, schedules) that clean everything an app currently has.</summary>
+    internal static IReadOnlyList<(string AppId, string ItemPath)> AllItems(IEnumerable<AppScan> scans)
+        => scans
+            .Where(s => s.Installed)
+            .SelectMany(s => s.Items.Select(i => (AppId: s.Id, ItemPath: i.FullPath)))
+            .ToList();
+
+    /// <summary>Cleans the selected app temp items. Returns files removed and bytes recovered.
+    /// <para>Items are identified by their path, not by their position in a scan:
+    /// a scan lists only the items that currently hold files, so positions shift
+    /// whenever one empties or a new one appears, and a position taken from the
+    /// scan the user looked at could name a different item in the fresh scan made
+    /// here. A selected path that the fresh scan no longer offers is simply not
+    /// cleaned. Anything under <paramref name="excludedPaths"/> is never deleted.</para></summary>
     public async Task<CleanupReport> CleanAsync(
-        IEnumerable<(string AppId, int ItemIndex)> selection,
+        IEnumerable<(string AppId, string ItemPath)> selection,
         CancellationToken token = default,
-        IProgress<CleanupProgress>? progress = null)
+        IProgress<CleanupProgress>? progress = null,
+        IReadOnlySet<string>? excludedPaths = null)
     {
         using var cleaning = CleaningActivity.Begin();
         await CleanupCoordinator.Gate.WaitAsync(token);
@@ -41,32 +57,30 @@ public sealed class AppCleanupService
         // Group by app to avoid rescanning.
         var byApp = selection
             .GroupBy(s => s.AppId)
-            .ToDictionary(g => g.Key, g => g.Select(s => s.ItemIndex).ToHashSet());
+            .ToDictionary(g => g.Key, g => g.Select(s => s.ItemPath).ToHashSet(StringComparer.OrdinalIgnoreCase));
 
         // Deleting every temp file is long-running disk work; keep it off the
         // caller's (UI) thread. The page awaits this directly, so the deletion
         // loop must not run synchronously.
         await Task.Run(() =>
         {
-        foreach (var (appId, indices) in byApp)
+        foreach (var (appId, paths) in byApp)
         {
             token.ThrowIfCancellationRequested();
             var def = AppCatalog.Find(appId);
             if (def is null) continue;
 
             var scan = ScanApp(def);
-            var totalFiles = indices
-                .Where(index => index >= 0 && index < scan.Items.Count)
-                .Sum(index => scan.Items[index].FileCount);
+            var items = scan.Items.Where(item => paths.Contains(item.FullPath)).ToList();
+            var totalFiles = items.Sum(item => item.FileCount);
             var completedFiles = 0;
-            for (var i = 0; i < scan.Items.Count; i++)
+            foreach (var item in items)
             {
-                if (!indices.Contains(i)) continue;
                 token.ThrowIfCancellationRequested();
-                var item = scan.Items[i];
                 var isDirectory = Directory.Exists(item.FullPath);
                 try
                 {
+                    if (IsExcluded(item.FullPath, excludedPaths)) continue;
                     // Never delete through a junction/symlink. The recursive walker skips
                     // reparse points inside the tree, but the item's own root is not covered
                     // by that, so prove it is a real entry before removing anything under (or
@@ -82,6 +96,7 @@ public sealed class AppCleanupService
                         {
                             try
                             {
+                                if (IsExcluded(file, excludedPaths)) continue;
                                 if (NativeSafety.IsReparsePoint(file)) { skipped.Add(new(file, "Reparse point (junction/symlink) - skipped")); continue; }
                                 var info = new FileInfo(file);
                                 if (info.IsReadOnly) { skipped.Add(new(file, "Read-only")); continue; }
@@ -245,16 +260,8 @@ public sealed class AppCleanupService
                 if (string.IsNullOrEmpty(rootPath)) continue;
                 foreach (var entry in entries)
                 {
-                    var fullPath = Path.Combine(rootPath, entry.RelativePath);
-                    // Check the package root (segments before AC/TempState). Guard the
-                    // empty case: a path whose very first segment matched TakeWhile's
-                    // stop condition would make Aggregate throw on no elements.
-                    var segments = fullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                        .TakeWhile(s => !s.Contains("AC") && !s.Contains("TempState"))
-                        .ToArray();
-                    if (segments.Length == 0) continue;
-                    var packageRoot = Path.Combine(segments);
-                    if (Directory.Exists(packageRoot)) return true;
+                    var packageRoot = StorePackageRoot(rootPath, entry.RelativePath);
+                    if (packageRoot is not null && Directory.Exists(packageRoot)) return true;
                 }
             }
             return false;
@@ -297,6 +304,27 @@ public sealed class AppCleanupService
             _ => false
         };
     }
+
+    /// <summary>The package folder a Store app's temp entry lives in: the entry's
+    /// relative path up to (not including) its "AC" or "TempState" segment, under
+    /// <paramref name="rootPath"/>. Null when the entry names no such segment.
+    /// <para>Only the catalog's relative path is split, and segments are compared
+    /// whole. Splitting the absolute path and matching substrings meant any profile
+    /// folder containing "AC" (C:\Users\ISAAC) cut the path short at the profile,
+    /// which exists on every machine - so every Store app in the catalog was
+    /// reported as installed for that user.</para></summary>
+    internal static string? StorePackageRoot(string rootPath, string relativePath)
+    {
+        var segments = relativePath.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        var stop = Array.FindIndex(segments, s =>
+            s.Equals("AC", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("TempState", StringComparison.OrdinalIgnoreCase));
+        if (stop <= 0) return null;
+        return Path.Combine(segments[..stop].Prepend(rootPath).ToArray());
+    }
+
+    private static bool IsExcluded(string path, IReadOnlySet<string>? exclusions)
+        => exclusions?.Any(root => NativeSafety.IsWithin(path, root)) == true;
 
     private static string ResolveRoot(AppDataRoot root) => root switch
     {

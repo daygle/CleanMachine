@@ -287,10 +287,6 @@ public sealed class InstalledAppsService
         return LaunchCommand(cmd);
     }
 
-    /// <summary>Synchronous convenience wrapper for <see cref="LaunchUninstallAsync"/>.</summary>
-    public bool LaunchUninstall(InstalledApp app, bool quiet = false)
-        => LaunchUninstallAsync(app, quiet).GetAwaiter().GetResult();
-
     /// <summary>Starts a vendor command, splitting executable path from arguments
     /// correctly for both quoted and unquoted command strings.</summary>
     private static bool LaunchCommand(string command)
