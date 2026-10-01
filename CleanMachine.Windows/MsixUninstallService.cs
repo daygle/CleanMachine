@@ -49,8 +49,9 @@ internal static class MsixUninstallService
             if (File.Exists(shortcut)) File.Delete(shortcut);
         });
 
-        // 2. Startup registration: the HKCU Run value written by StartupRegistration,
-        //    together with its StartupApproved state (removed by the same call).
+        // 2. Startup registration: the HKCU Run value older versions wrote, together
+        //    with its StartupApproved state (removed by the same call). The current
+        //    packaged startup task is part of the package and goes with it.
         Try(() => StartupRegistration.SetEnabled(false, string.Empty));
 
         // 3. Scheduled cleanup tasks live in the real Task Scheduler (folder

@@ -21,6 +21,11 @@
       <TextBlock x:Name="StartWithWindowsHint"
                  Text="Background cleaning (browser-close cleanup or low-disk monitoring) also starts CleanMachine with Windows so it can run while closed."
                  FontSize="11" Foreground="#89958F" TextWrapping="Wrap" Margin="26,-8,0,0"/>
+      <!-- Shown when Windows has CleanMachine's startup task switched off (Task
+           Manager, Settings > Apps > Startup, or policy). Apps cannot turn that
+           back on themselves, so the user is pointed at the switch that can. -->
+      <TextBlock x:Name="StartupBlockedHint" Visibility="Collapsed"
+                 FontSize="11" Foreground="#C7775D" TextWrapping="Wrap" Margin="26,-8,0,0"/>
       <CheckBox x:Name="ShowInTaskbarToggle" Content="Show in taskbar"
                 Checked="Setting_Changed" Unchecked="Setting_Changed"/>
       <CheckBox x:Name="StartMinimizedToTrayToggle" Content="Minimize to system tray when program starts up"

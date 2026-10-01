@@ -341,7 +341,7 @@ public sealed partial class AutomaticCleanupPage : Page
         _settings.RecycleBinAutoEmptyNotify = RecycleBinNotifyToggle.IsChecked == true;
 
         await _settings.SaveAsync();
-        (App.Current as App)?.ApplyBackgroundServices(_settings);
+        if (App.Current is App app) _ = app.ApplyBackgroundServices(_settings);
         StatusText.Text = "Saved.";
     }
 }

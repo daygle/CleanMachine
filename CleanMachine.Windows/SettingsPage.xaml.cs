@@ -39,6 +39,27 @@ public sealed partial class SettingsPage : Page
         TrayCleaningAnimationToggle.IsChecked = _settings.TrayCleaningAnimation;
         ExclusionsBox.Text = string.Join("\n", _settings.ExcludedPaths);
         _loading = false;
+        ShowStartupState(await StartupRegistration.GetStateAsync());
+    }
+
+    /// <summary>Explains when startup is wanted but Windows has the app's startup
+    /// task switched off - a state only the user (or their administrator) can
+    /// change, so the checkbox alone would claim something that is not
+    /// happening.</summary>
+    private void ShowStartupState(global::Windows.ApplicationModel.StartupTaskState? state)
+    {
+        if (_settings.ShouldStartWithWindows && StartupRegistration.IsBlocked(state))
+        {
+            StartupBlockedHint.Text =
+                state == global::Windows.ApplicationModel.StartupTaskState.DisabledByPolicy
+                    ? "Starting with Windows is turned off for CleanMachine by your organisation's policy, so it will not start when you sign in."
+                    : "Windows has CleanMachine's startup switched off, so it will not start when you sign in. Turn it on in Settings > Apps > Startup (or Task Manager > Startup apps).";
+            StartupBlockedHint.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            StartupBlockedHint.Visibility = Visibility.Collapsed;
+        }
     }
 
     // Instant-save handlers: every control persists on change, so there is no
@@ -72,11 +93,12 @@ public sealed partial class SettingsPage : Page
             mainWindow.ApplyTrayCleaningAnimation(_settings.TrayCleaningAnimation);
         }
 
+        StatusText.Text = "Saved.";
+
         // Keep Windows startup registration (and the background agent) in step with
         // the "Start with Windows" preference set here.
-        (App.Current as App)?.ApplyBackgroundServices(_settings);
-
-        StatusText.Text = "Saved.";
+        if (App.Current is App app)
+            ShowStartupState(await app.ApplyBackgroundServices(_settings));
     }
 
     private async void RestoreDefaults_Click(object sender, RoutedEventArgs e)
