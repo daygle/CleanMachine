@@ -135,8 +135,8 @@ public sealed class StorePackagingTests
     /// its restart registration. The flags must keep the update case (no
     /// RESTART_NO_PATCH) while excluding crash, hang and reboot, and the relaunch
     /// must go to the tray. Registration belongs to the GUI instance alone -
-    /// after the single-instance check - so a headless scheduled run or a
-    /// --shutdown helper is never resurrected.</summary>
+    /// after the scheduled-run, --shutdown and single-instance exits - so none
+    /// of those short-lived processes is ever resurrected.</summary>
     [Fact]
     public void AppRestartsToTheTrayAfterAStoreUpdateOnly()
     {
@@ -149,10 +149,18 @@ public sealed class StorePackagingTests
         var app = File.ReadAllText(Path.Combine(root!, "CleanMachine.Windows", "App.xaml.cs"));
         var register = app.IndexOf("UpdateRestart.Register()", StringComparison.Ordinal);
         Assert.True(register > 0, "App never registers for restart after an update.");
-        Assert.True(register > app.IndexOf("SingleInstance.TryAcquire()", StringComparison.Ordinal),
-            "Restart registration must come after the single-instance check.");
-        Assert.True(register > app.IndexOf("HasShutdownArgument(Environment", StringComparison.Ordinal),
-            "Restart registration must come after the --shutdown early exit.");
+        // Each guard must exist, or a missing one would read as index -1 and pass.
+        foreach (var guard in new[]
+                 {
+                     "TryReadScheduledRun(Environment",   // headless scheduled run
+                     "HasShutdownArgument(Environment",   // --shutdown helper
+                     "SingleInstance.TryAcquire()"        // second GUI launch
+                 })
+        {
+            var at = app.IndexOf(guard, StringComparison.Ordinal);
+            Assert.True(at >= 0, $"Guard '{guard}' is missing from App.xaml.cs.");
+            Assert.True(register > at, $"Restart registration must come after '{guard}'.");
+        }
     }
 
     /// <summary>Walks up from the test output directory (bin/&lt;config&gt;/&lt;tfm&gt;,

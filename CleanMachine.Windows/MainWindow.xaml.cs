@@ -276,7 +276,7 @@ public sealed partial class MainWindow : Window
         ApplyMinimizeToTray(settings.MinimizeToTray);
         // A logon autostart or a restart after a Store update (--background) always
         // opens to the tray, regardless of the "minimize to tray on startup" preference.
-        _startMinimizedToTray = settings.StartMinimizedToTray || App.LaunchedAtLogon;
+        _startMinimizedToTray = settings.StartMinimizedToTray || App.LaunchedInBackground;
         _closeToTray = settings.CloseToTray;
         _alwaysShowTray = settings.AlwaysShowTray;
         _trayCleaningAnimation = settings.TrayCleaningAnimation;

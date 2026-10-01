@@ -9,7 +9,9 @@ namespace CleanMachine.Windows;
 /// low-disk monitoring, idle and Recycle Bin cleanup) silently stop until the
 /// next sign-in. Windows restarts a packaged app after an update only if the app
 /// registered for it with <c>RegisterApplicationRestart</c>, which is what this
-/// does.
+/// does. Windows only honours the registration for a process that has been
+/// running for at least 60 seconds, so an update that lands within a minute of
+/// launch still leaves the app closed.
 /// </para>
 /// <para>
 /// The restart is limited to updates: crashes, hangs and reboots are excluded,

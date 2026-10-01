@@ -19,7 +19,7 @@ public partial class App : Application
     /// <summary>True when this instance was launched by the logon startup entry or
     /// restarted after a Store update (<c>--background</c>), so the window should
     /// open straight to the tray instead of onto the desktop.</summary>
-    public static bool LaunchedAtLogon { get; private set; }
+    public static bool LaunchedInBackground { get; private set; }
 
     public App()
     {
@@ -82,7 +82,7 @@ public partial class App : Application
         // A logon autostart opens to the tray, not the desktop. The packaged startup
         // task passes no arguments, so it is recognised by its activation kind; the
         // unpackaged Run value and the post-update restart pass --background.
-        LaunchedAtLogon = IsStartupTaskActivation() || Environment.GetCommandLineArgs()
+        LaunchedInBackground = IsStartupTaskActivation() || Environment.GetCommandLineArgs()
             .Any(a => a.Equals("--background", StringComparison.OrdinalIgnoreCase));
         // The listener runs on its own thread; UI work it triggers is posted through
         // the dispatcher captured here on the UI thread.
