@@ -131,6 +131,30 @@ public sealed class StorePackagingTests
         Assert.Equal("false", task.Attribute("Enabled")?.Value);
     }
 
+    /// <summary>A Store update closes the running app; it comes back only through
+    /// its restart registration. The flags must keep the update case (no
+    /// RESTART_NO_PATCH) while excluding crash, hang and reboot, and the relaunch
+    /// must go to the tray. Registration belongs to the GUI instance alone -
+    /// after the single-instance check - so a headless scheduled run or a
+    /// --shutdown helper is never resurrected.</summary>
+    [Fact]
+    public void AppRestartsToTheTrayAfterAStoreUpdateOnly()
+    {
+        Assert.Equal(0x1u | 0x2u | 0x8u, UpdateRestart.Flags);
+        Assert.Equal(0u, UpdateRestart.Flags & 0x4u);
+        Assert.Equal("--background", UpdateRestart.Arguments);
+
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
+        var app = File.ReadAllText(Path.Combine(root!, "CleanMachine.Windows", "App.xaml.cs"));
+        var register = app.IndexOf("UpdateRestart.Register()", StringComparison.Ordinal);
+        Assert.True(register > 0, "App never registers for restart after an update.");
+        Assert.True(register > app.IndexOf("SingleInstance.TryAcquire()", StringComparison.Ordinal),
+            "Restart registration must come after the single-instance check.");
+        Assert.True(register > app.IndexOf("HasShutdownArgument(Environment", StringComparison.Ordinal),
+            "Restart registration must come after the --shutdown early exit.");
+    }
+
     /// <summary>Walks up from the test output directory (bin/&lt;config&gt;/&lt;tfm&gt;,
     /// any platform) to the checkout that contains the app project.</summary>
     private static string? FindRepoRoot()
