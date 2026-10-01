@@ -63,7 +63,7 @@ public sealed partial class WindowsCleanupPage : Page
                      .OrderBy(g => GroupIndex(g.Key)))
         {
             var categories = group.OrderBy(c => c.Name)
-                .Where(c => showClean || c.Kind == CleanupKind.DnsCache || (bytesById.TryGetValue(c.Id, out var b) && b > 0))
+                .Where(c => showClean || c.Kind.IsAction() || (bytesById.TryGetValue(c.Id, out var b) && b > 0))
                 .ToList();
             if (categories.Count == 0) continue;
 
@@ -72,9 +72,9 @@ public sealed partial class WindowsCleanupPage : Page
             {
                 var bytes = bytesById.TryGetValue(category.Id, out var b) ? b : 0;
                 var hasData = bytes > 0;
-                var isDnsCache = category.Kind == CleanupKind.DnsCache;
-                var selectable = hasData || isDnsCache;
-                var size = isDnsCache
+                var isAction = category.Kind.IsAction();
+                var selectable = hasData || isAction;
+                var size = isAction
                     ? "Action"
                     : category.Kind == CleanupKind.RegistryValues
                         ? (hasData ? $"{bytes:N0} entries" : "Clean")
@@ -205,9 +205,9 @@ public sealed partial class WindowsCleanupPage : Page
 
             var enabledItems = items
                 .Where(i => enabled.Any(c => c.Id == i.Category.Id))
-                // DNS cache flushing is an action rather than a measurable file set;
-                // keep it visible even though its scan size is zero.
-                .Where(i => i.Bytes > 0 || i.Category.Kind == CleanupKind.DnsCache)
+                // Action categories (DNS flush, clipboard history) have no measurable
+                // file set; keep them visible even though their scan size is zero.
+                .Where(i => i.Bytes > 0 || i.Category.Kind.IsAction())
                 .OrderByDescending(i => i.Bytes)
                 .ToArray();
             var totalBytes = enabledItems.Sum(i => i.Bytes);
@@ -418,7 +418,7 @@ public sealed partial class WindowsCleanupPage : Page
         var enabled = EnabledCategories();
         var enabledItems = _lastScan
             .Where(i => enabled.Any(c => c.Id == i.Category.Id))
-            .Where(i => i.Bytes > 0 || i.Category.Kind == CleanupKind.DnsCache)
+            .Where(i => i.Bytes > 0 || i.Category.Kind.IsAction())
             .OrderByDescending(i => i.Bytes)
             .ToArray();
         var totalBytes = enabledItems.Sum(i => i.Bytes);

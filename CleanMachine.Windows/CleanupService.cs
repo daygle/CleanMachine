@@ -37,6 +37,10 @@ public sealed class CleanupService
         ScanOpenWithProgids(findings);
         ScanOpenWithList(findings);
         ScanCompatibilityAssistant(findings);
+        ScanUserFonts(findings);
+        ScanContextMenuCommands(findings);
+        ScanUserComServers(findings);
+        ScanUserPath(findings);
         return findings;
         }, cancellationToken);
 
@@ -316,6 +320,158 @@ public sealed class CleanupService
             findings.Add(new RegistryFinding("HKCU", $@"{AppPathsKey}\{name}",
                 $"App Paths entry '{name}' points to a missing program", true, 75, "App Paths"));
         }
+    }
+
+    // Per-user fonts (installed "for this user only") are registered here as
+    // name -> full path, normally under %LOCALAPPDATA%\Microsoft\Windows\Fonts.
+    // An entry whose file is gone is a font Windows can no longer load. System
+    // fonts are registered under HKLM with bare file names and are never seen here.
+    internal const string UserFontsKey = @"Software\Microsoft\Windows NT\CurrentVersion\Fonts";
+
+    private static void ScanUserFonts(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var key = root.OpenSubKey(UserFontsKey);
+        if (key is null) return;
+        foreach (var valueName in key.GetValueNames())
+        {
+            if (string.IsNullOrEmpty(valueName)) continue;
+            if (key.GetValue(valueName) is not string file || string.IsNullOrWhiteSpace(file)) continue;
+            file = file.Trim().Trim('"');
+            // A bare file name resolves against the system Fonts folder; only full
+            // paths can be positively verified as missing.
+            if (!Path.IsPathFullyQualified(file) || File.Exists(file)) continue;
+            findings.Add(new RegistryFinding("HKCU", UserFontsKey,
+                $"Font '{valueName}' points to a missing file ({Path.GetFileName(file)})", true, 75, "Fonts", valueName));
+        }
+    }
+
+    // Per-user right-click menu commands registered on the shell's catch-all
+    // types. A verb whose command runs a program that is gone shows a menu entry
+    // that only produces an error.
+    internal static readonly string[] ContextMenuTypes =
+        ["*", "AllFilesystemObjects", "Directory", @"Directory\Background", "Folder", "Drive"];
+
+    private static void ScanContextMenuCommands(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        foreach (var type in ContextMenuTypes)
+        {
+            var shellPath = $@"Software\Classes\{type}\shell";
+            using var shell = root.OpenSubKey(shellPath);
+            if (shell is null) continue;
+            foreach (var verb in shell.GetSubKeyNames())
+            {
+                using var command = shell.OpenSubKey($@"{verb}\command");
+                if (command?.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) continue;
+                var exe = ResolveCommandExecutable(raw);
+                if (exe is null || File.Exists(exe)) continue;
+                findings.Add(new RegistryFinding("HKCU", $@"{shellPath}\{verb}",
+                    $"Right-click entry '{verb}' runs a missing program ({Path.GetFileName(exe)})", true, 70, "Context Menu"));
+            }
+        }
+    }
+
+    // Per-user COM class registrations whose server file is gone. Only classes
+    // with an in-process (DLL) or local (EXE) server path that resolves to a full
+    // local path are considered; an empty server value is a deliberate override
+    // (the Windows 11 classic-menu tweak is one) and is never flagged.
+    private const string UserClsidKey = @"Software\Classes\CLSID";
+
+    private static void ScanUserComServers(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var clsids = root.OpenSubKey(UserClsidKey);
+        if (clsids is null) return;
+        foreach (var clsid in clsids.GetSubKeyNames())
+        {
+            if (!IsGuidKeyName(clsid)) continue;
+            using var cls = clsids.OpenSubKey(clsid);
+            if (cls is null) continue;
+            string? missing = null;
+            foreach (var server in new[] { "InprocServer32", "LocalServer32" })
+            {
+                using var serverKey = cls.OpenSubKey(server);
+                // Expanded on read (the default), so %LOCALAPPDATA%-style paths
+                // are checked against the real location.
+                if (serverKey?.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) continue;
+                var file = server == "LocalServer32" ? ResolveCommandExecutable(raw) : raw.Trim().Trim('"');
+                if (file is null || !Path.IsPathFullyQualified(file)) continue;
+                if (File.Exists(file)) { missing = null; break; } // one live server is enough
+                missing ??= file;
+            }
+            if (missing is null) continue;
+            findings.Add(new RegistryFinding("HKCU", $@"{UserClsidKey}\{clsid}",
+                $"COM class points to a missing file ({Path.GetFileName(missing)})", true, 70, "COM Registrations"));
+        }
+    }
+
+    /// <summary>True for a key name in registry GUID form, "{xxxxxxxx-...}".</summary>
+    internal static bool IsGuidKeyName(string name)
+        => name.Length == 38 && name[0] == '{' && name[^1] == '}' && Guid.TryParseExact(name, "B", out _);
+
+    // Folders on the per-user PATH that no longer exist. Report only: PATH is a
+    // single value shared by every entry, and rewriting it automatically is not
+    // worth the risk, so these findings are never eligible for removal.
+    internal const string UserEnvironmentKey = "Environment";
+
+    private static void ScanUserPath(ICollection<RegistryFinding> findings)
+    {
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var env = root.OpenSubKey(UserEnvironmentKey);
+        if (env?.GetValue("Path", null, RegistryValueOptions.DoNotExpandEnvironmentNames) is not string raw) return;
+        foreach (var entry in MissingPathFolders(raw, Directory.Exists))
+            findings.Add(new RegistryFinding("HKCU", UserEnvironmentKey,
+                $"PATH lists a folder that no longer exists ({entry}). Remove it in Settings > System > About > Advanced system settings > Environment Variables.",
+                false, 40, "PATH (Report Only)", entry));
+    }
+
+    /// <summary>The entries of a PATH string whose folder does not exist, as
+    /// written (unexpanded). Entries that do not expand to a full local path are
+    /// skipped, since they cannot be positively verified; duplicates are reported
+    /// once.</summary>
+    internal static IReadOnlyList<string> MissingPathFolders(string path, Func<string, bool> directoryExists)
+    {
+        var missing = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in path.Split(';'))
+        {
+            var entry = part.Trim().Trim('"').Trim();
+            if (entry.Length == 0 || !seen.Add(entry)) continue;
+            var expanded = Environment.ExpandEnvironmentVariables(entry);
+            if (expanded.Contains('%') || !Path.IsPathFullyQualified(expanded)) continue;
+            // UNC folders may simply be offline; never call them missing.
+            if (expanded.StartsWith(@"\\", StringComparison.Ordinal)) continue;
+            if (!directoryExists(expanded)) missing.Add(entry);
+        }
+        return missing;
+    }
+
+    /// <summary>The executable a shell or COM command line runs, or null when it
+    /// cannot be resolved to a full local path. Stricter than
+    /// <see cref="ResolveStartupExecutable"/> for unquoted commands: the path must
+    /// end in ".exe", so "C:\Program Files\App\app.exe %1" resolves to the whole
+    /// path rather than to "C:\Program", which would read as missing.</summary>
+    internal static string? ResolveCommandExecutable(string command)
+    {
+        var trimmed = command.Trim();
+        if (trimmed.Length == 0) return null;
+        string? candidate;
+        if (trimmed.StartsWith('"'))
+        {
+            var end = trimmed.IndexOf('"', 1);
+            candidate = end > 1 ? trimmed[1..end] : null;
+        }
+        else
+        {
+            var exe = trimmed.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+            if (exe < 0) return null;
+            var stop = exe + 4;
+            if (stop < trimmed.Length && trimmed[stop] != ' ') return null;
+            candidate = trimmed[..stop];
+        }
+        if (string.IsNullOrEmpty(candidate) || candidate.Contains('%')) return null;
+        return Path.IsPathFullyQualified(candidate) ? candidate : null;
     }
 
     /// <summary>Extracts a fully-qualified executable path from a Run value, or null

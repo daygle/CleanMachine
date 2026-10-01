@@ -10,6 +10,7 @@ public sealed class AppCleanupService
     private static readonly string ProgramFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
     private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private static readonly string WindowsTemp = Path.GetTempPath();
+    private static readonly string LocalLowAppData = Path.Combine(UserProfile, "AppData", "LocalLow");
 
     /// <summary>Detects all catalog apps and scans their temp files.</summary>
     public Task<IReadOnlyList<AppScan>> ScanAllAsync(CancellationToken token = default)
@@ -301,6 +302,21 @@ public sealed class AppCleanupService
             "mediaplayer" => DirExists(RoamingAppData, "Microsoft\\Media Player"),
             "autoplay" => DirExists(LocalAppData, "Microsoft\\Windows\\Autoplay"),
             "search" => DirExists(LocalAppData, "Microsoft\\Search"),
+            "battlenet" => DirExists(LocalAppData, "Battle.net") || DirExists(ProgramFilesX86, "Battle.net"),
+            "ea-app" => DirExists(LocalAppData, "Electronic Arts\\EA Desktop") || DirExists(ProgramFiles, "Electronic Arts\\EA Desktop"),
+            "ubisoft-connect" => DirExists(ProgramFilesX86, "Ubisoft\\Ubisoft Game Launcher"),
+            "telegram" => DirExists(RoamingAppData, "Telegram Desktop"),
+            "notion" => DirExists(RoamingAppData, "Notion") || DirExists(LocalAppData, "Programs\\Notion"),
+            "figma" => DirExists(RoamingAppData, "Figma") || DirExists(LocalAppData, "Figma"),
+            "obsidian" => DirExists(RoamingAppData, "obsidian"),
+            "obs-studio" => DirExists(RoamingAppData, "obs-studio") || DirExists(ProgramFiles, "obs-studio"),
+            "java" => DirExists(LocalLowAppData, "Sun\\Java"),
+            "webview2" => DirExists(ProgramFilesX86, "Microsoft\\EdgeWebView") || DirExists(ProgramFiles, "Microsoft\\EdgeWebView"),
+            "python-pip" => DirExists(LocalAppData, "pip"),
+            "nuget" => DirExists(LocalAppData, "NuGet"),
+            "go" => DirExists(LocalAppData, "go-build"),
+            "rust-cargo" => DirExists(UserProfile, ".cargo"),
+            "gradle" => DirExists(UserProfile, ".gradle"),
             _ => false
         };
     }
@@ -334,6 +350,7 @@ public sealed class AppCleanupService
         AppDataRoot.ProgramFilesX86 => ProgramFilesX86,
         AppDataRoot.UserProfile => UserProfile,
         AppDataRoot.WindowsTemp => WindowsTemp,
+        AppDataRoot.LocalLowAppData => LocalLowAppData,
         _ => ""
     };
 

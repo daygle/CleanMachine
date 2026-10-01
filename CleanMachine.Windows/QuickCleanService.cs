@@ -31,7 +31,7 @@ public static class QuickCleanService
 
     /// <summary>Registry Care categories eligible for Quick Clean (see RegistryFinding.Category).</summary>
     public static readonly IReadOnlyList<string> RegistryCategories =
-        ["Installer/Uninstaller", "File Extensions", "MUI Cache", "Windows Startup", "Sound AppEvents", "Shell Cache", "App Paths", "Open With", "Compatibility Assistant"];
+        ["Installer/Uninstaller", "File Extensions", "MUI Cache", "Windows Startup", "Sound AppEvents", "Shell Cache", "App Paths", "Open With", "Compatibility Assistant", "Fonts", "Context Menu"];
 
     public static string Title(QuickCleanArea area) => area switch
     {

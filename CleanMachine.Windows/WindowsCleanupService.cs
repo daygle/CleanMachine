@@ -5,7 +5,17 @@ using Microsoft.Win32;
 namespace CleanMachine.Windows;
 
 public enum CleanupRisk { Safe, Review, Advanced }
-public enum CleanupKind { Files, RegistryValues, RecycleBin, DnsCache }
+public enum CleanupKind { Files, RegistryValues, RecycleBin, DnsCache, ClipboardHistory }
+
+public static class CleanupKindExtensions
+{
+    /// <summary>True for a category that performs an action (flush the DNS cache,
+    /// clear clipboard history) rather than removing a measurable set of files or
+    /// values. Its scan size is always zero, so the UI keeps it visible and
+    /// selectable regardless.</summary>
+    public static bool IsAction(this CleanupKind kind)
+        => kind is CleanupKind.DnsCache or CleanupKind.ClipboardHistory;
+}
 
 public sealed record CleanupCategory(
     string Id,
@@ -79,6 +89,12 @@ public sealed class WindowsCleanupService
         new("system-gpu-amd", "Windows System", "AMD Shader Cache", "Compiled shaders AMD drivers recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "AMD", "DxCache"), Pattern: "*"),
         new("system-gpu-intel", "Windows System", "Intel Shader Cache", "Compiled shaders Intel drivers recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Intel", "ShaderCache"), Pattern: "*"),
         new("system-dns-cache", "Windows System", "DNS Cache", "Cached DNS resolver entries", CleanupRisk.Safe, true, CleanupKind.DnsCache),
+        // Review, not Safe: clipboard history is something the user may still want
+        // (copied text they have not pasted yet), so it is never cleared unattended.
+        new("system-clipboard-history", "Windows System", "Clipboard History", "Past items in the Win+V clipboard history", CleanupRisk.Review, false, CleanupKind.ClipboardHistory),
+        // Review: these cookies keep some Windows components and older apps signed
+        // in, so clearing them can sign the user out.
+        new("system-inet-cookies", "Windows System", "Internet Cookies", "Cookies stored by Windows components and older apps (may sign some apps out)", CleanupRisk.Review, false, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "INetCookies"), Pattern: "*"),
         new("system-notification-cache", "Windows System", "Notification History", "Action Center notification database (clears past notifications)", CleanupRisk.Review, false, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Notifications"), Pattern: "wpndatabase*"),
         new("system-recycle-bin", "Windows System", "Recycle Bin", "Deleted items awaiting permanent removal", CleanupRisk.Review, false, CleanupKind.RecycleBin),
 
@@ -234,7 +250,7 @@ public sealed class WindowsCleanupService
             }
         }
 
-        foreach (var category in selected.Where(c => c.Kind is CleanupKind.RecycleBin or CleanupKind.DnsCache))
+        foreach (var category in selected.Where(c => c.Kind is CleanupKind.RecycleBin || c.Kind.IsAction()))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -250,6 +266,12 @@ public sealed class WindowsCleanupService
                     recovered += binBytes;
                     breakdown.Add(new CleanupCategoryResult(category.Name, 1, binBytes));
                 }
+                else if (category.Kind == CleanupKind.ClipboardHistory)
+                {
+                    ClearClipboardHistory();
+                    removed++;
+                    breakdown.Add(new CleanupCategoryResult(category.Name, 1, 0));
+                }
                 else
                 {
                     FlushDnsCache();
@@ -257,7 +279,7 @@ public sealed class WindowsCleanupService
                     breakdown.Add(new CleanupCategoryResult(category.Name, 1, 0));
                 }
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or COMException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or COMException or InvalidOperationException)
             {
                 issues.Add(new(category.Name, $"Cleanup failed: {ex.Message}"));
             }
@@ -298,6 +320,10 @@ public sealed class WindowsCleanupService
                 case CleanupKind.DnsCache:
                     total++;
                     shown.Add(new CleanupPreviewItem(category.Name, "Flush the DNS cache", 0));
+                    break;
+                case CleanupKind.ClipboardHistory:
+                    total++;
+                    shown.Add(new CleanupPreviewItem(category.Name, "Clear the clipboard history", 0));
                     break;
             }
         }
@@ -457,6 +483,38 @@ public sealed class WindowsCleanupService
         _ = process.StandardError.ReadToEndAsync();
         process.WaitForExit();
         if (process.ExitCode != 0) throw new IOException($"ipconfig /flushdns returned exit code {process.ExitCode}.");
+    }
+
+    /// <summary>Clears the Win+V clipboard history through the WinRT clipboard API,
+    /// the same call Settings' "Clear clipboard data" uses. The clipboard is an
+    /// STA-bound OLE resource and cleaning runs on a thread-pool (MTA) thread, so
+    /// the call is made on a short-lived STA thread of its own.</summary>
+    private static void ClearClipboardHistory()
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Clipboard history is supported on Windows only.");
+        Exception? failure = null;
+        var cleared = false;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                if (!global::Windows.ApplicationModel.DataTransfer.Clipboard.IsHistoryEnabled())
+                    throw new InvalidOperationException("Clipboard history is turned off in Windows Settings, so there is nothing to clear.");
+                cleared = global::Windows.ApplicationModel.DataTransfer.Clipboard.ClearHistory();
+            }
+            catch (Exception ex) { failure = ex; }
+        })
+        {
+            IsBackground = true,
+            Name = "CleanMachine.ClipboardHistory"
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        if (!thread.Join(TimeSpan.FromSeconds(10)))
+            throw new InvalidOperationException("Windows did not respond to the clipboard history request.");
+        if (failure is InvalidOperationException) throw failure;
+        if (failure is not null) throw new InvalidOperationException(failure.Message, failure);
+        if (!cleared) throw new InvalidOperationException("Windows declined to clear the clipboard history.");
     }
 
     [StructLayout(LayoutKind.Sequential)]

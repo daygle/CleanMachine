@@ -8,7 +8,9 @@ public enum AppDataRoot
     ProgramFiles,
     ProgramFilesX86,
     UserProfile,
-    WindowsTemp
+    WindowsTemp,
+    /// <summary>%USERPROFILE%\AppData\LocalLow, used by low-integrity apps (Java).</summary>
+    LocalLowAppData
 }
 
 /// <summary>A known temp/cache file location for an application.</summary>
@@ -334,6 +336,160 @@ public static class AppCatalog
             ])
         ]),
 
+
+        new("battlenet", "Battle.net", "Desktop Application", false,
+        [
+            // Blizzard's own troubleshooting deletes this whole folder; it holds
+            // only launcher caches and logs, never game data or the sign-in.
+            (AppDataRoot.LocalAppData, [
+                new("Battle.net\\BrowserCaches", "Browser Cache"),
+                new("Battle.net\\Cache", "Launcher Cache"),
+                new("Battle.net\\Logs", "Log Files")
+            ])
+        ]),
+
+        new("ea-app", "EA app", "Desktop Application", false,
+        [
+            // Only the embedded browser's disk caches and the logs - not the CEF
+            // profile itself, which holds the sign-in.
+            (AppDataRoot.LocalAppData, [
+                new("Electronic Arts\\EA Desktop\\Logs", "Log Files"),
+                new("Electronic Arts\\EA Desktop\\CEF\\BrowserCache\\Cache", "Browser Cache"),
+                new("Electronic Arts\\EA Desktop\\CEF\\BrowserCache\\Code Cache", "Code Cache"),
+                new("Electronic Arts\\EA Desktop\\CEF\\BrowserCache\\GPUCache", "GPU Cache")
+            ])
+        ]),
+
+        new("ubisoft-connect", "Ubisoft Connect", "Desktop Application", false,
+        [
+            // Not the rest of "cache": its "ownership" and "settings" folders hold
+            // licence and account state.
+            (AppDataRoot.ProgramFilesX86, [
+                new("Ubisoft\\Ubisoft Game Launcher\\logs", "Log Files"),
+                new("Ubisoft\\Ubisoft Game Launcher\\cache\\http", "Web Cache")
+            ])
+        ]),
+
+        new("telegram", "Telegram Desktop", "Desktop Application", false,
+        [
+            // Only the media caches inside tdata\user_data. Never tdata itself:
+            // it holds the session, and deleting it signs the user out.
+            (AppDataRoot.RoamingAppData, [
+                new("Telegram Desktop\\tdata\\user_data\\cache", "Media Cache"),
+                new("Telegram Desktop\\tdata\\user_data\\media_cache", "Streamed Media Cache")
+            ])
+        ]),
+
+        new("notion", "Notion", "Desktop Application", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Notion\\Cache", "Application Cache"),
+                new("Notion\\Code Cache", "Code Cache"),
+                new("Notion\\GPUCache", "GPU Cache"),
+                new("Notion\\Service Worker\\CacheStorage", "Service Worker Cache"),
+                new("Notion\\logs", "Log Files")
+            ])
+        ]),
+
+        new("figma", "Figma", "Desktop Application", false,
+        [
+            // Older builds keep the Electron caches at the top level, newer ones
+            // inside a versioned DesktopProfile folder; both are matched.
+            (AppDataRoot.RoamingAppData, [
+                new("Figma\\Cache", "Application Cache"),
+                new("Figma\\Code Cache", "Code Cache"),
+                new("Figma\\GPUCache", "GPU Cache"),
+                new("Figma\\DesktopProfile\\*\\Cache", "Application Cache"),
+                new("Figma\\DesktopProfile\\*\\Code Cache", "Code Cache"),
+                new("Figma\\DesktopProfile\\*\\GPUCache", "GPU Cache")
+            ])
+        ]),
+
+        new("obsidian", "Obsidian", "Desktop Application", false,
+        [
+            // Caches only. Vaults live wherever the user put them, and
+            // obsidian.json (the vault list) is left alone.
+            (AppDataRoot.RoamingAppData, [
+                new("obsidian\\Cache", "Application Cache"),
+                new("obsidian\\Code Cache", "Code Cache"),
+                new("obsidian\\GPUCache", "GPU Cache")
+            ])
+        ]),
+
+        new("obs-studio", "OBS Studio", "Desktop Application", false,
+        [
+            // Not "basic" (scenes and profiles) or "plugin_config".
+            (AppDataRoot.RoamingAppData, [
+                new("obs-studio\\logs", "Log Files"),
+                new("obs-studio\\crashes", "Crash Reports"),
+                new("obs-studio\\profiler_data", "Profiler Data")
+            ])
+        ]),
+
+        new("java", "Java", "Desktop Application", false,
+        [
+            (AppDataRoot.LocalLowAppData, [
+                new("Sun\\Java\\Deployment\\cache", "Download Cache")
+            ])
+        ]),
+
+        new("webview2", "Microsoft Edge WebView2 (App Caches)", "Desktop Application", false,
+        [
+            // Desktop apps that embed WebView2 keep its profile in an "EBWebView"
+            // folder inside their own data folder, one or two levels under
+            // LocalAppData. Only the per-profile disk caches are matched, never
+            // the profile itself (cookies, local storage, sign-ins).
+            (AppDataRoot.LocalAppData, [
+                new("*\\EBWebView\\Default\\Cache", "WebView2 Browser Cache"),
+                new("*\\EBWebView\\Default\\Code Cache", "WebView2 Code Cache"),
+                new("*\\EBWebView\\Default\\GPUCache", "WebView2 GPU Cache"),
+                new("*\\*\\EBWebView\\Default\\Cache", "WebView2 Browser Cache"),
+                new("*\\*\\EBWebView\\Default\\Code Cache", "WebView2 Code Cache"),
+                new("*\\*\\EBWebView\\Default\\GPUCache", "WebView2 GPU Cache")
+            ])
+        ]),
+
+        // ---- Developer Tools ----
+        // Download and build caches only, each refilled by the next install or
+        // build. The installed-package folders (~\.nuget\packages,
+        // ~\.cargo\registry\src, Gradle's dependency cache) are never offered.
+        new("python-pip", "Python (pip)", "Developer Tools", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("pip\\Cache", "Package Download Cache")
+            ])
+        ]),
+
+        new("nuget", "NuGet", "Developer Tools", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("NuGet\\v3-cache", "HTTP Download Cache"),
+                new("NuGet\\plugins-cache", "Plugin Cache")
+            ])
+        ]),
+
+        new("go", "Go", "Developer Tools", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("go-build", "Build Cache")
+            ])
+        ]),
+
+        new("rust-cargo", "Rust (Cargo)", "Developer Tools", false,
+        [
+            (AppDataRoot.UserProfile, [
+                new(".cargo\\registry\\cache", "Downloaded Crates")
+            ])
+        ]),
+
+        new("gradle", "Gradle", "Developer Tools", false,
+        [
+            (AppDataRoot.UserProfile, [
+                new(".gradle\\caches\\build-cache-1", "Build Cache"),
+                new(".gradle\\daemon\\*\\*.log", "Daemon Logs")
+            ])
+        ]),
+
         // ---- Microsoft Store Applications ----
         new("store-bing-news", "Bing News", "Microsoft Store Application", true,
         [
@@ -493,7 +649,12 @@ public static class AppCatalog
             (AppDataRoot.LocalAppData, [
                 new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
-                new("Packages\\MSTeams_8wekyb3d8bbwe\\TempState", "Temp State")
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\TempState", "Temp State"),
+                // New Teams runs in WebView2; its profile folder name varies, so it
+                // is a wildcard. Disk caches only, never the profile itself.
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\LocalCache\\Microsoft\\MSTeams\\EBWebView\\*\\Cache", "WebView2 Browser Cache"),
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\LocalCache\\Microsoft\\MSTeams\\EBWebView\\*\\Code Cache", "WebView2 Code Cache"),
+                new("Packages\\MSTeams_8wekyb3d8bbwe\\LocalCache\\Microsoft\\MSTeams\\EBWebView\\*\\GPUCache", "WebView2 GPU Cache")
             ])
         ]),
 
@@ -502,7 +663,10 @@ public static class AppCatalog
             (AppDataRoot.LocalAppData, [
                 new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
-                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\TempState", "Temp State")
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\TempState", "Temp State"),
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\LocalCache\\Microsoft\\Olk\\EBWebView\\*\\Cache", "WebView2 Browser Cache"),
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\LocalCache\\Microsoft\\Olk\\EBWebView\\*\\Code Cache", "WebView2 Code Cache"),
+                new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\LocalCache\\Microsoft\\Olk\\EBWebView\\*\\GPUCache", "WebView2 GPU Cache")
             ])
         ]),
 
@@ -566,6 +730,15 @@ public static class AppCatalog
                 new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\TempState", "Temp State")
+            ])
+        ]),
+
+        new("store-widgets", "Windows Widgets", "Microsoft Store Application", true,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Packages\\MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy\\AC\\INetCache", "Internet Cache"),
+                new("Packages\\MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy\\AC\\Temp", "Temp Files"),
+                new("Packages\\MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy\\TempState", "Temp State")
             ])
         ]),
 
