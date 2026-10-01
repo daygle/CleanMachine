@@ -133,18 +133,23 @@ public sealed class CleanupCoverageTests
     [Theory]
     [InlineData(@"""C:\Program Files\App\app.exe"" ""%1""", @"C:\Program Files\App\app.exe")]
     [InlineData(@"C:\Program Files\App\app.exe %1", @"C:\Program Files\App\app.exe")]
+    [InlineData(@"C:\Program Files\Foo\foo.exe -min", @"C:\Program Files\Foo\foo.exe")]
+    [InlineData(@"C:\Program Files\Foo\foo.exe", @"C:\Program Files\Foo\foo.exe")]
+    [InlineData(@"C:\a.exe.d\b.exe %1", @"C:\a.exe.d\b.exe")]    // ".exe" inside a folder name
     [InlineData(@"C:\App\app.exe", @"C:\App\app.exe")]
-    [InlineData(@"C:\Program Files\App\run.cmd %1", null)]   // not an .exe: unverifiable
-    [InlineData(@"C:\a.exe.d\b.exe %1", null)]               // ".exe" inside a folder name
-    [InlineData(@"app.exe %1", null)]                        // not fully qualified
-    [InlineData(@"""%ProgramFiles%\App\app.exe""", null)]    // environment variable
-    [InlineData(@"""C:\App\app.exe", null)]                  // unterminated quote
+    [InlineData(@"C:\Tools\run.bat", @"C:\Tools\run.bat")]       // no spaces: taken whole
+    [InlineData(@"C:\Program Files\App\run.cmd %1", null)]      // spaces and no .exe: ambiguous
+    [InlineData(@"app.exe %1", null)]                           // not fully qualified
+    [InlineData(@"""%ProgramFiles%\App\app.exe""", null)]       // environment variable
+    [InlineData(@"""C:\App\app.exe", null)]                     // unterminated quote
     [InlineData("", null)]
-    public void CommandExecutableResolvesUnquotedPathsWithSpaces(string command, string? expected)
+    public void UnquotedPathsWithSpacesResolveToTheWholePath(string command, string? expected)
     {
-        // The looser startup resolver cuts an unquoted path at its first space,
-        // which reads "C:\Program" as missing. The menu and COM scans must not.
-        Assert.Equal(expected, CleanupService.ResolveCommandExecutable(command));
+        // Cutting at the first space read "C:\Program" as a missing program, so a
+        // working startup, uninstall or menu entry could be flagged and deleted.
+        Assert.Equal(expected, CleanupService.ResolveStartupExecutable(command));
+        // The Startup Apps page shares the resolver, so it agrees on every case.
+        Assert.Equal(expected, StartupAppsService.ResolveExecutable(command));
     }
 
     [Theory]

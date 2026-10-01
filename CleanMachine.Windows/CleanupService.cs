@@ -364,7 +364,7 @@ public sealed class CleanupService
             {
                 using var command = shell.OpenSubKey($@"{verb}\command");
                 if (command?.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) continue;
-                var exe = ResolveCommandExecutable(raw);
+                var exe = ResolveStartupExecutable(raw);
                 if (exe is null || File.Exists(exe)) continue;
                 findings.Add(new RegistryFinding("HKCU", $@"{shellPath}\{verb}",
                     $"Right-click entry '{verb}' runs a missing program ({Path.GetFileName(exe)})", true, 70, "Context Menu"));
@@ -395,7 +395,7 @@ public sealed class CleanupService
                 // Expanded on read (the default), so %LOCALAPPDATA%-style paths
                 // are checked against the real location.
                 if (serverKey?.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) continue;
-                var file = server == "LocalServer32" ? ResolveCommandExecutable(raw) : raw.Trim().Trim('"');
+                var file = server == "LocalServer32" ? ResolveStartupExecutable(raw) : raw.Trim().Trim('"');
                 if (file is null || !Path.IsPathFullyQualified(file)) continue;
                 if (File.Exists(file)) { missing = null; break; } // one live server is enough
                 missing ??= file;
@@ -447,37 +447,20 @@ public sealed class CleanupService
         return missing;
     }
 
-    /// <summary>The executable a shell or COM command line runs, or null when it
-    /// cannot be resolved to a full local path. Stricter than
-    /// <see cref="ResolveStartupExecutable"/> for unquoted commands: the path must
-    /// end in ".exe", so "C:\Program Files\App\app.exe %1" resolves to the whole
-    /// path rather than to "C:\Program", which would read as missing.</summary>
-    internal static string? ResolveCommandExecutable(string command)
-    {
-        var trimmed = command.Trim();
-        if (trimmed.Length == 0) return null;
-        string? candidate;
-        if (trimmed.StartsWith('"'))
-        {
-            var end = trimmed.IndexOf('"', 1);
-            candidate = end > 1 ? trimmed[1..end] : null;
-        }
-        else
-        {
-            var exe = trimmed.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
-            if (exe < 0) return null;
-            var stop = exe + 4;
-            if (stop < trimmed.Length && trimmed[stop] != ' ') return null;
-            candidate = trimmed[..stop];
-        }
-        if (string.IsNullOrEmpty(candidate) || candidate.Contains('%')) return null;
-        return Path.IsPathFullyQualified(candidate) ? candidate : null;
-    }
-
-    /// <summary>Extracts a fully-qualified executable path from a Run value, or null
-    /// if the value cannot be resolved (env vars, relative paths, non-exe commands).
-    /// Unknown/ambiguous values are never flagged so the cleaner only acts on entries
-    /// it can positively verify as missing.</summary>
+    /// <summary>Extracts the fully-qualified executable a command line runs (a Run
+    /// value, an uninstall string, a shell or COM command), or null when it cannot
+    /// be resolved: environment variables, relative paths and bare command names are
+    /// never resolved, so the scanners only flag entries they can positively verify
+    /// as missing.
+    /// <para>
+    /// Windows accepts an unquoted path with spaces ("C:\Program Files\App\app.exe
+    /// -min"). Cutting such a command at its first space read it as "C:\Program",
+    /// which does not exist, so a working entry was reported as pointing at a
+    /// missing program - and a Quick Clean could delete it. An unquoted command is
+    /// therefore read up to the first ".exe" that ends a token. A command with no
+    /// spaces at all is taken whole; any other unquoted form is ambiguous and
+    /// resolves to null.
+    /// </para></summary>
     internal static string? ResolveStartupExecutable(string command)
     {
         var trimmed = command.Trim();
@@ -491,9 +474,24 @@ public sealed class CleanupService
             var end = trimmed.IndexOf('"', 1);
             candidate = end > 1 ? trimmed[1..end] : null;
         }
+        else if (!trimmed.Contains(' '))
+        {
+            candidate = trimmed;
+        }
         else
         {
-            candidate = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+            candidate = null;
+            for (var at = trimmed.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+                 at >= 0;
+                 at = trimmed.IndexOf(".exe", at + 1, StringComparison.OrdinalIgnoreCase))
+            {
+                var stop = at + 4;
+                if (stop == trimmed.Length || trimmed[stop] == ' ')
+                {
+                    candidate = trimmed[..stop];
+                    break;
+                }
+            }
         }
         if (string.IsNullOrEmpty(candidate) || candidate.Contains('%')) return null;
         return Path.IsPathFullyQualified(candidate) ? candidate : null;
