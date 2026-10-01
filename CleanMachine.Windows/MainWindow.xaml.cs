@@ -274,9 +274,9 @@ public sealed partial class MainWindow : Window
         var settings = await AppSettings.LoadAsync();
         ApplyShowInTaskbar(settings.ShowInTaskbar);
         ApplyMinimizeToTray(settings.MinimizeToTray);
-        // A logon autostart (--background) always opens to the tray, regardless of the
-        // "minimize to tray on startup" preference.
-        _startMinimizedToTray = settings.StartMinimizedToTray || App.LaunchedAtLogon;
+        // A logon autostart or a restart after a Store update (--background) always
+        // opens to the tray, regardless of the "minimize to tray on startup" preference.
+        _startMinimizedToTray = settings.StartMinimizedToTray || App.LaunchedInBackground;
         _closeToTray = settings.CloseToTray;
         _alwaysShowTray = settings.AlwaysShowTray;
         _trayCleaningAnimation = settings.TrayCleaningAnimation;

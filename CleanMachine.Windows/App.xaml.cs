@@ -16,10 +16,10 @@ public partial class App : Application
 
     public static Window? MainWindow { get; private set; }
 
-    /// <summary>True when this instance was launched by the logon startup entry
-    /// (registered with <c>--background</c>), so the window should open straight to
-    /// the tray instead of onto the desktop.</summary>
-    public static bool LaunchedAtLogon { get; private set; }
+    /// <summary>True when this instance was launched by the logon startup entry or
+    /// restarted after a Store update (<c>--background</c>), so the window should
+    /// open straight to the tray instead of onto the desktop.</summary>
+    public static bool LaunchedInBackground { get; private set; }
 
     public App()
     {
@@ -77,10 +77,12 @@ public partial class App : Application
             return;
         }
         _instanceMutex = instanceMutex;
+        // Come back (to the tray) when a Store update closes this instance.
+        UpdateRestart.Register();
         // A logon autostart opens to the tray, not the desktop. The packaged startup
         // task passes no arguments, so it is recognised by its activation kind; the
-        // unpackaged Run value still passes --background.
-        LaunchedAtLogon = IsStartupTaskActivation() || Environment.GetCommandLineArgs()
+        // unpackaged Run value and the post-update restart pass --background.
+        LaunchedInBackground = IsStartupTaskActivation() || Environment.GetCommandLineArgs()
             .Any(a => a.Equals("--background", StringComparison.OrdinalIgnoreCase));
         // The listener runs on its own thread; UI work it triggers is posted through
         // the dispatcher captured here on the UI thread.
