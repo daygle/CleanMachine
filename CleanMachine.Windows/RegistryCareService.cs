@@ -27,6 +27,8 @@ public sealed class RegistryCareService
     private const string ShellMuiCacheRoot = @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache";
     private const string FileExtsRoot = @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts";
     private const string CompatAssistantRoot = @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant";
+    private const string FontsRoot = CleanupService.UserFontsKey;
+    private const string ClsidRoot = @"Software\Classes\CLSID";
 
     private readonly CleanupService _cleanup = new();
 
@@ -44,7 +46,10 @@ public sealed class RegistryCareService
         @"Software\Microsoft\Windows\CurrentVersion\App Paths\",
         @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\",
         @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\",
-        ShellMuiCacheRoot + @"\"
+        ShellMuiCacheRoot + @"\",
+        // Value-level only: IsCleanable refuses a Fonts finding without a value
+        // name, so the key itself can never be deleted.
+        FontsRoot
     ];
 
     internal static bool IsDeletablePath(string? path, bool allowNamedClassesValue = false)
@@ -64,6 +69,14 @@ public sealed class RegistryCareService
                 return true;
             }
         }
+
+        // A per-user right-click verb on one of the shell's catch-all types
+        // (Software\Classes\*\shell\<verb>) - the verb key and nothing deeper.
+        if (TryGetContextMenuVerb(path, out _)) return true;
+
+        // A per-user COM class key, Software\Classes\CLSID\{guid}. A strict GUID
+        // is required so the rest of CLSID never becomes deletable.
+        if (IsUserClsidKey(path)) return true;
 
         // File-association scans only ever produce the per-user extension key
         // itself (for example Software\\Classes\\.txt). Do not let the broad
@@ -120,6 +133,10 @@ public sealed class RegistryCareService
             if (keyRoot.StartsWith(trimmed + "\\", StringComparison.OrdinalIgnoreCase)) return true;
         }
 
+        // The context-menu verb and COM class keys IsDeletablePath allows are
+        // exported whole, so each is its own restore scope (and nothing wider).
+        if (TryGetContextMenuVerb(keyRoot, out _) || IsUserClsidKey(keyRoot)) return true;
+
         // Mirrors the per-user extension rule in IsDeletablePath: the per-user
         // <c>Software\\Classes\\.&lt;ext&gt;</c> key and nothing below it.
         if (keyRoot.StartsWith(ClassesRoot + @"\.", StringComparison.OrdinalIgnoreCase))
@@ -128,10 +145,36 @@ public sealed class RegistryCareService
         return false;
     }
 
+    /// <summary>The verb name when <paramref name="path"/> is exactly a per-user
+    /// context-menu verb key on one of <see cref="CleanupService.ContextMenuTypes"/>.</summary>
+    internal static bool TryGetContextMenuVerb(string? path, out string verb)
+    {
+        verb = "";
+        if (string.IsNullOrEmpty(path)) return false;
+        foreach (var type in CleanupService.ContextMenuTypes)
+        {
+            var prefix = $@"{ClassesRoot}\{type}\shell\";
+            if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            var rest = path[prefix.Length..];
+            if (rest.Length == 0 || rest.Contains('\\')) continue;
+            verb = rest;
+            return true;
+        }
+        return false;
+    }
+
+    internal static bool IsUserClsidKey(string? path)
+        => path is not null
+           && path.StartsWith(ClsidRoot + @"\", StringComparison.OrdinalIgnoreCase)
+           && CleanupService.IsGuidKeyName(path[(ClsidRoot.Length + 1)..]);
+
     /// <summary>Whether a finding passes the safety gate for actual deletion.</summary>
     public static bool IsCleanable(RegistryFinding finding)
         => finding.LowRisk && finding.Confidence >= 70
            && finding.Hive == "HKCU"
+           // Fonts is one shared key: only a single named value may go, never the key.
+           && (!finding.Path.Equals(FontsRoot, StringComparison.OrdinalIgnoreCase)
+               || !string.IsNullOrWhiteSpace(finding.ValueName))
            && IsDeletablePath(
                finding.Path,
                finding.ValueName is not null
@@ -159,6 +202,14 @@ public sealed class RegistryCareService
         }
         if (finding.Path.StartsWith(CompatAssistantRoot + @"\", StringComparison.OrdinalIgnoreCase))
             return "Compatibility record";
+        if (finding.Path.Equals(FontsRoot, StringComparison.OrdinalIgnoreCase))
+            return finding.ValueName is null ? "Font" : $"Font: {finding.ValueName}";
+        if (TryGetContextMenuVerb(finding.Path, out var verb))
+            return $"Right-click entry: {verb}";
+        if (IsUserClsidKey(finding.Path))
+            return $"COM class: {finding.Path[(ClsidRoot.Length + 1)..]}";
+        if (finding.Path.Equals(CleanupService.UserEnvironmentKey, StringComparison.OrdinalIgnoreCase))
+            return $"Missing PATH folder: {finding.ValueName}";
         if (finding.Path.StartsWith(ClassesRoot, StringComparison.OrdinalIgnoreCase))
         {
             var ext = finding.Path[ClassesRoot.Length..].TrimStart('\\');
@@ -474,7 +525,8 @@ public sealed class RegistryCareService
                          || p.StartsWith(SoundAppsRoot + @"\", StringComparison.OrdinalIgnoreCase)
                          || p.StartsWith(AppPathsRoot + @"\", StringComparison.OrdinalIgnoreCase)
                          || p.StartsWith(FileExtsRoot + @"\", StringComparison.OrdinalIgnoreCase)
-                         || p.StartsWith(CompatAssistantRoot + @"\", StringComparison.OrdinalIgnoreCase))
+                         || p.StartsWith(CompatAssistantRoot + @"\", StringComparison.OrdinalIgnoreCase)
+                         || p.Equals(FontsRoot, StringComparison.OrdinalIgnoreCase))
                      .Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var name = new string(path[(path.LastIndexOf('\\') + 1)..]
