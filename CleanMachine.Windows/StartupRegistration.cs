@@ -1,15 +1,24 @@
 using Microsoft.Win32;
+using Windows.ApplicationModel;
 
 namespace CleanMachine.Windows;
 
-/// <summary>Owns the HKCU Run value that starts CleanMachine at logon.
+/// <summary>Starts CleanMachine at logon.
 /// <para>
-/// The value is rewritten whenever it goes stale. For an MSIX install the
-/// registered path is <c>Environment.ProcessPath</c>, which lives in a
-/// version-stamped package folder under WindowsApps that the Store deletes on
-/// every update. Without a repair pass the Run value survives pointing at a
-/// folder that no longer exists: the app stops auto-starting, and Registry Care
-/// flags the app's own entry as a dead startup reference.
+/// A packaged (MSIX) install uses the manifest's <c>windows.startupTask</c>
+/// extension through <see cref="StartupTask"/>. A HKCU Run value does not work
+/// there: the package's HKCU writes are redirected into its private registry
+/// hive, so Windows never sees the value, and even a value that did land would
+/// point into the version-stamped WindowsApps folder and launch the exe without
+/// its package identity. The startup task is also what Task Manager and
+/// Settings &gt; Apps &gt; Startup list for a Store app, so the user's own
+/// on/off switch there is the one this follows.
+/// </para>
+/// <para>
+/// An unpackaged build (a local debug run) falls back to the HKCU Run value,
+/// rewritten whenever it goes stale: a value left pointing at a folder that no
+/// longer exists stops the app auto-starting, and Registry Care flags the app's
+/// own entry as a dead startup reference.
 /// </para></summary>
 public static class StartupRegistration
 {
@@ -17,6 +26,81 @@ public static class StartupRegistration
     internal const string ValueName = "CleanMachine";
     private const string ApprovedPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
     private const string Switch = "--background";
+    /// <summary>Must match the TaskId of the uap5:StartupTask in Package.appxmanifest.</summary>
+    internal const string TaskId = "CleanMachineStartup";
+
+    // Settings saves can fire in quick succession; serialising keeps an older
+    // request from landing after a newer one.
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+
+    /// <summary>Applies the user's choice after a settings change. Returns the
+    /// packaged startup task's resulting state, or null for an unpackaged build
+    /// or when the task could not be read.</summary>
+    public static Task<StartupTaskState?> SetEnabledAsync(bool enabled, string? executablePath)
+        => ApplyAsync(enabled, () => SetEnabled(enabled, executablePath ?? string.Empty));
+
+    /// <summary>Launch-time counterpart of <see cref="SetEnabledAsync"/>: brings
+    /// registration in line with the saved choice, repairing a stale Run value
+    /// on an unpackaged build without rewriting a healthy one.</summary>
+    public static Task<StartupTaskState?> SyncAsync(bool shouldRun, string? executablePath)
+        => ApplyAsync(shouldRun, () => Sync(shouldRun, executablePath));
+
+    /// <summary>The packaged startup task's current state, or null when there is
+    /// none (unpackaged build) or it could not be read.</summary>
+    public static async Task<StartupTaskState?> GetStateAsync()
+    {
+        if (!ScheduleService.IsMsix) return null;
+        try { return (await StartupTask.GetAsync(TaskId)).State; }
+        catch { return null; }
+    }
+
+    /// <summary>True when the user (Task Manager, Settings &gt; Apps &gt; Startup)
+    /// or a group policy has turned the startup task off. Windows does not let an
+    /// app override either, so the UI has to point the user there instead.</summary>
+    public static bool IsBlocked(StartupTaskState? state)
+        => state is StartupTaskState.DisabledByUser or StartupTaskState.DisabledByPolicy;
+
+    private static async Task<StartupTaskState?> ApplyAsync(bool enabled, Action applyRunValue)
+    {
+        await Gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!ScheduleService.IsMsix)
+            {
+                applyRunValue();
+                return null;
+            }
+
+            // Clear the Run value earlier versions wrote. It never started the
+            // packaged app, and left in place it would be a second, broken
+            // registration next to the startup task.
+            try { RemoveCore(RunPath, ValueName); }
+            catch { /* best-effort */ }
+
+            var task = await StartupTask.GetAsync(TaskId);
+            if (enabled)
+            {
+                // DisabledByUser/ByPolicy cannot be changed from here; only a
+                // plain Disabled task can be turned on programmatically. A
+                // full-trust app is enabled without a consent prompt.
+                if (task.State == StartupTaskState.Disabled)
+                    return await task.RequestEnableAsync();
+            }
+            else if (task.State == StartupTaskState.Enabled)
+            {
+                task.Disable();
+            }
+            return task.State;
+        }
+        catch
+        {
+            return null; // startup registration is best-effort
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
 
     public static void SetEnabled(bool enabled, string executablePath)
     {

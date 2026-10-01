@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10" IgnorableNamespaces="uap desktop rescap com">
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5" xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10" IgnorableNamespaces="uap uap5 desktop rescap com">
   <!-- Name, Publisher and Version are all stamped per run by the release
        workflow from the Partner Center Identity page. The reserved identity NAME
        is not the app name: Partner Center issues it as
@@ -28,6 +28,14 @@
         <desktop:Extension Category="windows.toastNotificationActivation">
           <desktop:ToastNotificationActivation ToastActivatorCLSID="80BE4417-A8F0-4CFF-891B-05CCFB580916" />
         </desktop:Extension>
+        <!-- Start with Windows. A packaged app cannot use a HKCU Run value (its
+             registry writes are redirected into the package's private hive), so
+             logon launch goes through this task, toggled at runtime by
+             StartupRegistration. Off until the user turns it on; TaskId must
+             match StartupRegistration.TaskId. -->
+        <uap5:Extension Category="windows.startupTask" Executable="CleanMachine.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:StartupTask TaskId="CleanMachineStartup" Enabled="false" DisplayName="CleanMachine" />
+        </uap5:Extension>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
             <com:ExeServer Executable="CleanMachine.exe" DisplayName="CleanMachine" Arguments="----AppNotificationActivated:">

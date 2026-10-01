@@ -99,11 +99,10 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 ### Settings
 - Settings save instantly on change - there is no Save button (Restore Defaults applies immediately too)
 - System monitoring threshold (entered in MB or GB), action, and a picker for exactly which safe categories the monitor cleans
-- "Start CleanMachine when I sign in to Windows" toggle, independent of the background services; a logon start opens straight to the tray
+- "Start CleanMachine when I sign in to Windows" toggle, independent of the background services; a logon start opens straight to the tray. It uses the package's startup task, so it also shows (and can be switched off) in Task Manager and Settings > Apps > Startup
 - Minimize to tray options (start minimized, on close, on minimize; taskbar visibility)
 - Tray icon: on by default for the whole session, even while the window is open (toggle in Settings); left-click restores the window; right-click opens a menu to Open or Exit CleanMachine
 - Configurable exclusion paths
-- Persisted startup registration
 - All automatic/background cleaning preferences live on the Automatic Cleanup page
 
 ### About

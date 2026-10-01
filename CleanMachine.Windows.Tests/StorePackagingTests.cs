@@ -110,6 +110,27 @@ public sealed class StorePackagingTests
         Assert.Contains("does not match STORE_PUBLISHER", workflow, StringComparison.Ordinal);
     }
 
+    /// <summary>"Start with Windows" for the packaged app runs through the
+    /// manifest's startup task: a HKCU Run value written from inside the package
+    /// is redirected into its private hive and never starts anything. The code
+    /// looks the task up by id, so a manifest/code mismatch fails silently at
+    /// runtime - the checkbox stays ticked and nothing starts. The task must
+    /// also ship off, so installing the app never opts the user in.</summary>
+    [Fact]
+    public void ManifestDeclaresTheStartupTaskTheCodeLooksUp()
+    {
+        var root = FindRepoRoot();
+        Assert.True(root is not null, "Repo root was not found above the test output directory.");
+
+        var appx = XDocument.Load(Path.Combine(root!, "CleanMachine.Windows", "Package.appxmanifest"));
+        var task = appx.Descendants().SingleOrDefault(e => e.Name.LocalName == "StartupTask");
+
+        Assert.NotNull(task);
+        Assert.Equal("windows.startupTask", task!.Parent?.Attribute("Category")?.Value);
+        Assert.Equal(StartupRegistration.TaskId, task.Attribute("TaskId")?.Value);
+        Assert.Equal("false", task.Attribute("Enabled")?.Value);
+    }
+
     /// <summary>Walks up from the test output directory (bin/&lt;config&gt;/&lt;tfm&gt;,
     /// any platform) to the checkout that contains the app project.</summary>
     private static string? FindRepoRoot()

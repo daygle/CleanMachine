@@ -77,8 +77,10 @@ public partial class App : Application
             return;
         }
         _instanceMutex = instanceMutex;
-        // A logon autostart launches with --background; open to the tray, not the desktop.
-        LaunchedAtLogon = Environment.GetCommandLineArgs()
+        // A logon autostart opens to the tray, not the desktop. The packaged startup
+        // task passes no arguments, so it is recognised by its activation kind; the
+        // unpackaged Run value still passes --background.
+        LaunchedAtLogon = IsStartupTaskActivation() || Environment.GetCommandLineArgs()
             .Any(a => a.Equals("--background", StringComparison.OrdinalIgnoreCase));
         // The listener runs on its own thread; UI work it triggers is posted through
         // the dispatcher captured here on the UI thread.
@@ -104,14 +106,23 @@ public partial class App : Application
         }
         if (settings.RequiresBackgroundAgent)
             StartBackgroundAgent(settings);
-        // Repair a startup entry left pointing at a package folder the Store has
-        // since deleted. Without this the app silently stops auto-starting after
-        // every update, and its own entry shows up as a dead reference in
-        // Registry Care. Mirrors SyncAllAsync for the OS task store below.
-        try { StartupRegistration.Sync(settings.ShouldStartWithWindows, Environment.ProcessPath); }
-        catch { /* startup registration is best-effort */ }
+        // Bring logon startup in line with the saved choice: the packaged startup
+        // task (which also retires the Run value older versions wrote), or on an
+        // unpackaged build a repair of a Run value left pointing at a deleted
+        // folder. Mirrors SyncAllAsync for the OS task store below.
+        await StartupRegistration.SyncAsync(settings.ShouldStartWithWindows, Environment.ProcessPath);
         // Keep the OS task store in step with whatever schedules are saved.
         _ = ScheduleService.SyncAllAsync(settings);
+    }
+
+    private static bool IsStartupTaskActivation()
+    {
+        try
+        {
+            return Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs().Kind
+                == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.StartupTask;
+        }
+        catch { return false; } // unpackaged, or activation info unavailable
     }
 
     private static bool HasShutdownArgument(string[] arguments) =>
@@ -205,21 +216,18 @@ public partial class App : Application
     /// <summary>Starts or stops the background agent to match the enabled services,
     /// and keeps Windows startup registration in step so the app is present to run
     /// them while the window is closed. Call this after any change to a service that
-    /// the agent powers (browser-exit cleaning or the low-disk-space monitor).</summary>
-    public void ApplyBackgroundServices(AppSettings settings)
+    /// the agent powers (browser-exit cleaning or the low-disk-space monitor).
+    /// Returns the packaged startup task's resulting state (see
+    /// <see cref="StartupRegistration.SetEnabledAsync"/>) so a caller can tell the
+    /// user when Windows has startup switched off for the app.</summary>
+    public Task<global::Windows.ApplicationModel.StartupTaskState?> ApplyBackgroundServices(AppSettings settings)
     {
-        try
-        {
-            StartupRegistration.SetEnabled(
-                settings.ShouldStartWithWindows,
-                Environment.ProcessPath ?? string.Empty);
-        }
-        catch { /* startup registration is best-effort */ }
-
         if (settings.RequiresBackgroundAgent)
             StartBackgroundAgent(settings);
         else
             StopBackgroundAgent();
+
+        return StartupRegistration.SetEnabledAsync(settings.ShouldStartWithWindows, Environment.ProcessPath);
     }
 
     public void StartBackgroundAgent(AppSettings? settings = null)
