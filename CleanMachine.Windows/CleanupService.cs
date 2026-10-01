@@ -359,23 +359,37 @@ public sealed class CleanupService
         {
             var shellPath = $@"Software\Classes\{type}\shell";
             using var shell = root.OpenSubKey(shellPath);
-            if (shell is null) continue;
-            foreach (var verb in shell.GetSubKeyNames())
-            {
-                using var command = shell.OpenSubKey($@"{verb}\command");
-                if (command?.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) continue;
-                var exe = ResolveStartupExecutable(raw);
-                if (exe is null || File.Exists(exe)) continue;
-                findings.Add(new RegistryFinding("HKCU", $@"{shellPath}\{verb}",
-                    $"Right-click entry '{verb}' runs a missing program ({Path.GetFileName(exe)})", true, 70, "Context Menu"));
-            }
+            if (shell is not null) ScanShellVerbs(shell, shellPath, findings);
         }
     }
 
-    // Per-user COM class registrations whose server file is gone. Only classes
-    // with an in-process (DLL) or local (EXE) server path that resolves to a full
-    // local path are considered; an empty server value is a deliberate override
-    // (the Windows 11 classic-menu tweak is one) and is never flagged.
+    /// <summary>Flags each verb under <paramref name="shell"/> whose command runs a
+    /// missing program. A verb handled by a COM object (DelegateExecute on its
+    /// command, or ExplorerCommandHandler on the verb) is skipped: Explorer runs
+    /// the handler and ignores the command string, so a stale string there does not
+    /// make the entry broken. Internal so the rule is testable on a scratch key.</summary>
+    internal static void ScanShellVerbs(RegistryKey shell, string shellPath, ICollection<RegistryFinding> findings)
+    {
+        foreach (var verb in shell.GetSubKeyNames())
+        {
+            using var verbKey = shell.OpenSubKey(verb);
+            if (verbKey is null || HasValue(verbKey, "ExplorerCommandHandler")) continue;
+            using var command = verbKey.OpenSubKey("command");
+            if (command is null || HasValue(command, "DelegateExecute")) continue;
+            if (command.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) continue;
+            var exe = ResolveStartupExecutable(raw);
+            if (exe is null || File.Exists(exe)) continue;
+            findings.Add(new RegistryFinding("HKCU", $@"{shellPath}\{verb}",
+                $"Right-click entry '{verb}' runs a missing program ({Path.GetFileName(exe)})", true, 70, "Context Menu"));
+        }
+    }
+
+    private static bool HasValue(RegistryKey key, string name)
+        => key.GetValueNames().Contains(name, StringComparer.OrdinalIgnoreCase);
+
+    // Per-user COM class registrations whose server file is gone. A class is only
+    // flagged when every server it registers resolves to a full local path and
+    // none of them exists - see MissingComServer.
     private const string UserClsidKey = @"Software\Classes\CLSID";
 
     private static void ScanUserComServers(ICollection<RegistryFinding> findings)
@@ -388,22 +402,41 @@ public sealed class CleanupService
             if (!IsGuidKeyName(clsid)) continue;
             using var cls = clsids.OpenSubKey(clsid);
             if (cls is null) continue;
-            string? missing = null;
+            var servers = new List<(bool IsLocal, string? Raw)>();
             foreach (var server in new[] { "InprocServer32", "LocalServer32" })
             {
                 using var serverKey = cls.OpenSubKey(server);
+                if (serverKey is null) continue;
                 // Expanded on read (the default), so %LOCALAPPDATA%-style paths
                 // are checked against the real location.
-                if (serverKey?.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) continue;
-                var file = server == "LocalServer32" ? ResolveStartupExecutable(raw) : raw.Trim().Trim('"');
-                if (file is null || !Path.IsPathFullyQualified(file)) continue;
-                if (File.Exists(file)) { missing = null; break; } // one live server is enough
-                missing ??= file;
+                servers.Add((server == "LocalServer32", serverKey.GetValue(null) as string));
             }
+            var missing = MissingComServer(servers, File.Exists);
             if (missing is null) continue;
             findings.Add(new RegistryFinding("HKCU", $@"{UserClsidKey}\{clsid}",
                 $"COM class points to a missing file ({Path.GetFileName(missing)})", true, 70, "COM Registrations"));
         }
+    }
+
+    /// <summary>The missing server file that makes a COM class dead, or null when
+    /// the class must be left alone. FAILS CLOSED: deleting the class removes every
+    /// server it registers, so it is only flagged when all of them are positively
+    /// missing. Any registered server that is empty (a deliberate override - the
+    /// Windows 11 classic-menu tweak is one), cannot be resolved to a full local
+    /// path (a bare "mscoree.dll"), or exists keeps the whole class.</summary>
+    internal static string? MissingComServer(
+        IReadOnlyList<(bool IsLocal, string? Raw)> servers, Func<string, bool> fileExists)
+    {
+        string? missing = null;
+        foreach (var (isLocal, raw) in servers)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            var file = isLocal ? ResolveStartupExecutable(raw) : raw.Trim().Trim('"');
+            if (file is null || file.Contains('%') || !Path.IsPathFullyQualified(file)) return null;
+            if (fileExists(file)) return null;
+            missing ??= file;
+        }
+        return missing;
     }
 
     /// <summary>True for a key name in registry GUID form, "{xxxxxxxx-...}".</summary>

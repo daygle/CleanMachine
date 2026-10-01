@@ -1,4 +1,5 @@
 using CleanMachine.Windows;
+using Microsoft.Win32;
 using Xunit;
 
 namespace CleanMachine.Windows.Tests;
@@ -80,7 +81,6 @@ public sealed class CleanupCoverageTests
     [InlineData("telegram", "user_data")]
     [InlineData("ea-app", "CEF")]
     [InlineData("ea-app", "BrowserCache")]
-    [InlineData("ubisoft-connect", "cache")]
     [InlineData("obs-studio", "basic")]
     [InlineData("obsidian", "obsidian.json")]
     [InlineData("nuget", "packages")]
@@ -124,7 +124,7 @@ public sealed class CleanupCoverageTests
     {
         var dev = AppCatalog.Definitions.Where(d => d.Group == "Developer Tools").Select(d => d.Id).ToHashSet();
 
-        Assert.All(new[] { "python-pip", "nuget", "go", "rust-cargo", "gradle" }, id => Assert.Contains(id, dev));
+        Assert.All(new[] { "nodejs", "python-pip", "nuget", "go", "rust-cargo", "gradle" }, id => Assert.Contains(id, dev));
         Assert.Contains("Developer Tools", AppCatalog.Groups());
     }
 
@@ -160,6 +160,70 @@ public sealed class CleanupCoverageTests
     [InlineData("", false)]
     public void ComKeysMustBeExactGuids(string name, bool expected)
         => Assert.Equal(expected, CleanupService.IsGuidKeyName(name));
+
+    [Fact]
+    public void ComClassIsFlaggedOnlyWhenEveryServerIsPositivelyMissing()
+    {
+        // Deleting the class removes every server it registers, so one live,
+        // empty or unresolvable server keeps the whole class.
+        const string gone = @"C:\Gone\server.dll";
+        const string live = @"C:\Live\server.exe";
+        Func<string, bool> exists = f => f.Equals(live, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Equal(gone, CleanupService.MissingComServer([(false, gone)], exists));
+        Assert.Equal(gone, CleanupService.MissingComServer([(false, gone), (true, @"""C:\Gone\other.exe"" /automation")], exists));
+        Assert.Null(CleanupService.MissingComServer([(false, gone), (true, live)], exists));       // one live server
+        Assert.Null(CleanupService.MissingComServer([(false, gone), (true, "")], exists));         // deliberate empty override
+        Assert.Null(CleanupService.MissingComServer([(false, ""), (true, @"C:\Gone\x.exe")], exists));
+        Assert.Null(CleanupService.MissingComServer([(false, gone), (false, null)], exists));     // value absent
+        Assert.Null(CleanupService.MissingComServer([(false, gone), (false, "mscoree.dll")], exists)); // unresolvable
+        Assert.Null(CleanupService.MissingComServer([(false, @"%SystemRoot%\x.dll")], exists));
+        Assert.Null(CleanupService.MissingComServer([], exists));                                  // no servers at all
+    }
+
+    [Fact]
+    public void DelegatedRightClickVerbsAreNeverFlagged()
+    {
+        // Explorer runs a DelegateExecute / ExplorerCommandHandler COM handler and
+        // ignores the command string, so a stale string there is not a broken entry
+        // - and Context Menu is a Quick Clean category, so a false flag would delete
+        // a working verb. Uses a scratch key, never a real shell registration.
+        const string scratch = @"Software\CleanMachineShellVerbTest\shell";
+        var missing = @"""C:\definitely-missing-xyz\app.exe"" ""%1""";
+        var live = $@"""{Path.Combine(Environment.SystemDirectory, "cmd.exe")}"" /c";
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        try
+        {
+            using (var shell = root.CreateSubKey(scratch))
+            {
+                using (var c = shell.CreateSubKey(@"Broken\command")) c.SetValue("", missing);
+                using (var c = shell.CreateSubKey(@"Delegated\command"))
+                {
+                    c.SetValue("", missing);
+                    c.SetValue("DelegateExecute", "{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}");
+                }
+                using (var v = shell.CreateSubKey("Handler"))
+                {
+                    v.SetValue("ExplorerCommandHandler", "{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}");
+                    using var c = v.CreateSubKey("command");
+                    c.SetValue("", missing);
+                }
+                using (var c = shell.CreateSubKey(@"Live\command")) c.SetValue("", live);
+            }
+
+            var findings = new List<RegistryFinding>();
+            using (var shell = root.OpenSubKey(scratch)!)
+                CleanupService.ScanShellVerbs(shell, scratch, findings);
+
+            var flagged = Assert.Single(findings);
+            Assert.Equal($@"{scratch}\Broken", flagged.Path);
+            Assert.Equal("Context Menu", flagged.Category);
+        }
+        finally
+        {
+            root.DeleteSubKeyTree(@"Software\CleanMachineShellVerbTest", throwOnMissingSubKey: false);
+        }
+    }
 
     [Fact]
     public void MissingPathFoldersReportsOnlyVerifiableMissingEntries()

@@ -304,7 +304,6 @@ public sealed class AppCleanupService
             "search" => DirExists(LocalAppData, "Microsoft\\Search"),
             "battlenet" => DirExists(LocalAppData, "Battle.net") || DirExists(ProgramFilesX86, "Battle.net"),
             "ea-app" => DirExists(LocalAppData, "Electronic Arts\\EA Desktop") || DirExists(ProgramFiles, "Electronic Arts\\EA Desktop"),
-            "ubisoft-connect" => DirExists(ProgramFilesX86, "Ubisoft\\Ubisoft Game Launcher"),
             "telegram" => DirExists(RoamingAppData, "Telegram Desktop"),
             "notion" => DirExists(RoamingAppData, "Notion") || DirExists(LocalAppData, "Programs\\Notion"),
             "figma" => DirExists(RoamingAppData, "Figma") || DirExists(LocalAppData, "Figma"),

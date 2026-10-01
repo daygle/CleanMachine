@@ -71,15 +71,6 @@ public static class AppCatalog
             ])
         ]),
 
-        new("nodejs", "Node.js", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
-                new("npm-cache", "NPM Cache"),
-                new("pnpm-store", "PNPM Store"),
-                new("yarn\\Cache", "Yarn Cache")
-            ])
-        ]),
-
         new("steam", "Steam", "Desktop Application", false,
         [
             (AppDataRoot.ProgramFilesX86, [
@@ -360,16 +351,6 @@ public static class AppCatalog
             ])
         ]),
 
-        new("ubisoft-connect", "Ubisoft Connect", "Desktop Application", false,
-        [
-            // Not the rest of "cache": its "ownership" and "settings" folders hold
-            // licence and account state.
-            (AppDataRoot.ProgramFilesX86, [
-                new("Ubisoft\\Ubisoft Game Launcher\\logs", "Log Files"),
-                new("Ubisoft\\Ubisoft Game Launcher\\cache\\http", "Web Cache")
-            ])
-        ]),
-
         new("telegram", "Telegram Desktop", "Desktop Application", false,
         [
             // Only the media caches inside tdata\user_data. Never tdata itself:
@@ -453,6 +434,15 @@ public static class AppCatalog
         // Download and build caches only, each refilled by the next install or
         // build. The installed-package folders (~\.nuget\packages,
         // ~\.cargo\registry\src, Gradle's dependency cache) are never offered.
+        new("nodejs", "Node.js", "Developer Tools", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("npm-cache", "NPM Cache"),
+                new("pnpm-store", "PNPM Store"),
+                new("yarn\\Cache", "Yarn Cache")
+            ])
+        ]),
+
         new("python-pip", "Python (pip)", "Developer Tools", false,
         [
             (AppDataRoot.LocalAppData, [
