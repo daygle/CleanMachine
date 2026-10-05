@@ -16,7 +16,7 @@
         <StackPanel Spacing="10">
           <CheckBox x:Name="CleanToggle" Content="Clean up when a supported browser closes"
                     FontSize="13" Checked="CleanToggle_Changed" Unchecked="CleanToggle_Changed"/>
-          <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="8" Padding="14">
+          <Border x:Name="BrowserTable" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="8" Padding="14">
             <Grid MinWidth="460">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -64,6 +64,8 @@
                       Padding="14,8" VerticalAlignment="Center" HorizontalAlignment="Left"/>
             </Grid>
           </Border>
+          <TextBlock x:Name="NoBrowsersNote" Visibility="Collapsed" FontSize="12" Foreground="#709086" TextWrapping="Wrap"
+                     Text="No supported browsers (Google Chrome, Microsoft Edge or Firefox) were found on this PC."/>
           <TextBlock x:Name="MonitoringHint"
                      FontSize="11" Foreground="#709086" TextWrapping="Wrap"/>
         </StackPanel>

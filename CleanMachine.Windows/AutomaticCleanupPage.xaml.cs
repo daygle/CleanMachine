@@ -43,6 +43,7 @@ public sealed partial class AutomaticCleanupPage : Page
         UpdateExitItemsButton(EdgeItemsButton, "edge");
         UpdateExitItemsButton(FirefoxItemsButton, "firefox");
         UpdateMonitorHint();
+        await ShowInstalledBrowsersAsync();
 
         // Low disk space
         SystemMonitoringToggle.IsChecked = _settings.SystemMonitoringEnabled;
@@ -78,6 +79,27 @@ public sealed partial class AutomaticCleanupPage : Page
         _settings.CleanOnBrowserExit = CleanToggle.IsChecked == true;
         UpdateMonitorHint();
         await SaveAndApplyAsync();
+    }
+
+    // Only list browsers that are installed; uninstalled ones keep their saved
+    // settings so they take effect if the browser is installed later.
+    private async Task ShowInstalledBrowsersAsync()
+    {
+        var installed = await Task.Run(() => new[] { "chrome", "edge", "firefox" }
+            .Where(id => BrowserCatalog.Find(id) is { } b && BrowserCatalog.IsInstalled(b))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase));
+
+        SetRowVisible(installed.Contains("chrome"), ChromeEnabled, ChromeAction, ChromeItemsButton);
+        SetRowVisible(installed.Contains("edge"), EdgeEnabled, EdgeAction, EdgeItemsButton);
+        SetRowVisible(installed.Contains("firefox"), FirefoxEnabled, FirefoxAction, FirefoxItemsButton);
+        BrowserTable.Visibility = installed.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NoBrowsersNote.Visibility = installed.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private static void SetRowVisible(bool visible, params FrameworkElement[] row)
+    {
+        foreach (var element in row)
+            element.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async void BrowserMonitor_Changed(object sender, RoutedEventArgs e)
