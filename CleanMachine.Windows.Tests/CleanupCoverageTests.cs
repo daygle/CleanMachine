@@ -162,6 +162,19 @@ public sealed class CleanupCoverageTests
         => Assert.Equal(expected, CleanupService.IsGuidKeyName(name));
 
     [Fact]
+    public void FilesOnUnavailableDrivesAreNeverMissing()
+    {
+        // C: is mounted, E: (an unplugged USB drive) is not.
+        Func<string, bool> driveExists = root => root.Equals(@"C:\", StringComparison.OrdinalIgnoreCase);
+        Func<string, bool> noFiles = _ => false;
+
+        Assert.True(CleanupService.IsMissingFile(@"C:\Gone\app.exe", driveExists, noFiles));
+        Assert.False(CleanupService.IsMissingFile(@"C:\Live\app.exe", driveExists, _ => true));
+        Assert.False(CleanupService.IsMissingFile(@"E:\Tools\app.exe", driveExists, noFiles));
+        Assert.False(CleanupService.IsMissingFile(@"\\server\share\app.exe", _ => true, noFiles));
+    }
+
+    [Fact]
     public void ComClassIsFlaggedOnlyWhenEveryServerIsPositivelyMissing()
     {
         // Deleting the class removes every server it registers, so one live,

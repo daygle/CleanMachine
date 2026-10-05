@@ -787,6 +787,41 @@ public sealed class ManifestAndSafetyTests
         }
     }
 
+    [Fact]
+    public async Task CleaningRefusesWhenAnyBackupIsMissing()
+    {
+        const string path = @"Software\Classes\CleanMachineTestProgIdPartialBackup";
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using (var key = root.CreateSubKey(path))
+            key.SetValue("RemoveMe", "remove");
+
+        var validBackup = Path.Combine(Path.GetTempPath(), $"cleanmachine-registry-test-{Guid.NewGuid():N}.reg");
+        var missingBackup = Path.Combine(Path.GetTempPath(), $"cleanmachine-registry-test-{Guid.NewGuid():N}.reg");
+        await File.WriteAllTextAsync(validBackup, "Windows Registry Editor Version 5.00\n");
+        try
+        {
+            var review = new RegistryReview(
+            [
+                new RegistryFinding("HKCU", path, "orphaned value", true, 75, "File Extensions", "RemoveMe")
+            ],
+            [
+                new RegistryBackup(validBackup, DateTimeOffset.UtcNow),
+                new RegistryBackup(missingBackup, DateTimeOffset.UtcNow)
+            ]);
+            var result = await new RegistryCareService().CleanAsync(review);
+
+            Assert.Equal(0, result.Removed);
+            Assert.Single(result.Skipped);
+            using var verify = root.OpenSubKey(path);
+            Assert.Equal("remove", verify!.GetValue("RemoveMe") as string);
+        }
+        finally
+        {
+            try { File.Delete(validBackup); } catch { }
+            root.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
+        }
+    }
+
     /// <summary>A Store update deletes the old version-stamped package folder but
     /// leaves the HKCU Run value pointing into it, so the app stops auto-starting
     /// and its own entry is flagged as a dead reference. Sync must repair that -
