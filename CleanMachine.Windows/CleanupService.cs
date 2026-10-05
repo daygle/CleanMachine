@@ -67,7 +67,7 @@ public sealed class CleanupService
             // Only act when we can resolve an absolute local exe (MsiExec and env-var
             // commands resolve to null and are left alone).
             var uninstaller = ResolveStartupExecutable(uninstallString);
-            if (uninstaller is not null && !File.Exists(uninstaller))
+            if (uninstaller is not null && IsMissingFile(uninstaller))
                 findings.Add(new RegistryFinding("HKCU",
                     $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{name}",
                     $"Uninstaller is missing ({Path.GetFileName(uninstaller)})", true, 70, "Installer/Uninstaller"));
@@ -112,7 +112,7 @@ public sealed class CleanupService
         using var command = Registry.ClassesRoot.OpenSubKey($@"{progId}\shell\open\command");
         if (command?.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) return false;
         var candidate = ResolveStartupExecutable(raw);
-        if (candidate is null || File.Exists(candidate)) return false;
+        if (candidate is null || !IsMissingFile(candidate)) return false;
         exe = candidate;
         return true;
     }
@@ -166,7 +166,7 @@ public sealed class CleanupService
                 if (list.GetValue(valueName) is not string target || string.IsNullOrWhiteSpace(target)) continue;
                 var exe = target.Trim('"');
                 if (exe.Contains('%') || !Path.IsPathFullyQualified(exe)) continue;
-                if (File.Exists(exe)) continue;
+                if (!IsMissingFile(exe)) continue;
                 findings.Add(new RegistryFinding("HKCU", $@"{FileExtsKey}\{ext}\OpenWithList",
                     $"'Open with' entry for {ext} points to a missing program ({Path.GetFileName(exe)})", true, 70, "Open With", valueName));
             }
@@ -192,7 +192,7 @@ public sealed class CleanupService
                 // Value names are full executable paths; only act on absolute local
                 // paths we can positively verify are gone.
                 if (string.IsNullOrEmpty(valueName) || valueName.Contains('%') || !Path.IsPathFullyQualified(valueName)) continue;
-                if (File.Exists(valueName)) continue;
+                if (!IsMissingFile(valueName)) continue;
                 findings.Add(new RegistryFinding("HKCU", keyPath,
                     $"Compatibility record for a missing program ({Path.GetFileName(valueName)})", true, 75, "Compatibility Assistant", valueName));
             }
@@ -235,7 +235,7 @@ public sealed class CleanupService
                 var command = key.GetValue(valueName) as string;
                 if (string.IsNullOrWhiteSpace(command)) continue;
                 var exe = ResolveStartupExecutable(command);
-                if (exe is null || File.Exists(exe)) continue;
+                if (exe is null || !IsMissingFile(exe)) continue;
                 findings.Add(new RegistryFinding("HKCU", path,
                     $"Startup entry '{valueName}' points to a missing executable", true, 70, "Windows Startup", valueName));
             }
@@ -258,7 +258,7 @@ public sealed class CleanupService
                 using var eventKey = appKey.OpenSubKey(eventName);
                 var wav = eventKey?.GetValue(".Default") as string;
                 if (string.IsNullOrWhiteSpace(wav) || wav.Contains('%') || !Path.IsPathFullyQualified(wav)) continue;
-                if (!File.Exists(wav))
+                if (IsMissingFile(wav))
                     findings.Add(new RegistryFinding("HKCU", $@"AppEvents\Schemes\Apps\{appName}\{eventName}",
                         "Sound event references a missing file", true, 70, "Sound AppEvents", ".Default"));
             }
@@ -293,7 +293,7 @@ public sealed class CleanupService
             // Only act on absolute paths we can positively verify are gone; env-var
             // and non-qualified entries are left alone.
             if (exe.Contains('%') || !Path.IsPathFullyQualified(exe)) continue;
-            if (File.Exists(exe)) continue;
+            if (!IsMissingFile(exe)) continue;
             findings.Add(new RegistryFinding("HKCU", ShellMuiCacheKey,
                 $"Cached app name for a missing program ({Path.GetFileName(exe)})", true, 75, "Shell Cache", valueName));
         }
@@ -316,7 +316,7 @@ public sealed class CleanupService
             if (string.IsNullOrWhiteSpace(target)) continue;
             var exe = target.Trim('"');
             if (exe.Contains('%') || !Path.IsPathFullyQualified(exe)) continue;
-            if (File.Exists(exe)) continue;
+            if (!IsMissingFile(exe)) continue;
             findings.Add(new RegistryFinding("HKCU", $@"{AppPathsKey}\{name}",
                 $"App Paths entry '{name}' points to a missing program", true, 75, "App Paths"));
         }
@@ -340,7 +340,7 @@ public sealed class CleanupService
             file = file.Trim().Trim('"');
             // A bare file name resolves against the system Fonts folder; only full
             // paths can be positively verified as missing.
-            if (!Path.IsPathFullyQualified(file) || File.Exists(file)) continue;
+            if (!Path.IsPathFullyQualified(file) || !IsMissingFile(file)) continue;
             findings.Add(new RegistryFinding("HKCU", UserFontsKey,
                 $"Font '{valueName}' points to a missing file ({Path.GetFileName(file)})", true, 75, "Fonts", valueName));
         }
@@ -378,7 +378,7 @@ public sealed class CleanupService
             if (command is null || HasValue(command, "DelegateExecute")) continue;
             if (command.GetValue(null) is not string raw || string.IsNullOrWhiteSpace(raw)) continue;
             var exe = ResolveStartupExecutable(raw);
-            if (exe is null || File.Exists(exe)) continue;
+            if (exe is null || !IsMissingFile(exe)) continue;
             findings.Add(new RegistryFinding("HKCU", $@"{shellPath}\{verb}",
                 $"Right-click entry '{verb}' runs a missing program ({Path.GetFileName(exe)})", true, 70, "Context Menu"));
         }
@@ -411,7 +411,7 @@ public sealed class CleanupService
                 // are checked against the real location.
                 servers.Add((server == "LocalServer32", serverKey.GetValue(null) as string));
             }
-            var missing = MissingComServer(servers, File.Exists);
+            var missing = MissingComServer(servers, file => !IsMissingFile(file));
             if (missing is null) continue;
             findings.Add(new RegistryFinding("HKCU", $@"{UserClsidKey}\{clsid}",
                 $"COM class points to a missing file ({Path.GetFileName(missing)})", true, 70, "COM Registrations"));
@@ -478,6 +478,19 @@ public sealed class CleanupService
             if (!directoryExists(expanded)) missing.Add(entry);
         }
         return missing;
+    }
+
+    /// <summary>True only when a file is positively gone: its drive is present and
+    /// the file is not. FAILS CLOSED: a program on an unplugged USB drive or an
+    /// offline network share is merely unreachable, not uninstalled, so its
+    /// registrations must not be flagged (and then removed by a Quick Clean).</summary>
+    internal static bool IsMissingFile(string path, Func<string, bool>? directoryExists = null, Func<string, bool>? fileExists = null)
+    {
+        // UNC shares may simply be offline; never call them missing.
+        if (path.StartsWith(@"\\", StringComparison.Ordinal)) return false;
+        var root = Path.GetPathRoot(path);
+        if (string.IsNullOrEmpty(root) || !(directoryExists ?? Directory.Exists)(root)) return false;
+        return !(fileExists ?? File.Exists)(path);
     }
 
     /// <summary>Extracts the fully-qualified executable a command line runs (a Run

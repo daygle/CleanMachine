@@ -275,12 +275,15 @@ public sealed class RegistryCareService
             var cleaned = new List<RegistryFinding>();
             if (review.Findings.Count > 0)
             {
-                var verifiedBackup = false;
+                // Every restore point must still be intact, not just one: each
+                // backup covers a different key, so a valid Uninstall export says
+                // nothing about the Run key whose export has since gone missing.
+                var verifiedBackup = review.Backups.Count > 0;
                 foreach (var backup in review.Backups)
                 {
-                    if (await ValidateBackupAsync(backup, token))
+                    if (!await ValidateBackupAsync(backup, token))
                     {
-                        verifiedBackup = true;
+                        verifiedBackup = false;
                         break;
                     }
                 }

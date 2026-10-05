@@ -162,6 +162,28 @@ public sealed class CleanupCoverageTests
         => Assert.Equal(expected, CleanupService.IsGuidKeyName(name));
 
     [Fact]
+    public void RecycleBinQueryStructsMatchShellLayouts()
+    {
+        // shellapi.h packs to 1 byte on 32-bit Windows (20 bytes) and uses natural
+        // alignment on 64-bit (24 bytes); a mismatched cbSize fails the call.
+        Assert.Equal(20, System.Runtime.InteropServices.Marshal.SizeOf<WindowsCleanupService.SHQueryRecycleBinInfo32>());
+        Assert.Equal(24, System.Runtime.InteropServices.Marshal.SizeOf<WindowsCleanupService.SHQueryRecycleBinInfo>());
+    }
+
+    [Fact]
+    public void FilesOnUnavailableDrivesAreNeverMissing()
+    {
+        // C: is mounted, E: (an unplugged USB drive) is not.
+        Func<string, bool> driveExists = root => root.Equals(@"C:\", StringComparison.OrdinalIgnoreCase);
+        Func<string, bool> noFiles = _ => false;
+
+        Assert.True(CleanupService.IsMissingFile(@"C:\Gone\app.exe", driveExists, noFiles));
+        Assert.False(CleanupService.IsMissingFile(@"C:\Live\app.exe", driveExists, _ => true));
+        Assert.False(CleanupService.IsMissingFile(@"E:\Tools\app.exe", driveExists, noFiles));
+        Assert.False(CleanupService.IsMissingFile(@"\\server\share\app.exe", _ => true, noFiles));
+    }
+
+    [Fact]
     public void ComClassIsFlaggedOnlyWhenEveryServerIsPositivelyMissing()
     {
         // Deleting the class removes every server it registers, so one live,
