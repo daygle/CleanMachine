@@ -449,10 +449,25 @@ public sealed class WindowsCleanupService
     internal static long GetRecycleBinSize()
     {
         if (!OperatingSystem.IsWindows()) return 0;
-        var info = new SHQueryRecycleBinInfo { Size = (uint)Marshal.SizeOf<SHQueryRecycleBinInfo>() };
-        var result = SHQueryRecycleBin(null, ref info);
-        return result == 0 && info.ItemCount > 0 && info.TotalSize > 0
-            ? info.TotalSize
+        long totalSize, itemCount;
+        int result;
+        // shellapi.h packs its structs to 1 byte on 32-bit Windows, so SHQUERYRBINFO
+        // is 20 bytes there and 24 on 64-bit. Passing the 64-bit layout on x86 made
+        // the call fail with E_INVALIDARG and the bin always read as empty.
+        if (IntPtr.Size == 4)
+        {
+            var info = new SHQueryRecycleBinInfo32 { Size = (uint)Marshal.SizeOf<SHQueryRecycleBinInfo32>() };
+            result = SHQueryRecycleBin32(null, ref info);
+            (totalSize, itemCount) = (info.TotalSize, info.ItemCount);
+        }
+        else
+        {
+            var info = new SHQueryRecycleBinInfo { Size = (uint)Marshal.SizeOf<SHQueryRecycleBinInfo>() };
+            result = SHQueryRecycleBin(null, ref info);
+            (totalSize, itemCount) = (info.TotalSize, info.ItemCount);
+        }
+        return result == 0 && itemCount > 0 && totalSize > 0
+            ? totalSize
             : 0;
     }
 
@@ -518,7 +533,7 @@ public sealed class WindowsCleanupService
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct SHQueryRecycleBinInfo
+    internal struct SHQueryRecycleBinInfo
     {
         public uint Size;
         public long TotalSize;
@@ -527,6 +542,17 @@ public sealed class WindowsCleanupService
 
     [DllImport("Shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SHQueryRecycleBin(string? rootPath, ref SHQueryRecycleBinInfo info);
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    internal struct SHQueryRecycleBinInfo32
+    {
+        public uint Size;
+        public long TotalSize;
+        public long ItemCount;
+    }
+
+    [DllImport("Shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "SHQueryRecycleBinW")]
+    private static extern int SHQueryRecycleBin32(string? rootPath, ref SHQueryRecycleBinInfo32 info);
 
     [DllImport("Shell32.dll", CharSet = CharSet.Unicode)] private static extern int SHEmptyRecycleBin(IntPtr hwnd, string? rootPath, uint flags);
 }

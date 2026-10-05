@@ -162,6 +162,15 @@ public sealed class CleanupCoverageTests
         => Assert.Equal(expected, CleanupService.IsGuidKeyName(name));
 
     [Fact]
+    public void RecycleBinQueryStructsMatchShellLayouts()
+    {
+        // shellapi.h packs to 1 byte on 32-bit Windows (20 bytes) and uses natural
+        // alignment on 64-bit (24 bytes); a mismatched cbSize fails the call.
+        Assert.Equal(20, System.Runtime.InteropServices.Marshal.SizeOf<WindowsCleanupService.SHQueryRecycleBinInfo32>());
+        Assert.Equal(24, System.Runtime.InteropServices.Marshal.SizeOf<WindowsCleanupService.SHQueryRecycleBinInfo>());
+    }
+
+    [Fact]
     public void FilesOnUnavailableDrivesAreNeverMissing()
     {
         // C: is mounted, E: (an unplugged USB drive) is not.
