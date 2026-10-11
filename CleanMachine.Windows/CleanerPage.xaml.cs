@@ -576,21 +576,24 @@ public sealed partial class CleanerPage : Page
             if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
         }
 
-        // Close-assist: when enabled, offer to close running browsers instead of
-        // refusing. Two-tier: graceful close first (like clicking the window's X),
-        // force-kill only for whatever is still alive after the 5s wait. Declining
-        // here falls back to the default behavior (the clean below refuses).
+        // Close-assist: when enabled, offer to close the browsers being cleaned
+        // instead of refusing. Only those browsers - another one can stay open -
+        // and only politely: a browser still showing a window afterwards (e.g. a
+        // "Leave site?" prompt) is never forced closed. Declining here falls back to
+        // the default behavior (the clean below refuses).
         if (_settings.CloseOpenBrowsersAutomatically)
         {
-            var running = BrowserCleanupService.GetRunningBrowsers();
+            var running = BrowserCleanupService.GetRunningBrowsers(
+                BrowserCleanupService.ProcessNamesFor(selected.Select(s => s.BrowserId)));
             if (running.Count > 0)
             {
                 var names = string.Join(", ", running.Select(BrowserCleanupService.DisplayNameForProcess).Distinct());
                 var confirm = new ContentDialog
                 {
                     Title = "Close running browsers?",
-                    Content = $"Still running: {names}. They will be closed gracefully (like clicking the window's X), " +
-                              "then anything still alive after 5 seconds is force-closed. Unsaved work may be lost. Continue?",
+                    Content = $"Still running: {names}. CleanMachine will ask them to close, just like clicking the window's X. " +
+                              "If a browser asks you to save something or stays open, it is left open and the clean stops - " +
+                              "a browser window is never force-closed. Save anything you are working on first. Continue?",
                     PrimaryButtonText = "Close and clean",
                     CloseButtonText = "Cancel",
                     XamlRoot = XamlRoot
@@ -612,7 +615,7 @@ public sealed partial class CleanerPage : Page
                         "Browser Cleanup",
                         $"Manual clean could not start because these browsers remained open: {remaining}."));
                     Progress.Visibility = Visibility.Collapsed;
-                    StatusText.Text = $"Could not close: {remaining}. Close them manually and try again.";
+                    StatusText.Text = $"{remaining} is still open, so nothing was cleaned. CleanMachine never force-closes a browser window - save your work, close it yourself, then try again.";
                     return;
                 }
             }
