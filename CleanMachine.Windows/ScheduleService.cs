@@ -103,7 +103,7 @@ public sealed class ScheduleService
                         // A schedule runs headless with no one to click a confirmation
                         // dialog - choosing the category in the schedule editor is the
                         // confirmation. Without this, Review/Advanced categories
-                        // (Recycle Bin, Downloads, Prefetch...) silently clean nothing.
+                        // (Recycle Bin, Downloads, User Assist History...) silently clean nothing.
                         ConfirmReviewCategories: true,
                         ExcludedPaths: settings.ExcludedPaths),
                     cancellationToken: token);

@@ -30,7 +30,6 @@ CLEAN WHAT ACTUALLY CLUTTERS YOUR PC
 - Temporary files, thumbnail and icon caches, error reports, internet cache,
   jump lists and other files Windows regenerates on demand
 - Temp files left behind by installed desktop and Microsoft Store applications
-- Old Windows Update download files, offered as an opt-in advanced category
 
 REVIEW-FIRST REGISTRY CARE
 Registry Care scans your per-user (HKCU) registry only, and never touches

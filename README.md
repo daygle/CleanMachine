@@ -57,7 +57,7 @@ CleanMachine is a native Windows 10/11 desktop application built with **C#/.NET 
 
 ### Windows Cleanup
 - Two-pane list/detail view: categories on the left, a summary header with chips and a per-category file drill-down on the right
-- Safe category scanning: temporary files, thumbnail and icon caches, error reports, internet cache, Remote Desktop cache, PowerShell history, GPU shader caches (NVIDIA/AMD/Intel), custom jump lists, Microsoft Store cache, certificate revocation cache (CryptnetUrlCache), Windows Spotlight image cache, and more; plus an Advanced, off-by-default Windows Update download cache
+- Safe category scanning: temporary files, thumbnail and icon caches, error reports, internet cache, Remote Desktop cache, PowerShell history, GPU shader caches (NVIDIA/AMD/Intel), custom jump lists, Microsoft Store cache, certificate revocation cache (CryptnetUrlCache), Windows Spotlight image cache, and more. Everything is per-user: CleanMachine never needs administrator rights, so nothing under the Windows folder (Prefetch, event logs, Windows Update caches) is offered
 - Review-tier (off by default, confirm first): Recycle Bin, downloaded files by type, Action Center notification history, Win+V clipboard history (cleared through the Windows clipboard API), and the Windows internet cookie store (can sign some apps out)
 - History/MRU categories (Run, Search, Open/Save dialog, Recent, jump lists) clear recursively through sub-keys, so entries stored inside sub-keys (e.g. the Open/Save dialog MRUs) are actually removed
 - Categories with nothing to clean are hidden from the selection list (shared, cached scan with the Overview card); if a scan fails the full catalog is shown so nothing becomes unreachable

@@ -51,11 +51,9 @@ public sealed class WindowsCleanupService
     /// <summary>Well-known, recreatable locations the app is allowed to clean.</summary>
     private static readonly string[] TrustedCleanupRoots =
     [
-        LocalAppData, AppData, Temp, Downloads,
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Prefetch"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "winevt", "Logs"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution")
+        // Per-user locations only. Anything under the Windows folder needs
+        // administrator rights, which the Store build can never have.
+        LocalAppData, AppData, Temp, Downloads
     ];
 
     public static IReadOnlyList<CleanupCategory> Catalog { get; } =
@@ -102,11 +100,6 @@ public sealed class WindowsCleanupService
         // ---- Windows Advanced Options ----
         new("advanced-shader-cache", "Windows Advanced Options", "DirectX Shader Cache", "Compiled shaders for games and apps", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "D3DSCache"), Pattern: "*"),
         new("advanced-user-assist", "Windows Advanced Options", "User Assist History", "Tracked program-launch history", CleanupRisk.Advanced, false, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist"),
-        new("advanced-prefetch", "Windows Advanced Options", "Windows Prefetch Files", "Prefetch data that can slow first launches", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Prefetch"), Pattern: "*"),
-        new("advanced-event-logs", "Windows Advanced Options", "Windows Event Logs", "Event log archives", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "winevt", "Logs"), Pattern: "*.evtx"),
-        new("advanced-setupapi-logs", "Windows Advanced Options", "Driver Installation Log Files", "Driver install/update logs", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF"), Pattern: "setupapi*.log"),
-        new("advanced-delivery-optimization", "Windows Advanced Options", "Delivery Optimization Files", "Cached update/install packages", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "DeliveryOptimization"), Pattern: "*"),
-        new("advanced-windows-update-cache", "Windows Advanced Options", "Windows Update Cache", "Downloaded update installers (clearing mid-update can interrupt one)", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "Download"), Pattern: "*"),
 
         // ---- Windows Downloads (user files: disabled by default, require confirmation) ----
         new("downloads-apps", "Windows Downloads", "Apps/Programs", "Downloaded installers (exe/msi) - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".exe", ".msi", ".msix", ".appx"]),

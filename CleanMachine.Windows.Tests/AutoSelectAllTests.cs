@@ -27,11 +27,11 @@ public sealed class AutoSelectAllTests
     [Fact]
     public void OffByDefaultAnOffByDefaultCategoryStaysUnselected()
     {
-        // "Delivery Optimization Files" is not enabled by default, so a fresh
-        // install must not silently start cleaning it.
+        // "User Assist History" is not enabled by default, so a fresh install must
+        // not silently start cleaning it.
         var settings = new AppSettings();
 
-        Assert.False(WindowsCleanupService.IsEnabled(Category("advanced-delivery-optimization"), settings));
+        Assert.False(WindowsCleanupService.IsEnabled(Category("advanced-user-assist"), settings));
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public sealed class AutoSelectAllTests
     {
         var settings = new AppSettings { AutoSelectAllCategories = true };
 
-        Assert.True(WindowsCleanupService.IsEnabled(Category("advanced-delivery-optimization"), settings));
+        Assert.True(WindowsCleanupService.IsEnabled(Category("advanced-user-assist"), settings));
     }
 
     [Fact]

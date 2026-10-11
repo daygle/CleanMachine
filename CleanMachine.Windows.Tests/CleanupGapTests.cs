@@ -104,6 +104,21 @@ public sealed class CleanupGapTests
         Assert.DoesNotContain(selection, s => s.BrowserId == "ie");
     }
 
+    // ---- Nothing needs administrator rights ----
+
+    [Fact]
+    public void NoWindowsCleanupCategoryNeedsAdministratorRights()
+    {
+        // CleanMachine ships only through the Store without allowElevation, so it
+        // can never run as an administrator. A category under the Windows folder
+        // (Prefetch, event logs, Windows Update caches) could only ever fail with
+        // "Access denied", so none may be offered.
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+        Assert.DoesNotContain(WindowsCleanupService.Catalog, c =>
+            c.Path is { } path && Path.IsPathFullyQualified(path) && NativeSafety.IsWithin(path, windows));
+    }
+
     // ---- Broken shortcuts ----
 
     [Fact]
