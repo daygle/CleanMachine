@@ -16,7 +16,7 @@ public sealed partial class CleanerPage : Page
     private BrowserScan? _detailScan;
     // Set while the sticky mode is being applied to the boxes, so the ticks it
     // produces are treated as derived state rather than as the user having
-    // chosen them - otherwise switching Auto-Select Everything off would not take
+    // chosen them - otherwise switching Auto-Select All off would not take
     // effect until each item was unticked by hand.
     private bool _applyingDefaults;
 
@@ -84,7 +84,7 @@ public sealed partial class CleanerPage : Page
     }
 
     /// <summary>The remembered choice if there is one, otherwise the default: safe
-    /// items are ticked, destructive ones are not - unless Auto-Select Everything is on,
+    /// items are ticked, destructive ones are not - unless Auto-Select All is on,
     /// which opts them in as well.</summary>
     private bool DefaultIsChecked(string browserId, string itemId, bool destructive)
         => _settings.BrowserCleanupSelection.TryGetValue($"{browserId}:{itemId}", out var saved)
@@ -576,21 +576,24 @@ public sealed partial class CleanerPage : Page
             if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
         }
 
-        // Close-assist: when enabled, offer to close running browsers instead of
-        // refusing. Two-tier: graceful close first (like clicking the window's X),
-        // force-kill only for whatever is still alive after the 5s wait. Declining
-        // here falls back to the default behavior (the clean below refuses).
+        // Close-assist: when enabled, offer to close the browsers being cleaned
+        // instead of refusing. Only those browsers - another one can stay open -
+        // and only politely: a browser still showing a window afterwards (e.g. a
+        // "Leave site?" prompt) is never forced closed. Declining here falls back to
+        // the default behavior (the clean below refuses).
         if (_settings.CloseOpenBrowsersAutomatically)
         {
-            var running = BrowserCleanupService.GetRunningBrowsers();
+            var cleaning = selected.Select(s => s.BrowserId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var running = BrowserCleanupService.GetRunningBrowsers(BrowserCleanupService.ProcessNamesFor(cleaning));
             if (running.Count > 0)
             {
-                var names = string.Join(", ", running.Select(BrowserCleanupService.DisplayNameForProcess).Distinct());
+                var names = string.Join(", ", running.Select(p => BrowserCleanupService.DisplayNameForProcess(p, cleaning)).Distinct());
                 var confirm = new ContentDialog
                 {
                     Title = "Close running browsers?",
-                    Content = $"Still running: {names}. They will be closed gracefully (like clicking the window's X), " +
-                              "then anything still alive after 5 seconds is force-closed. Unsaved work may be lost. Continue?",
+                    Content = $"Still running: {names}. CleanMachine will ask them to close, just like clicking the window's X. " +
+                              "If a browser asks you to save something or stays open, it is left open and the clean stops - " +
+                              "a browser window is never force-closed. Save anything you are working on first. Continue?",
                     PrimaryButtonText = "Close and clean",
                     CloseButtonText = "Cancel",
                     XamlRoot = XamlRoot
@@ -606,13 +609,13 @@ public sealed partial class CleanerPage : Page
                 var stillRunning = await BrowserCleanupService.CloseRunningBrowsersAsync(running);
                 if (stillRunning.Count > 0)
                 {
-                    var remaining = string.Join(", ", stillRunning.Select(BrowserCleanupService.DisplayNameForProcess));
+                    var remaining = string.Join(", ", stillRunning.Select(p => BrowserCleanupService.DisplayNameForProcess(p, cleaning)));
                     await new ActivityStore().AddAsync(new ActivityEntry(
                         DateTimeOffset.UtcNow,
                         "Browser Cleanup",
                         $"Manual clean could not start because these browsers remained open: {remaining}."));
                     Progress.Visibility = Visibility.Collapsed;
-                    StatusText.Text = $"Could not close: {remaining}. Close them manually and try again.";
+                    StatusText.Text = $"{remaining} is still open, so nothing was cleaned. CleanMachine never force-closes a browser window - save your work, close it yourself, then try again.";
                     return;
                 }
             }

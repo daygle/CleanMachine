@@ -149,6 +149,14 @@ public sealed partial class SchedulesPage : Page
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 Padding = new Thickness(10, 8, 10, 8)
             };
+            // The schedule open in the editor stands out, so after a save the user
+            // can see which entry in the list now holds their changes.
+            if (schedule.Id == _currentId)
+            {
+                selectButton.BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x28, 0x6E, 0x58));
+                selectButton.BorderThickness = new Thickness(2);
+                selectButton.Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xEE, 0xF5, 0xF1));
+            }
             selectButton.Click += (_, _) => Select(captured, isNew: false);
 
             var editButton = new Button
@@ -240,7 +248,8 @@ public sealed partial class SchedulesPage : Page
 
         UpdateTriggerVisibility();
         UpdateAfterWarning();
-        StatusText.Text = string.Empty;
+        SaveResult.IsOpen = false;
+        RebuildList();
     }
 
     private void SelectAll_Changed(object sender, RoutedEventArgs e)
@@ -287,7 +296,12 @@ public sealed partial class SchedulesPage : Page
         if (_current is null) return;
 
         var name = NameBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(name)) { StatusText.Text = "Give the schedule a name."; return; }
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            ShowResult(InfoBarSeverity.Error, "Not saved", "Give the schedule a name.");
+            NameBox.Focus(FocusState.Programmatic);
+            return;
+        }
 
         // Ticks for browsers/apps not installed right now are kept, so reinstalling
         // one brings the choice back.
@@ -320,30 +334,61 @@ public sealed partial class SchedulesPage : Page
 
         if (!ScheduledTask.HasWork(schedule))
         {
-            StatusText.Text = "Tick at least one item for the schedule to clean.";
+            ShowResult(InfoBarSeverity.Error, "Not saved", "Tick at least one item for the schedule to clean.");
             return;
         }
 
-        var index = _settings.Schedules.FindIndex(s => s.Id == schedule.Id);
-        if (index >= 0) _settings.Schedules[index] = schedule;
-        else _settings.Schedules.Add(schedule);
-        await _settings.SaveAsync();
+        // Registering with Task Scheduler takes a moment; show that something is
+        // happening and stop a second click from starting a second save.
+        SaveButton.IsEnabled = false;
+        SaveButton.Content = "Saving...";
+        SaveProgress.IsActive = true;
+        SaveResult.IsOpen = false;
+        try
+        {
+            var index = _settings.Schedules.FindIndex(s => s.Id == schedule.Id);
+            if (index >= 0) _settings.Schedules[index] = schedule;
+            else _settings.Schedules.Add(schedule);
+            await _settings.SaveAsync();
 
-        var registered = true;
-        if (schedule.Enabled) registered = await ScheduleService.RegisterAsync(schedule);
-        else await ScheduleService.UnregisterAsync(schedule.Id);
+            var registered = true;
+            if (schedule.Enabled) registered = await ScheduleService.RegisterAsync(schedule);
+            else await ScheduleService.UnregisterAsync(schedule.Id);
 
-        _currentId = schedule.Id;
-        _current = schedule;
-        DeleteButton.Visibility = Visibility.Visible;
-        EditorHeadline.Text = "Edit Schedule";
-        RebuildList();
+            _currentId = schedule.Id;
+            _current = schedule;
+            DeleteButton.Visibility = Visibility.Visible;
+            EditorHeadline.Text = "Edit Schedule";
+            RebuildList();
 
-        StatusText.Text = !schedule.Enabled
-            ? "Saved. The schedule is paused."
-            : registered
-                ? "Saved. The task is registered with Windows Task Scheduler."
-                : "Saved, but Windows could not register the task. Check Task Scheduler permissions.";
+            if (!schedule.Enabled)
+                ShowResult(InfoBarSeverity.Informational, $"'{schedule.Name}' saved (paused)",
+                    "It will not run until you tick Enabled and save again.");
+            else if (registered)
+                ShowResult(InfoBarSeverity.Success, $"'{schedule.Name}' saved",
+                    $"Registered with Windows Task Scheduler. {ScheduledTask.DescribeNextRun(schedule, DateTime.Now)}");
+            else
+                ShowResult(InfoBarSeverity.Warning, $"'{schedule.Name}' saved, but not scheduled",
+                    "Windows Task Scheduler did not accept the task, so it will not run. Check Task Scheduler permissions, then save again.");
+        }
+        catch (Exception ex)
+        {
+            ShowResult(InfoBarSeverity.Error, "Not saved", $"The schedule could not be saved: {ex.Message}");
+        }
+        finally
+        {
+            SaveButton.Content = "Save Schedule";
+            SaveButton.IsEnabled = true;
+            SaveProgress.IsActive = false;
+        }
+    }
+
+    private void ShowResult(InfoBarSeverity severity, string title, string message)
+    {
+        SaveResult.Severity = severity;
+        SaveResult.Title = title;
+        SaveResult.Message = message;
+        SaveResult.IsOpen = true;
     }
 
     private List<string> TickedIds(string prefix)
@@ -377,7 +422,6 @@ public sealed partial class SchedulesPage : Page
             EditorFields.Visibility = Visibility.Collapsed;
             EditorHint.Visibility = Visibility.Visible;
             EditorHeadline.Text = "No Schedule Selected";
-            StatusText.Text = string.Empty;
         }
         RebuildList();
     }

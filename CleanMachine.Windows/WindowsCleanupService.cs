@@ -51,11 +51,9 @@ public sealed class WindowsCleanupService
     /// <summary>Well-known, recreatable locations the app is allowed to clean.</summary>
     private static readonly string[] TrustedCleanupRoots =
     [
-        LocalAppData, AppData, Temp, Downloads,
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Prefetch"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "winevt", "Logs"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution")
+        // Per-user locations only. Anything under the Windows folder needs
+        // administrator rights, which the Store build can never have.
+        LocalAppData, AppData, Temp, Downloads
     ];
 
     public static IReadOnlyList<CleanupCategory> Catalog { get; } =
@@ -89,6 +87,8 @@ public sealed class WindowsCleanupService
         new("system-gpu-nvidia-gl", "Windows System", "NVIDIA OpenGL Shader Cache", "Compiled OpenGL shaders NVIDIA drivers recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "NVIDIA", "GLCache"), Pattern: "*"),
         new("system-gpu-amd", "Windows System", "AMD Shader Cache", "Compiled shaders AMD drivers recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "AMD", "DxCache"), Pattern: "*"),
         new("system-gpu-intel", "Windows System", "Intel Shader Cache", "Compiled shaders Intel drivers recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Intel", "ShaderCache"), Pattern: "*"),
+        new("system-shell-caches", "Windows System", "Windows Shell Caches", "Explorer and Start menu lookup caches Windows rebuilds on demand (files in use are skipped)", CleanupRisk.Safe, false, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Caches"), Pattern: "*.db"),
+        new("system-legacy-history", "Windows System", "Legacy Internet History", "Old Internet Explorer / WinINet browsing history kept by Windows", CleanupRisk.Safe, false, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "History"), Pattern: "*"),
         new("system-dns-cache", "Windows System", "DNS Cache", "Cached DNS resolver entries", CleanupRisk.Safe, true, CleanupKind.DnsCache),
         // Review, not Safe: clipboard history is something the user may still want
         // (copied text they have not pasted yet), so it is never cleared unattended.
@@ -97,16 +97,12 @@ public sealed class WindowsCleanupService
         // in, so clearing them can sign the user out.
         new("system-inet-cookies", "Windows System", "Internet Cookies", "Cookies stored by Windows components and older apps (may sign some apps out)", CleanupRisk.Review, false, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "INetCookies"), Pattern: "*"),
         new("system-notification-cache", "Windows System", "Notification History", "Action Center notification database (clears past notifications)", CleanupRisk.Review, false, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Notifications"), Pattern: "wpndatabase*"),
+        new("system-burn-staging", "Windows System", "Files Waiting to Be Burned", "Files copied to a CD/DVD drive but never written to a disc - these may be the only copy, so review first", CleanupRisk.Review, false, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Burn", "Burn"), Pattern: "*"),
         new("system-recycle-bin", "Windows System", "Recycle Bin", "Deleted items awaiting permanent removal", CleanupRisk.Review, false, CleanupKind.RecycleBin),
 
         // ---- Windows Advanced Options ----
         new("advanced-shader-cache", "Windows Advanced Options", "DirectX Shader Cache", "Compiled shaders for games and apps", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "D3DSCache"), Pattern: "*"),
         new("advanced-user-assist", "Windows Advanced Options", "User Assist History", "Tracked program-launch history", CleanupRisk.Advanced, false, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist"),
-        new("advanced-prefetch", "Windows Advanced Options", "Windows Prefetch Files", "Prefetch data that can slow first launches", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Prefetch"), Pattern: "*"),
-        new("advanced-event-logs", "Windows Advanced Options", "Windows Event Logs", "Event log archives", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "winevt", "Logs"), Pattern: "*.evtx"),
-        new("advanced-setupapi-logs", "Windows Advanced Options", "Driver Installation Log Files", "Driver install/update logs", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF"), Pattern: "setupapi*.log"),
-        new("advanced-delivery-optimization", "Windows Advanced Options", "Delivery Optimization Files", "Cached update/install packages", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "DeliveryOptimization"), Pattern: "*"),
-        new("advanced-windows-update-cache", "Windows Advanced Options", "Windows Update Cache", "Downloaded update installers (clearing mid-update can interrupt one)", CleanupRisk.Advanced, false, CleanupKind.Files, Path: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SoftwareDistribution", "Download"), Pattern: "*"),
 
         // ---- Windows Downloads (user files: disabled by default, require confirmation) ----
         new("downloads-apps", "Windows Downloads", "Apps/Programs", "Downloaded installers (exe/msi) - user data, confirm before cleaning", CleanupRisk.Review, false, CleanupKind.Files, Path: Downloads, Extensions: [".exe", ".msi", ".msix", ".appx"]),
@@ -387,12 +383,15 @@ public sealed class WindowsCleanupService
     // The Quick Access pinned-links list is stored as one of the AutomaticDestinations
     // jump-list files. Deleting it wipes the user's pinned Quick Access folders, so it is
     // never cleaned or counted; per-app/taskbar jump lists in the same folder still are.
+    // desktop.ini holds a folder's own display settings (special folders such as
+    // History use one); it is never junk, so it is never cleaned either.
     private static readonly string[] ProtectedFileNames =
     [
-        "f01b4d95cf55d32a.automaticDestinations-ms" // Windows Explorer / Quick Access
+        "f01b4d95cf55d32a.automaticDestinations-ms", // Windows Explorer / Quick Access
+        "desktop.ini"
     ];
 
-    private static bool IsProtectedFile(string path)
+    internal static bool IsProtectedFile(string path)
         => ProtectedFileNames.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
 
     private static bool MatchesExtensions(string path, string[]? extensions)

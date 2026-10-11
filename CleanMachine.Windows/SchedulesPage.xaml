@@ -98,11 +98,15 @@
               <TextBlock x:Name="WakeHint" Foreground="#89958F" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed"
                          Text="Wakes the PC from sleep at the scheduled time. Requires your Windows power settings to allow wake timers, otherwise it is ignored."/>
 
-              <TextBlock x:Name="StatusText" Foreground="#6E8178" FontSize="12" TextWrapping="Wrap"/>
+              <!-- Result of the last Save, right next to the button that was clicked:
+                   green when the task is registered, amber when it is saved but not
+                   scheduled, red when nothing was saved. -->
+              <InfoBar x:Name="SaveResult" IsOpen="False" IsClosable="True"/>
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button x:Name="SaveButton" Content="Save Schedule" Click="Save_Click"
                         Background="#286E58" Foreground="White" Padding="18,8"/>
                 <Button x:Name="DeleteButton" Content="Delete" Click="Delete_Click" Padding="18,8" Visibility="Collapsed"/>
+                <ProgressRing x:Name="SaveProgress" IsActive="False" Width="20" Height="20" VerticalAlignment="Center"/>
               </StackPanel>
             </StackPanel>
           </StackPanel>

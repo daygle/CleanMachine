@@ -17,7 +17,7 @@ public static class NativeSafety
     /// The user's own profile is deliberately NOT on this list. Treating the whole
     /// profile as protected is the obvious-looking rule and it is wrong for this
     /// app: essentially every legitimate target - browser caches, app temp files,
-    /// Windows Update downloads - lives under the profile, so such a rule either
+    /// Store and Spotlight caches - lives under the profile, so such a rule either
     /// refuses all real work or gets quietly special-cased until it protects
     /// nothing. The profile is handled by the caller naming a trusted root
     /// instead, which is a decision about data rather than a guess about folders.

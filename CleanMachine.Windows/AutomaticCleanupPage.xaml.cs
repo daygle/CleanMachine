@@ -346,7 +346,7 @@ public sealed partial class AutomaticCleanupPage : Page
         // Windows Cleanup, sub-grouped the same way as its own page.
         var categoryBoxes = new List<(string Id, CheckBox Box)>();
         var windowsSection = AddSection(panel, "Windows Cleanup",
-            "Safe categories only. Review and Advanced categories (Recycle Bin, Downloads, Prefetch, ...) are never cleaned automatically.");
+            "Safe categories only. Review and Advanced categories (Recycle Bin, Downloads, User Assist History, ...) are never cleaned automatically.");
         foreach (var group in SafeCategories.GroupBy(c => c.Group))
         {
             windowsSection.Children.Children.Add(GroupLabel(group.Key));

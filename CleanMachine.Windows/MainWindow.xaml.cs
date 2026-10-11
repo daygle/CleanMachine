@@ -107,7 +107,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Loads the sidebar mark from the file next to the executable rather than via
-    /// ms-appx: in unpackaged (installer) builds, ms-appx only resolves files that
+    /// ms-appx: in unpackaged builds (local development runs), ms-appx only resolves files that
     /// are indexed in the app's PRI resource map, and loose Content files silently
     /// fail there - which showed the sidebar logo as blank. A direct file path
     /// works the same in packaged and unpackaged builds.
@@ -117,7 +117,7 @@ public sealed partial class MainWindow : Window
         try
         {
             // Prefer the copy embedded in the assembly: loose Content files can fail to
-            // be laid down (or found) in unpackaged/installer builds, which showed the
+            // be laid down (or found) in unpackaged development builds, which showed the
             // sidebar mark blank. The embedded stream is always present. Fall back to the
             // loose Assets\AppLogo.png next to the executable if, for any reason, the
             // manifest resource is missing.
@@ -125,8 +125,8 @@ public sealed partial class MainWindow : Window
             if (stream is null) return;
             await using (stream)
             {
-                // Decode from a stream rather than a file:// Uri: in unpackaged (installer)
-                // builds a BitmapImage built from a file Uri can silently fail to load,
+                // Decode from a stream rather than a file:// Uri: in unpackaged
+                // (development) builds a BitmapImage built from a file Uri can silently fail to load,
                 // leaving the sidebar mark blank. A stream decode is reliable in both
                 // packaged and unpackaged builds.
                 var bitmap = new BitmapImage();
@@ -301,14 +301,12 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    /// <summary>Writes the desktop shortcut for this install. MSIX packages are
-    /// targeted through the package identity (<c>shell:AppsFolder\PFN!App</c>) rather
-    /// than the executable: the executable lives in a version-stamped WindowsApps
-    /// folder that is deleted on the next update, so an exe-targeting shortcut breaks
-    /// every single time the app updates. The identity-based link survives every
-    /// future update. The .exe install keeps its direct path (it is not versioned)
-    /// and is only created when missing, so the installer's own shortcut is left
-    /// alone.</summary>
+    /// <summary>Writes the desktop shortcut for this Store install. It targets the
+    /// package identity (<c>shell:AppsFolder\PFN!App</c>) rather than the executable:
+    /// the executable lives in a version-stamped WindowsApps folder that is deleted
+    /// on the next update, so an exe-targeting shortcut breaks every single time the
+    /// app updates. The identity-based link survives every future update. Only
+    /// called for a packaged install.</summary>
     private void CreateDesktopShortcut()
     {
         try
@@ -316,28 +314,15 @@ public sealed partial class MainWindow : Window
             var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             if (string.IsNullOrEmpty(desktopPath)) return;
 
+            if (!ScheduleService.TryGetPackageFamilyName(out var family) || string.IsNullOrEmpty(family)) return;
             var shortcutPath = Path.Combine(desktopPath, MsixUninstallService.ShortcutFileName);
-            var isMsix = ScheduleService.IsMsix;
-            // An MSIX shortcut is rewritten every launch (that is the self-heal for a
-            // link left over from a replaced package); a standalone install only
-            // needs it created once.
-            if (!isMsix && File.Exists(shortcutPath)) return;
 
+            // Rewritten every launch: that is the self-heal for a link left over from
+            // a replaced package. No working directory: the identity link resolves the
+            // install folder itself, and a stale one would point into a deleted
+            // WindowsApps path.
             var shell = (IShellLinkW)new CShellLink();
-            if (isMsix)
-            {
-                if (!ScheduleService.TryGetPackageFamilyName(out var family) || string.IsNullOrEmpty(family)) return;
-                shell.SetPath(MsixUninstallService.BuildMsixShortcutTarget(family));
-                // No working directory: the identity link resolves the install folder
-                // itself, and a stale one would point into a deleted WindowsApps path.
-            }
-            else
-            {
-                var exePath = Environment.ProcessPath;
-                if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return;
-                shell.SetPath(exePath);
-                shell.SetWorkingDirectory(Path.GetDirectoryName(exePath) ?? exePath);
-            }
+            shell.SetPath(MsixUninstallService.BuildMsixShortcutTarget(family));
             shell.SetDescription("CleanMachine - Privacy cleanup utility");
 
             var persistFile = (IPersistFile)shell;

@@ -380,6 +380,84 @@ public static class AppCatalog
             ])
         ]),
 
+        new("canva", "Canva", "Desktop Application", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Canva\\Cache", "Application Cache"),
+                new("Canva\\Code Cache", "Code Cache"),
+                new("Canva\\GPUCache", "GPU Cache")
+            ])
+        ]),
+
+        new("element", "Element", "Desktop Application", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Element\\Cache", "Application Cache"),
+                new("Element\\Code Cache", "Code Cache"),
+                new("Element\\GPUCache", "GPU Cache")
+            ])
+        ]),
+
+        new("mattermost", "Mattermost", "Desktop Application", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Mattermost\\Cache", "Application Cache"),
+                new("Mattermost\\Code Cache", "Code Cache"),
+                new("Mattermost\\GPUCache", "GPU Cache")
+            ])
+        ]),
+
+        new("insomnia", "Insomnia", "Desktop Application", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Insomnia\\Cache", "Application Cache"),
+                new("Insomnia\\Code Cache", "Code Cache"),
+                new("Insomnia\\GPUCache", "GPU Cache")
+            ])
+        ]),
+
+        new("docker-desktop", "Docker Desktop", "Desktop Application", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("Docker Desktop\\Cache", "Application Cache"),
+                new("Docker Desktop\\Code Cache", "Code Cache"),
+                new("Docker Desktop\\GPUCache", "GPU Cache")
+            ])
+        ]),
+
+        new("unity-hub", "Unity Hub", "Desktop Application", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new("UnityHub\\Cache", "Application Cache"),
+                new("UnityHub\\Code Cache", "Code Cache"),
+                new("UnityHub\\GPUCache", "GPU Cache")
+            ])
+        ]),
+
+        new("riot-client", "Riot Client", "Desktop Application", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Riot Games\\Riot Client\\Logs", "Log Files")
+            ])
+        ]),
+
+        // Logs only: DriveFS also keeps a content cache that can hold changes not
+        // yet uploaded, so it is never offered.
+        new("google-drive", "Google Drive", "Desktop Application", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Google\\DriveFS\\Logs", "Log Files")
+            ])
+        ]),
+
+        // Logs only: worlds, screenshots and settings live beside them in .minecraft.
+        new("minecraft-launcher", "Minecraft Launcher", "Desktop Application", false,
+        [
+            (AppDataRoot.RoamingAppData, [
+                new(".minecraft\\logs", "Game Logs")
+            ])
+        ]),
+
         // ---- Developer Tools ----
         // Download and build caches only, each refilled by the next install or
         // build. The installed-package folders (~\.nuget\packages,
@@ -389,7 +467,9 @@ public static class AppCatalog
             (AppDataRoot.LocalAppData, [
                 new("npm-cache", "NPM Cache"),
                 new("pnpm-store", "PNPM Store"),
-                new("yarn\\Cache", "Yarn Cache")
+                new("yarn\\Cache", "Yarn Cache"),
+                new("Yarn\\Berry\\cache", "Yarn (Berry) Global Cache"),
+                new("pnpm-cache", "PNPM Metadata Cache")
             ])
         ]),
 
@@ -427,6 +507,45 @@ public static class AppCatalog
             (AppDataRoot.UserProfile, [
                 new(".gradle\\caches\\build-cache-1", "Build Cache"),
                 new(".gradle\\daemon\\*\\*.log", "Daemon Logs")
+            ])
+        ]),
+
+        new("python-poetry", "Python (Poetry)", "Developer Tools", false,
+        [
+            // Not pypoetry\Cache\virtualenvs: those are the project environments.
+            (AppDataRoot.LocalAppData, [
+                new("pypoetry\\Cache\\artifacts", "Package Download Cache"),
+                new("pypoetry\\Cache\\cache", "Repository Metadata Cache")
+            ])
+        ]),
+
+        new("python-uv", "Python (uv)", "Developer Tools", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("uv\\cache", "Package Cache")
+            ])
+        ]),
+
+        new("composer", "Composer (PHP)", "Developer Tools", false,
+        [
+            (AppDataRoot.LocalAppData, [
+                new("Composer\\files", "Package Download Cache"),
+                new("Composer\\repo", "Repository Metadata Cache")
+            ])
+        ]),
+
+        new("bun", "Bun", "Developer Tools", false,
+        [
+            (AppDataRoot.UserProfile, [
+                new(".bun\\install\\cache", "Package Cache")
+            ])
+        ]),
+
+        new("visual-studio", "Visual Studio", "Developer Tools", false,
+        [
+            // The component (MEF) cache Visual Studio rebuilds on its next start.
+            (AppDataRoot.LocalAppData, [
+                new("Microsoft\\VisualStudio\\*\\ComponentModelCache", "Component Model Cache")
             ])
         ]),
 

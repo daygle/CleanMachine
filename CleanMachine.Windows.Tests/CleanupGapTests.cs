@@ -31,11 +31,11 @@ public sealed class CleanupGapTests
     [Fact]
     public void EverySupportedBrowserIsMonitoredForExit()
     {
-        var monitored = BackgroundAgent.ProcessToBrowser.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var monitored = BackgroundAgent.ProcessToBrowsers.Values.SelectMany(ids => ids).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var browser in BrowserCatalog.Browsers.Where(b => b.Family != BrowserFamily.InternetExplorer))
             Assert.Contains(browser.Id, monitored);
-        Assert.Equal("edge", BackgroundAgent.ProcessToBrowser["msedge"]);
+        Assert.Equal(new[] { "edge" }, BackgroundAgent.ProcessToBrowsers["msedge"]);
         Assert.DoesNotContain("ie", monitored);
     }
 
@@ -102,6 +102,21 @@ public sealed class CleanupGapTests
 
         Assert.All(selection, s => Assert.Equal("cache", s.ItemId));
         Assert.DoesNotContain(selection, s => s.BrowserId == "ie");
+    }
+
+    // ---- Nothing needs administrator rights ----
+
+    [Fact]
+    public void NoWindowsCleanupCategoryNeedsAdministratorRights()
+    {
+        // CleanMachine ships only through the Store without allowElevation, so it
+        // can never run as an administrator. A category under the Windows folder
+        // (Prefetch, event logs, Windows Update caches) could only ever fail with
+        // "Access denied", so none may be offered.
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+        Assert.DoesNotContain(WindowsCleanupService.Catalog, c =>
+            c.Path is { } path && Path.IsPathFullyQualified(path) && NativeSafety.IsWithin(path, windows));
     }
 
     // ---- Broken shortcuts ----
