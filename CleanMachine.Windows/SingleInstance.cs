@@ -178,7 +178,7 @@ public static class SingleInstance
             return !IsProcessRunning(processName);
         }
         // The event was signalled; wait until the instance is actually gone so the
-        // caller (installer) can immediately delete or replace its files.
+        // caller (the in-app uninstaller) can immediately remove the package.
         return WaitForProcessExit(processName, timeout ?? ShutdownTimeout);
     }
 
@@ -195,7 +195,7 @@ public static class SingleInstance
 
     /// <summary>Handles the --shutdown command line: asks a running instance to exit
     /// and force-kills it as a last resort. Returns true when no CleanMachine
-    /// process remains. Used by the installer's uninstall step; safe to call
+    /// process remains. Used by the in-app uninstaller; safe to call
     /// headlessly because this helper process never holds the instance mutex.</summary>
     public static bool HandleShutdownArgument(string processName = "CleanMachine") =>
         RequestOtherInstanceExit(processName) || ForceKill(processName);
