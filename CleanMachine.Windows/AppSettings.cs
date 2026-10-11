@@ -361,6 +361,10 @@ public sealed class AppSettings
                     if (!Enum.IsDefined(s.AfterClean)) s.AfterClean = ScheduleAction.Nothing;
                     s.WindowsCategoryIds = CapList(s.WindowsCategoryIds);
                     s.RegistryCategories = CapList(s.RegistryCategories);
+                    // Null stays null: it marks a schedule saved before browsers and
+                    // apps could be chosen, which keeps its old "all" behaviour.
+                    if (s.BrowserIds is not null) s.BrowserIds = CapList(s.BrowserIds);
+                    if (s.AppIds is not null) s.AppIds = CapList(s.AppIds);
                     if (string.IsNullOrWhiteSpace(s.Name) || s.Name.Length > 200) s.Name = "Scheduled cleanup";
                     return s;
                 })

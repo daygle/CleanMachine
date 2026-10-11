@@ -30,20 +30,8 @@ public sealed partial class AutomaticCleanupPage : Page
 
         // Browser monitoring
         CleanToggle.IsChecked = _settings.CleanOnBrowserExit;
-        var chrome = _settings.FindBrowserMonitor("chrome");
-        var edge = _settings.FindBrowserMonitor("edge");
-        var firefox = _settings.FindBrowserMonitor("firefox");
-        ChromeEnabled.IsChecked = chrome?.Enabled ?? true;
-        ChromeAction.SelectedIndex = ToComboIndex(chrome?.AfterExit ?? ExitAction.CleanAndNotify);
-        EdgeEnabled.IsChecked = edge?.Enabled ?? true;
-        EdgeAction.SelectedIndex = ToComboIndex(edge?.AfterExit ?? ExitAction.CleanAndNotify);
-        FirefoxEnabled.IsChecked = firefox?.Enabled ?? true;
-        FirefoxAction.SelectedIndex = ToComboIndex(firefox?.AfterExit ?? ExitAction.CleanAndNotify);
-        UpdateExitItemsButton(ChromeItemsButton, "chrome");
-        UpdateExitItemsButton(EdgeItemsButton, "edge");
-        UpdateExitItemsButton(FirefoxItemsButton, "firefox");
         UpdateMonitorHint();
-        await ShowInstalledBrowsersAsync();
+        await BuildBrowserRowsAsync();
 
         // Low disk space
         SystemMonitoringToggle.IsChecked = _settings.SystemMonitoringEnabled;
@@ -81,33 +69,72 @@ public sealed partial class AutomaticCleanupPage : Page
         await SaveAndApplyAsync();
     }
 
-    // Only list browsers that are installed; uninstalled ones keep their saved
-    // settings so they take effect if the browser is installed later.
-    private async Task ShowInstalledBrowsersAsync()
-    {
-        var installed = await Task.Run(() => new[] { "chrome", "edge", "firefox" }
-            .Where(id => BrowserCatalog.Find(id) is { } b && BrowserCatalog.IsInstalled(b))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase));
+    // One row per browser in the table: the id plus its three controls.
+    private readonly List<(string Id, CheckBox Enabled, ComboBox Action, Button Items)> _monitorRows = [];
 
-        SetRowVisible(installed.Contains("chrome"), ChromeEnabled, ChromeAction, ChromeItemsButton);
-        SetRowVisible(installed.Contains("edge"), EdgeEnabled, EdgeAction, EdgeItemsButton);
-        SetRowVisible(installed.Contains("firefox"), FirefoxEnabled, FirefoxAction, FirefoxItemsButton);
+    /// <summary>Adds a row for every installed browser Browser Cleaner supports.
+    /// Uninstalled ones keep their saved settings so they take effect if the
+    /// browser is installed later. A browser with no saved monitor (one this page
+    /// did not list before) starts unticked - exactly what the background agent
+    /// does for it - so nothing starts cleaning on exit until the user opts in.</summary>
+    private async Task BuildBrowserRowsAsync()
+    {
+        var installed = await Task.Run(() => BrowserCatalog.InstalledCacheBrowsers());
+
+        foreach (var (_, enabled, action, items) in _monitorRows)
+        {
+            BrowserGrid.Children.Remove(enabled);
+            BrowserGrid.Children.Remove(action);
+            BrowserGrid.Children.Remove(items);
+        }
+        _monitorRows.Clear();
+        while (BrowserGrid.RowDefinitions.Count > 1)
+            BrowserGrid.RowDefinitions.RemoveAt(BrowserGrid.RowDefinitions.Count - 1);
+
+        foreach (var browser in installed)
+        {
+            var monitor = _settings.FindBrowserMonitor(browser.Id);
+            var row = BrowserGrid.RowDefinitions.Count;
+            BrowserGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var enabled = new CheckBox { Content = browser.Name, IsChecked = monitor?.Enabled ?? false, Margin = new Thickness(0, 4, 0, 4) };
+            var action = new ComboBox { Margin = new Thickness(0, 4, 0, 4) };
+            action.Items.Add(new ComboBoxItem { Content = "Do nothing" });
+            action.Items.Add(new ComboBoxItem { Content = "Clean silently" });
+            action.Items.Add(new ComboBoxItem { Content = "Clean and notify" });
+            action.SelectedIndex = ToComboIndex(monitor?.AfterExit ?? ExitAction.CleanAndNotify);
+            var items = new Button
+            {
+                Tag = browser.Id,
+                Padding = new Thickness(14, 8, 14, 8),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            UpdateExitItemsButton(items, browser.Id);
+
+            enabled.Checked += (_, _) => OnMonitorRowChanged();
+            enabled.Unchecked += (_, _) => OnMonitorRowChanged();
+            action.SelectionChanged += (_, _) => OnMonitorRowChanged();
+            items.Click += ChooseExitItems_Click;
+
+            Grid.SetRow(enabled, row); Grid.SetColumn(enabled, 0);
+            Grid.SetRow(action, row); Grid.SetColumn(action, 1);
+            Grid.SetRow(items, row); Grid.SetColumn(items, 2);
+            BrowserGrid.Children.Add(enabled);
+            BrowserGrid.Children.Add(action);
+            BrowserGrid.Children.Add(items);
+            _monitorRows.Add((browser.Id, enabled, action, items));
+        }
+
         BrowserTable.Visibility = installed.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         NoBrowsersNote.Visibility = installed.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private static void SetRowVisible(bool visible, params FrameworkElement[] row)
-    {
-        foreach (var element in row)
-            element.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private async void BrowserMonitor_Changed(object sender, RoutedEventArgs e)
+    private async void OnMonitorRowChanged()
     {
         if (!_ready) return;
-        ApplyMonitor("chrome", ChromeEnabled, ChromeAction);
-        ApplyMonitor("edge", EdgeEnabled, EdgeAction);
-        ApplyMonitor("firefox", FirefoxEnabled, FirefoxAction);
+        foreach (var (id, enabled, action, _) in _monitorRows)
+            ApplyMonitor(id, enabled, action);
         UpdateMonitorHint();
         await SaveAndApplyAsync();
     }
@@ -117,6 +144,9 @@ public sealed partial class AutomaticCleanupPage : Page
         var monitor = _settings.FindBrowserMonitor(id);
         if (monitor is null)
         {
+            // Not saved yet (a browser this page did not list before): only start
+            // tracking it once the user actually turns it on.
+            if (enabled.IsChecked != true) return;
             monitor = new BrowserMonitorSetting { Browser = id };
             _settings.BrowserMonitors.Add(monitor);
         }
@@ -143,9 +173,16 @@ public sealed partial class AutomaticCleanupPage : Page
     private async void ChooseExitItems_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string browser }) return;
-        var monitor = _settings.FindBrowserMonitor(browser);
         var browserDefinition = BrowserCatalog.Find(browser);
-        if (monitor is null || browserDefinition is null) return;
+        if (browserDefinition is null) return;
+        // A browser with no saved monitor yet can still have its items chosen; the
+        // monitor is created switched off, so choosing items alone cleans nothing.
+        var monitor = _settings.FindBrowserMonitor(browser);
+        if (monitor is null)
+        {
+            monitor = new BrowserMonitorSetting { Browser = browser, Enabled = false };
+            _settings.BrowserMonitors.Add(monitor);
+        }
 
         var effective = _settings.EffectiveExitItems(browser);
         var panel = new StackPanel { Spacing = 6 };
@@ -267,16 +304,6 @@ public sealed partial class AutomaticCleanupPage : Page
     private bool IsCategoryChecked(CleanupCategory category, HashSet<string>? selection)
         => selection is { } set ? set.Contains(category.Id) : WindowsCleanupService.IsEnabled(category, _settings);
 
-    // Internet Explorer is left out: its cache is the Windows Internet Cache, already
-    // a Windows Cleanup category.
-    private static List<BrowserDefinition> InstalledBrowsers() => BrowserCatalog.Browsers
-        .Where(b => b.Family != BrowserFamily.InternetExplorer && BrowserCatalog.IsInstalled(b))
-        .ToList();
-
-    private static List<AppDefinition> InstalledApps() => AppCatalog.Definitions
-        .Where(AppCleanupService.IsInstalled)
-        .ToList();
-
     private void UpdateItemsSummary(TextBlock target, TriggerItems items)
     {
         string windows;
@@ -310,8 +337,8 @@ public sealed partial class AutomaticCleanupPage : Page
     /// so reinstalling one brings the choice back.</summary>
     private async Task<TriggerItems?> PickItemsAsync(string title, TriggerItems current)
     {
-        var browsers = await Task.Run(() => InstalledBrowsers());
-        var apps = await Task.Run(() => InstalledApps());
+        var browsers = await Task.Run(() => BrowserCatalog.InstalledCacheBrowsers());
+        var apps = await Task.Run(() => AppCleanupService.InstalledApps());
 
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(Note("Tick what this trigger should clean. Items are grouped by the CleanMachine page they come from; tick a page heading to select or clear its whole section. Only items that are safe to remove unattended are listed."));

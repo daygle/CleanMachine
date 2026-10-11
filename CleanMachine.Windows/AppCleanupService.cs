@@ -16,6 +16,11 @@ public sealed class AppCleanupService
     public Task<IReadOnlyList<AppScan>> ScanAllAsync(CancellationToken token = default)
         => Task.Run<IReadOnlyList<AppScan>>(() => AppCatalog.Definitions.Select(ScanApp).ToArray(), token);
 
+    /// <summary>Catalog apps detected on this PC, without sizing their files - cheap
+    /// enough to fill a picker.</summary>
+    internal static IReadOnlyList<AppDefinition> InstalledApps()
+        => AppCatalog.Definitions.Where(IsInstalled).ToList();
+
     /// <summary>Scans a single app by its catalog id.</summary>
     public Task<AppScan?> ScanAsync(string appId, CancellationToken token = default)
         => Task.Run(() =>
@@ -280,20 +285,15 @@ public sealed class AppCleanupService
             "zoom" => DirExists(LocalAppData, "Zoom"),
             "microsoft-office" => DirExists(ProgramFiles, "Microsoft Office") || DirExists(ProgramFilesX86, "Microsoft Office"),
             "onedrive" => DirExists(LocalAppData, "OneDrive"),
-            "microsoft-edge" => DirExists(LocalAppData, "Microsoft\\Edge"),
             "discord" => DirExists(RoamingAppData, "discord") || DirExists(LocalAppData, "Discord"),
             "slack" => DirExists(RoamingAppData, "Slack"),
             "spotify" => DirExists(LocalAppData, "Spotify"),
             "teams-classic" => DirExists(RoamingAppData, "Microsoft\\Teams"),
             "vscode" => DirExists(RoamingAppData, "Code") || DirExists(LocalAppData, "Programs\\Microsoft VS Code"),
-            "chrome" => DirExists(LocalAppData, "Google\\Chrome"),
-            "brave" => DirExists(LocalAppData, "BraveSoftware\\Brave-Browser"),
             "adobe-acrobat" => DirExists(LocalAppData, "Adobe\\Acrobat"),
             "adobe-media-cache" => DirExists(RoamingAppData, "Adobe\\Common"),
             "signal" => DirExists(RoamingAppData, "Signal") || DirExists(LocalAppData, "Programs\\signal-desktop"),
             "postman" => DirExists(RoamingAppData, "Postman") || DirExists(LocalAppData, "Postman"),
-            "vivaldi" => DirExists(LocalAppData, "Vivaldi"),
-            "opera" => DirExists(RoamingAppData, "Opera Software") || DirExists(LocalAppData, "Opera Software"),
             "epic-games" => DirExists(ProgramFilesX86, "Epic Games") || DirExists(LocalAppData, "EpicGamesLauncher"),
             "thunderbird" => DirExists(RoamingAppData, "Thunderbird") || DirExists(LocalAppData, "Thunderbird"),
             "jetbrains" => DirExists(LocalAppData, "JetBrains") || DirExists(RoamingAppData, "JetBrains"),

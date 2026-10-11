@@ -5,7 +5,7 @@ using Microsoft.Win32;
 namespace CleanMachine.Windows;
 
 public enum CleanupRisk { Safe, Review, Advanced }
-public enum CleanupKind { Files, RegistryValues, RecycleBin, DnsCache, ClipboardHistory }
+public enum CleanupKind { Files, RegistryValues, RecycleBin, DnsCache, ClipboardHistory, BrokenShortcuts }
 
 public static class CleanupKindExtensions
 {
@@ -71,6 +71,7 @@ public sealed class WindowsCleanupService
         new("explorer-recent-docs", "Windows Explorer", "Recent Documents History", "The recent-documents list (per file type)", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs"),
         new("explorer-map-drive-mru", "Windows Explorer", "Mapped Drive History", "Remembered 'Map network drive' paths", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\Map Network Drive MRU"),
         new("explorer-icon-cache", "Windows Explorer", "Icon Cache", "Cached icons Windows can recreate", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(LocalAppData, "Microsoft", "Windows", "Explorer"), Pattern: "iconcache*.db"),
+        new("explorer-broken-shortcuts", "Windows Explorer", "Broken Shortcuts", "Desktop and Start menu shortcuts whose target no longer exists on this PC (network and removable drives are never judged)", CleanupRisk.Review, false, CleanupKind.BrokenShortcuts),
         new("explorer-jump-lists-custom", "Windows Explorer", "Custom Jump Lists", "App-defined recent-item jump lists", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "Recent", "CustomDestinations"), Pattern: "*"),
 
         // ---- Windows System ----
@@ -138,6 +139,7 @@ public sealed class WindowsCleanupService
                 CleanupKind.Files => GetDirectorySize(category.Path!, category.Pattern, category.Extensions, excludedPaths),
                 CleanupKind.RegistryValues => CountRegistryValues(category.Path!),
                 CleanupKind.RecycleBin => GetRecycleBinSize(),
+                CleanupKind.BrokenShortcuts => BrokenShortcuts.Find(excludedPaths).Sum(GetLength),
                 _ => 0
             };
             items.Add(new CleanupItem(category, bytes));
@@ -150,6 +152,8 @@ public sealed class WindowsCleanupService
     /// category is clicked after analysis.</summary>
     public IReadOnlyList<CleanupFileDetail> ScanFiles(CleanupCategory category, IReadOnlySet<string>? excludedPaths = null)
     {
+        if (category.Kind == CleanupKind.BrokenShortcuts)
+            return BrokenShortcuts.Find(excludedPaths).Select(f => new CleanupFileDetail(f, GetLength(f))).ToList();
         if (category.Kind != CleanupKind.Files) return [];
         return GetCleanableFiles(category, excludedPaths)
             .Select(f => new CleanupFileDetail(f, GetLength(f)))
@@ -197,14 +201,18 @@ public sealed class WindowsCleanupService
             return new CleanupReport(new CleanupResult(0, 0), issues);
         }
 
-        foreach (var category in selected.Where(c => c.Kind == CleanupKind.Files))
+        foreach (var category in selected.Where(c => c.Kind is CleanupKind.Files or CleanupKind.BrokenShortcuts))
         {
             cancellationToken.ThrowIfCancellationRequested();
             // File discovery can itself take noticeable time in large temp/cache
             // trees. Report the phase before materializing the list so the UI does
             // not appear frozen at the generic "Cleaning..." message.
             progress?.Report(new CleanupProgress($"Preparing {category.Name}", 0, 0, recovered));
-            var files = GetCleanableFiles(category, options.ExcludedPaths);
+            var files = category.Kind == CleanupKind.BrokenShortcuts
+                // Re-checked at clean time (a target may have come back since the
+                // scan) and confined to the shortcut folders.
+                ? BrokenShortcuts.Find(options.ExcludedPaths).Where(BrokenShortcuts.IsInLocations).ToArray()
+                : GetCleanableFiles(category, options.ExcludedPaths);
             var categoryRemoved = 0;
             var categorySkipped = 0;
             long categoryBytes = 0;
@@ -312,6 +320,17 @@ public sealed class WindowsCleanupService
                     var count = CountRegistryValues(category.Path!);
                     total += (int)count;
                     if (count > 0) shown.Add(new CleanupPreviewItem(category.Name, $"{count:N0} registry value(s) to clear", 0));
+                    break;
+                case CleanupKind.BrokenShortcuts:
+                    foreach (var shortcut in BrokenShortcuts.Find(excludedPaths))
+                    {
+                        total++;
+                        if (fileShown < maxFileItems)
+                        {
+                            shown.Add(new CleanupPreviewItem(category.Name, shortcut, GetLength(shortcut)));
+                            fileShown++;
+                        }
+                    }
                     break;
                 case CleanupKind.RecycleBin:
                     total++;

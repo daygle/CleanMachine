@@ -235,7 +235,7 @@ public sealed partial class WindowsCleanupPage : Page
 
     private Border BuildReportRow(CleanupCategory category, string group, CleanupItem item)
     {
-        var isFile = category.Kind == CleanupKind.Files;
+        var isFile = category.Kind is CleanupKind.Files or CleanupKind.BrokenShortcuts;
         var isHistory = category.Kind == CleanupKind.RegistryValues;
 
         // Framed card matching the Application Cleanup / Browser Cleaner right panels:
