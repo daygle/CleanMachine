@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using Microsoft.Win32;
 
 namespace CleanMachine.Windows;
@@ -27,7 +28,20 @@ public sealed record CleanupCategory(
     CleanupKind Kind,
     string? Path = null,
     string? Pattern = null,
-    string[]? Extensions = null);
+    string[]? Extensions = null)
+{
+    private static readonly string WindowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+    /// <summary>True for a category whose files live under the Windows folder
+    /// (Prefetch, event logs, driver logs, Windows Update and Delivery Optimization
+    /// caches). Only an administrator can delete them, and CleanMachine never asks
+    /// for elevation, so these are offered only when the app already runs as one.</summary>
+    public bool RequiresAdministrator
+        => Kind == CleanupKind.Files
+           && !string.IsNullOrEmpty(Path)
+           && !string.IsNullOrEmpty(WindowsDirectory)
+           && NativeSafety.IsWithin(Path, WindowsDirectory);
+}
 
 public sealed record CleanupItem(CleanupCategory Category, long Bytes);
 public sealed record CleanupFileDetail(string Path, long Bytes);
@@ -124,6 +138,30 @@ public sealed class WindowsCleanupService
     /// and Registry areas. That is what lets a category stay selected while it is
     /// still empty, and lets a category added by a future version be picked up
     /// without the user revisiting the page.</summary>
+    /// <summary>Whether this process runs as an administrator. Normally false: the
+    /// app runs with the user's standard rights (the Store build cannot elevate at
+    /// all), and scheduled tasks are registered with least privilege.</summary>
+    public static bool IsElevated { get; } = DetectElevation();
+
+    private static bool DetectElevation()
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Whether a category can actually be cleaned in this process.</summary>
+    public static bool IsAvailable(CleanupCategory category) => !category.RequiresAdministrator || IsElevated;
+
+    /// <summary>The catalog minus the categories this process cannot clean. Every
+    /// list a user picks from uses this, so nothing is offered that would only
+    /// fail with "Access denied".</summary>
+    public static IReadOnlyList<CleanupCategory> Available => Catalog.Where(IsAvailable).ToList();
+
     public static bool IsEnabled(CleanupCategory category, AppSettings settings)
         => settings.EnabledCleanupCategories.Contains(category.Id)
            || (!settings.DisabledCleanupCategories.Contains(category.Id)
@@ -132,7 +170,7 @@ public sealed class WindowsCleanupService
     public IReadOnlyList<CleanupItem> Scan(IReadOnlySet<string>? excludedPaths = null)
     {
         var items = new List<CleanupItem>(Catalog.Count);
-        foreach (var category in Catalog)
+        foreach (var category in Available)
         {
             long bytes = category.Kind switch
             {
@@ -190,6 +228,13 @@ public sealed class WindowsCleanupService
             .Where(category => !catalogById.ContainsKey(category.Id))
             .Select(category => new CleanupIssue(category.Id, "Unknown cleanup category was rejected by the safety catalog."))
             .ToList();
+        // Categories that need administrator rights are skipped rather than attempted
+        // file by file (each would fail with "Access denied"). This also covers
+        // schedules saved before such categories were hidden.
+        issues.AddRange(selected
+            .Where(category => !IsAvailable(category))
+            .Select(category => new CleanupIssue(category.Name, "Needs administrator rights - skipped")));
+        selected = selected.Where(IsAvailable).ToArray();
         var breakdown = new List<CleanupCategoryResult>();
         var removed = 0;
         long recovered = 0;
