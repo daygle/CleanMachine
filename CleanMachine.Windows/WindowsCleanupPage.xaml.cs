@@ -12,7 +12,7 @@ public sealed partial class WindowsCleanupPage : Page
     private readonly WindowsCleanupService _service = new();
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     private AppSettings _settings = new();
-    // Suppresses the Auto-Select Everything handler while the switch is being restored
+    // Suppresses the Auto-Select All handler while the switch is being restored
     // from settings, so loading does not immediately write the file back.
     private bool _ready;
     private CancellationTokenSource? _cancel;

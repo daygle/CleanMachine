@@ -138,7 +138,7 @@
         <CheckBox x:Name="SelectAllCheck" Content="Select All Shown" VerticalAlignment="Center"
                   Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"
                   ToolTipService.ToolTip="Ticks or clears every category currently listed. Tick Show All first to include the empty ones."/>
-        <CheckBox x:Name="AutoSelectAllCheck" Content="Auto-Select Everything" VerticalAlignment="Center"
+        <CheckBox x:Name="AutoSelectAllCheck" Content="Auto-Select All" VerticalAlignment="Center"
                   Checked="AutoSelectAll_Changed" Unchecked="AutoSelectAll_Changed"
                   ToolTipService.ToolTip="Keeps every category selected by default, including the ones with nothing to clean right now and any category added later. Unticking a single category still opts it out."/>
       </StackPanel>

@@ -138,7 +138,7 @@
         <CheckBox x:Name="SelectAllCheck" Content="Select All Shown" VerticalAlignment="Center"
                   Checked="SelectAll_Changed" Unchecked="SelectAll_Changed"
                   ToolTipService.ToolTip="Ticks or clears every finding currently listed. Tick Show All first to include the ineligible ones."/>
-        <CheckBox x:Name="AutoSelectAllCheck" Content="Auto-Select Everything" VerticalAlignment="Center"
+        <CheckBox x:Name="AutoSelectAllCheck" Content="Auto-Select All" VerticalAlignment="Center"
                   Checked="AutoSelectAll_Changed" Unchecked="AutoSelectAll_Changed"
                   ToolTipService.ToolTip="Keeps every finding selected by default, including ones not yet eligible for automatic cleaning and any found later. Ineligible findings are still skipped rather than deleted."/>
         <HyperlinkButton x:Name="BackupsLink" Click="BackupsLink_Click" Padding="4,0"

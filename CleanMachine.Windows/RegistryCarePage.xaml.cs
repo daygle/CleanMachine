@@ -8,12 +8,12 @@ public sealed partial class RegistryCarePage : Page
 {
     private readonly RegistryCareService _service = new();
     private AppSettings _settings = new();
-    // Suppresses the Auto-Select Everything handler while the switch is restored from
+    // Suppresses the Auto-Select All handler while the switch is restored from
     // settings, so loading does not immediately write the file back.
     private bool _ready;
     // Set while the sticky mode is being applied to the boxes, so the ticks it
     // produces are treated as derived state rather than as the user having
-    // chosen them - otherwise switching Auto-Select Everything off would not take
+    // chosen them - otherwise switching Auto-Select All off would not take
     // effect until each finding was unticked by hand.
     private bool _applyingDefaults;
     // Source of truth for selection: each finding's left-hand checkbox. The right
@@ -49,7 +49,7 @@ public sealed partial class RegistryCarePage : Page
 
     /// <summary>The remembered choice if there is one, otherwise the default:
     /// eligible findings are ticked and ineligible ones are not - unless
-    /// Auto-Select Everything is on, which opts those in as well.</summary>
+    /// Auto-Select All is on, which opts those in as well.</summary>
     private bool DefaultIsChecked(RegistryFinding finding, bool cleanable)
         => _settings.RegistryCareSelection.TryGetValue(SelectionKey(finding), out var saved)
             ? saved
@@ -252,7 +252,7 @@ public sealed partial class RegistryCarePage : Page
         foreach (var finding in findings)
         {
             var cleanable = RegistryCareService.IsCleanable(finding);
-            // Ineligible findings stay tickable (Select All Shown and Auto-Select Everything
+            // Ineligible findings stay tickable (Select All Shown and Auto-Select All
             // have to reach them) but are dimmed, and the label says why, so a tick
             // is never mistaken for a promise that the value will be removed.
             var key = SelectionKey(finding);

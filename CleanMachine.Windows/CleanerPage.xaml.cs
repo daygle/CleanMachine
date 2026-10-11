@@ -16,7 +16,7 @@ public sealed partial class CleanerPage : Page
     private BrowserScan? _detailScan;
     // Set while the sticky mode is being applied to the boxes, so the ticks it
     // produces are treated as derived state rather than as the user having
-    // chosen them - otherwise switching Auto-Select Everything off would not take
+    // chosen them - otherwise switching Auto-Select All off would not take
     // effect until each item was unticked by hand.
     private bool _applyingDefaults;
 
@@ -84,7 +84,7 @@ public sealed partial class CleanerPage : Page
     }
 
     /// <summary>The remembered choice if there is one, otherwise the default: safe
-    /// items are ticked, destructive ones are not - unless Auto-Select Everything is on,
+    /// items are ticked, destructive ones are not - unless Auto-Select All is on,
     /// which opts them in as well.</summary>
     private bool DefaultIsChecked(string browserId, string itemId, bool destructive)
         => _settings.BrowserCleanupSelection.TryGetValue($"{browserId}:{itemId}", out var saved)
