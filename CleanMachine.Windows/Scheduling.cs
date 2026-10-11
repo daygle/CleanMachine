@@ -130,6 +130,54 @@ public static class ScheduledTask
         return $"-NoProfile -NonInteractive -Command \"{script}\"";
     }
 
+    /// <summary>When a timed schedule next fires after <paramref name="now"/>, matching
+    /// the trigger schtasks registers; null for an at-logon schedule. A monthly day
+    /// the month does not have (the 31st in April) is skipped that month, as Task
+    /// Scheduler does.</summary>
+    public static DateTime? NextRun(CleanupSchedule schedule, DateTime now)
+    {
+        var hour = Math.Clamp(schedule.Hour, 0, 23);
+        var minute = Math.Clamp(schedule.Minute, 0, 59);
+        DateTime At(DateTime day) => day.Date.AddHours(hour).AddMinutes(minute);
+
+        switch (schedule.Trigger)
+        {
+            case ScheduleTrigger.Daily:
+            {
+                var today = At(now);
+                return today > now ? today : today.AddDays(1);
+            }
+            case ScheduleTrigger.Weekly:
+            {
+                var days = ((int)schedule.DayOfWeek - (int)now.DayOfWeek + 7) % 7;
+                var candidate = At(now.AddDays(days));
+                return candidate > now ? candidate : candidate.AddDays(7);
+            }
+            case ScheduleTrigger.Monthly:
+            {
+                var day = Math.Clamp(schedule.DayOfMonth, 1, 31);
+                var month = new DateTime(now.Year, now.Month, 1);
+                // Every day 1-31 occurs at least once in any 12 consecutive months.
+                for (var i = 0; i <= 12; i++, month = month.AddMonths(1))
+                {
+                    if (day > DateTime.DaysInMonth(month.Year, month.Month)) continue;
+                    var candidate = At(new DateTime(month.Year, month.Month, day));
+                    if (candidate > now) return candidate;
+                }
+                return null;
+            }
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>"Next run: ..." for the save confirmation, in the user's own date and
+    /// time format.</summary>
+    public static string DescribeNextRun(CleanupSchedule schedule, DateTime now)
+        => NextRun(schedule, now) is { } next
+            ? $"Next run: {next:dddd d MMMM} at {next:t}."
+            : "It will run the next time you sign in to Windows.";
+
     /// <summary>True when the schedule actually has something to clean.</summary>
     public static bool HasWork(CleanupSchedule schedule)
         => schedule.WindowsCategoryIds.Count > 0 || schedule.CleanBrowserCache
