@@ -156,11 +156,23 @@ public sealed class AppSettings
     // ever offer/clean Safe-risk categories (Review/Advanced are never included).
     public HashSet<string>? StartupCleanCategories { get; set; }
     public HashSet<string>? IdleCleanCategories { get; set; }
+    // Browser Cleaner and Application Cleanup items the startup and idle cleans also
+    // remove: browser ids whose Internet Cache is cleared (never history, cookies or
+    // other saved data) and AppCatalog ids whose temp files are cleared. Empty by
+    // default, so existing setups keep cleaning only their Windows categories.
+    public HashSet<string> StartupCleanBrowsers { get; set; } = [];
+    public HashSet<string> StartupCleanApps { get; set; } = [];
+    public HashSet<string> IdleCleanBrowsers { get; set; } = [];
+    public HashSet<string> IdleCleanApps { get; set; } = [];
     // Which Safe Windows categories the low-disk-space monitor cleans. A null set
     // means "not configured" - it falls back to every Safe category enabled on the
     // Windows Cleanup page. An empty set means the user deselected everything, so
     // the monitor cleans nothing.
     public HashSet<string>? SystemMonitorCategories { get; set; }
+    // Browser caches and application temp files the low-disk-space monitor also
+    // clears, like the startup and idle selections above. Empty by default.
+    public HashSet<string> SystemMonitorBrowsers { get; set; } = [];
+    public HashSet<string> SystemMonitorApps { get; set; } = [];
 
     // The background agent has no standalone switch: it runs whenever a service
     // that needs it is enabled (automatic cleanup).
@@ -278,7 +290,13 @@ public sealed class AppSettings
         QuickCleanApps = CapSetOrNull(QuickCleanApps);
         StartupCleanCategories = CapSetOrNull(StartupCleanCategories);
         IdleCleanCategories = CapSetOrNull(IdleCleanCategories);
+        StartupCleanBrowsers = CapSet(StartupCleanBrowsers, []);
+        StartupCleanApps = CapSet(StartupCleanApps, []);
+        IdleCleanBrowsers = CapSet(IdleCleanBrowsers, []);
+        IdleCleanApps = CapSet(IdleCleanApps, []);
         SystemMonitorCategories = CapSetOrNull(SystemMonitorCategories);
+        SystemMonitorBrowsers = CapSet(SystemMonitorBrowsers, []);
+        SystemMonitorApps = CapSet(SystemMonitorApps, []);
 
         if (BrowserCleanupSelection is null || BrowserCleanupSelection.Count > MaxCollectionEntries)
             BrowserCleanupSelection = [];
@@ -343,6 +361,10 @@ public sealed class AppSettings
                     if (!Enum.IsDefined(s.AfterClean)) s.AfterClean = ScheduleAction.Nothing;
                     s.WindowsCategoryIds = CapList(s.WindowsCategoryIds);
                     s.RegistryCategories = CapList(s.RegistryCategories);
+                    // Null stays null: it marks a schedule saved before browsers and
+                    // apps could be chosen, which keeps its old "all" behaviour.
+                    if (s.BrowserIds is not null) s.BrowserIds = CapList(s.BrowserIds);
+                    if (s.AppIds is not null) s.AppIds = CapList(s.AppIds);
                     if (string.IsNullOrWhiteSpace(s.Name) || s.Name.Length > 200) s.Name = "Scheduled cleanup";
                     return s;
                 })

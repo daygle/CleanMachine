@@ -30,20 +30,8 @@ public sealed partial class AutomaticCleanupPage : Page
 
         // Browser monitoring
         CleanToggle.IsChecked = _settings.CleanOnBrowserExit;
-        var chrome = _settings.FindBrowserMonitor("chrome");
-        var edge = _settings.FindBrowserMonitor("edge");
-        var firefox = _settings.FindBrowserMonitor("firefox");
-        ChromeEnabled.IsChecked = chrome?.Enabled ?? true;
-        ChromeAction.SelectedIndex = ToComboIndex(chrome?.AfterExit ?? ExitAction.CleanAndNotify);
-        EdgeEnabled.IsChecked = edge?.Enabled ?? true;
-        EdgeAction.SelectedIndex = ToComboIndex(edge?.AfterExit ?? ExitAction.CleanAndNotify);
-        FirefoxEnabled.IsChecked = firefox?.Enabled ?? true;
-        FirefoxAction.SelectedIndex = ToComboIndex(firefox?.AfterExit ?? ExitAction.CleanAndNotify);
-        UpdateExitItemsButton(ChromeItemsButton, "chrome");
-        UpdateExitItemsButton(EdgeItemsButton, "edge");
-        UpdateExitItemsButton(FirefoxItemsButton, "firefox");
         UpdateMonitorHint();
-        await ShowInstalledBrowsersAsync();
+        await BuildBrowserRowsAsync();
 
         // Low disk space
         SystemMonitoringToggle.IsChecked = _settings.SystemMonitoringEnabled;
@@ -64,9 +52,9 @@ public sealed partial class AutomaticCleanupPage : Page
         RecycleBinDaysBox.Value = Math.Clamp(_settings.RecycleBinAutoEmptyDays, 1, 365);
         RecycleBinNotifyToggle.IsChecked = _settings.RecycleBinAutoEmptyNotify;
 
-        UpdateItemsSummary(MonitorItemsSummary, _settings.SystemMonitorCategories);
-        UpdateItemsSummary(StartupItemsSummary, _settings.StartupCleanCategories);
-        UpdateItemsSummary(IdleItemsSummary, _settings.IdleCleanCategories);
+        UpdateItemsSummary(MonitorItemsSummary, MonitorItems);
+        UpdateItemsSummary(StartupItemsSummary, StartupItems);
+        UpdateItemsSummary(IdleItemsSummary, IdleItems);
 
         _ready = true;
     }
@@ -81,33 +69,72 @@ public sealed partial class AutomaticCleanupPage : Page
         await SaveAndApplyAsync();
     }
 
-    // Only list browsers that are installed; uninstalled ones keep their saved
-    // settings so they take effect if the browser is installed later.
-    private async Task ShowInstalledBrowsersAsync()
-    {
-        var installed = await Task.Run(() => new[] { "chrome", "edge", "firefox" }
-            .Where(id => BrowserCatalog.Find(id) is { } b && BrowserCatalog.IsInstalled(b))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase));
+    // One row per browser in the table: the id plus its three controls.
+    private readonly List<(string Id, CheckBox Enabled, ComboBox Action, Button Items)> _monitorRows = [];
 
-        SetRowVisible(installed.Contains("chrome"), ChromeEnabled, ChromeAction, ChromeItemsButton);
-        SetRowVisible(installed.Contains("edge"), EdgeEnabled, EdgeAction, EdgeItemsButton);
-        SetRowVisible(installed.Contains("firefox"), FirefoxEnabled, FirefoxAction, FirefoxItemsButton);
+    /// <summary>Adds a row for every installed browser Browser Cleaner supports.
+    /// Uninstalled ones keep their saved settings so they take effect if the
+    /// browser is installed later. A browser with no saved monitor (one this page
+    /// did not list before) starts unticked - exactly what the background agent
+    /// does for it - so nothing starts cleaning on exit until the user opts in.</summary>
+    private async Task BuildBrowserRowsAsync()
+    {
+        var installed = await Task.Run(() => BrowserCatalog.InstalledCacheBrowsers());
+
+        foreach (var (_, enabled, action, items) in _monitorRows)
+        {
+            BrowserGrid.Children.Remove(enabled);
+            BrowserGrid.Children.Remove(action);
+            BrowserGrid.Children.Remove(items);
+        }
+        _monitorRows.Clear();
+        while (BrowserGrid.RowDefinitions.Count > 1)
+            BrowserGrid.RowDefinitions.RemoveAt(BrowserGrid.RowDefinitions.Count - 1);
+
+        foreach (var browser in installed)
+        {
+            var monitor = _settings.FindBrowserMonitor(browser.Id);
+            var row = BrowserGrid.RowDefinitions.Count;
+            BrowserGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var enabled = new CheckBox { Content = browser.Name, IsChecked = monitor?.Enabled ?? false, Margin = new Thickness(0, 4, 0, 4) };
+            var action = new ComboBox { Margin = new Thickness(0, 4, 0, 4) };
+            action.Items.Add(new ComboBoxItem { Content = "Do nothing" });
+            action.Items.Add(new ComboBoxItem { Content = "Clean silently" });
+            action.Items.Add(new ComboBoxItem { Content = "Clean and notify" });
+            action.SelectedIndex = ToComboIndex(monitor?.AfterExit ?? ExitAction.CleanAndNotify);
+            var items = new Button
+            {
+                Tag = browser.Id,
+                Padding = new Thickness(14, 8, 14, 8),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            UpdateExitItemsButton(items, browser.Id);
+
+            enabled.Checked += (_, _) => OnMonitorRowChanged();
+            enabled.Unchecked += (_, _) => OnMonitorRowChanged();
+            action.SelectionChanged += (_, _) => OnMonitorRowChanged();
+            items.Click += ChooseExitItems_Click;
+
+            Grid.SetRow(enabled, row); Grid.SetColumn(enabled, 0);
+            Grid.SetRow(action, row); Grid.SetColumn(action, 1);
+            Grid.SetRow(items, row); Grid.SetColumn(items, 2);
+            BrowserGrid.Children.Add(enabled);
+            BrowserGrid.Children.Add(action);
+            BrowserGrid.Children.Add(items);
+            _monitorRows.Add((browser.Id, enabled, action, items));
+        }
+
         BrowserTable.Visibility = installed.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         NoBrowsersNote.Visibility = installed.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private static void SetRowVisible(bool visible, params FrameworkElement[] row)
-    {
-        foreach (var element in row)
-            element.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private async void BrowserMonitor_Changed(object sender, RoutedEventArgs e)
+    private async void OnMonitorRowChanged()
     {
         if (!_ready) return;
-        ApplyMonitor("chrome", ChromeEnabled, ChromeAction);
-        ApplyMonitor("edge", EdgeEnabled, EdgeAction);
-        ApplyMonitor("firefox", FirefoxEnabled, FirefoxAction);
+        foreach (var (id, enabled, action, _) in _monitorRows)
+            ApplyMonitor(id, enabled, action);
         UpdateMonitorHint();
         await SaveAndApplyAsync();
     }
@@ -117,6 +144,9 @@ public sealed partial class AutomaticCleanupPage : Page
         var monitor = _settings.FindBrowserMonitor(id);
         if (monitor is null)
         {
+            // Not saved yet (a browser this page did not list before): only start
+            // tracking it once the user actually turns it on.
+            if (enabled.IsChecked != true) return;
             monitor = new BrowserMonitorSetting { Browser = id };
             _settings.BrowserMonitors.Add(monitor);
         }
@@ -143,9 +173,16 @@ public sealed partial class AutomaticCleanupPage : Page
     private async void ChooseExitItems_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string browser }) return;
-        var monitor = _settings.FindBrowserMonitor(browser);
         var browserDefinition = BrowserCatalog.Find(browser);
-        if (monitor is null || browserDefinition is null) return;
+        if (browserDefinition is null) return;
+        // A browser with no saved monitor yet can still have its items chosen; the
+        // monitor is created switched off, so choosing items alone cleans nothing.
+        var monitor = _settings.FindBrowserMonitor(browser);
+        if (monitor is null)
+        {
+            monitor = new BrowserMonitorSetting { Browser = browser, Enabled = false };
+            _settings.BrowserMonitors.Add(monitor);
+        }
 
         var effective = _settings.EffectiveExitItems(browser);
         var panel = new StackPanel { Spacing = 6 };
@@ -247,51 +284,123 @@ public sealed partial class AutomaticCleanupPage : Page
 
     private static double RoundForUnit(double value, bool isMb) => isMb ? Math.Round(value) : Math.Round(value, 2);
 
-    // The cleanup categories a trigger may run, each with its tick state for the
-    // given selection (null selection = every category enabled on the Windows Cleanup
-    // page). Only the Safe-risk categories are offered - automatic runs never touch
-    // Review/Advanced categories.
-    private List<(string Key, string Label, bool Checked)> CategoryItems(HashSet<string>? selection) =>
-        WindowsCleanupService.Catalog
-            .Where(c => c.Risk == CleanupRisk.Safe)
-            .Select(c => (c.Id, c.Name, selection is { } set
-                ? set.Contains(c.Id)
-                : WindowsCleanupService.IsEnabled(c, _settings)))
-            .ToList();
+    // ---- "Choose items..." picker ------------------------------------------
 
-    private void UpdateItemsSummary(TextBlock target, HashSet<string>? selection)
+    /// <summary>What one trigger cleans: Windows Cleanup category ids (null = every
+    /// Safe category enabled on the Windows Cleanup page), plus the browsers whose
+    /// Internet Cache and the applications whose temp files it also clears.</summary>
+    private sealed record TriggerItems(HashSet<string>? Categories, HashSet<string> Browsers, HashSet<string> Apps);
+
+    private static readonly SolidColorBrush HeadingBrush = new(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30));
+    private static readonly SolidColorBrush GroupBrush = new(global::Windows.UI.Color.FromArgb(255, 0x7F, 0x91, 0x89));
+    private static readonly SolidColorBrush MutedBrush = new(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F));
+    private static readonly SolidColorBrush CardBorderBrush = new(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7));
+
+    // Only Safe-risk Windows categories are offered: automatic runs never touch
+    // Review/Advanced categories.
+    private static IEnumerable<CleanupCategory> SafeCategories =>
+        WindowsCleanupService.Catalog.Where(c => c.Risk == CleanupRisk.Safe);
+
+    private bool IsCategoryChecked(CleanupCategory category, HashSet<string>? selection)
+        => selection is { } set ? set.Contains(category.Id) : WindowsCleanupService.IsEnabled(category, _settings);
+
+    private void UpdateItemsSummary(TextBlock target, TriggerItems items)
     {
-        if (selection is { } set)
+        string windows;
+        if (items.Categories is { } set)
         {
-            var total = WindowsCleanupService.Catalog.Count(c => c.Risk == CleanupRisk.Safe);
-            var chosen = CategoryItems(set).Count(i => i.Checked);
-            target.Text = chosen == 0
-                ? "Nothing selected - this will clean nothing."
-                : $"{chosen} of {total} categories selected.";
+            var total = SafeCategories.Count();
+            var chosen = SafeCategories.Count(c => set.Contains(c.Id));
+            windows = $"Windows Cleanup: {chosen} of {total}";
         }
         else
         {
-            target.Text = "Everything enabled on the Windows Cleanup page (default).";
+            windows = "Windows Cleanup: everything enabled on its page";
         }
+        var browserNames = items.Browsers
+            .Select(BrowserCatalog.Find).OfType<BrowserDefinition>()
+            .Select(b => b.Name).ToList();
+        var browsers = browserNames.Count == 0 ? "Browser caches: none" : $"Browser caches: {string.Join(", ", browserNames)}";
+        var appCount = items.Apps.Count(id => AppCatalog.Find(id) is not null);
+        var apps = appCount == 0 ? "Application temp files: none" : $"Application temp files: {appCount} app(s)";
+
+        target.Text = items.Categories is { Count: 0 } && browserNames.Count == 0 && appCount == 0
+            ? "Nothing selected - this will clean nothing."
+            : $"{windows}  -  {browsers}  -  {apps}";
     }
 
-    /// <summary>Shows the category picker for one trigger and returns the chosen set,
-    /// or null if the dialog was cancelled.</summary>
-    private async Task<HashSet<string>?> PickCategoriesAsync(string title, HashSet<string>? current)
+    /// <summary>Shows the item picker for one trigger, grouped by the page each item
+    /// comes from (Windows Cleanup, Browser Cleaner, Application Cleanup), and
+    /// returns the chosen items, or null if the dialog was cancelled. Each page
+    /// heading is a tri-state checkbox that selects or clears its whole section.
+    /// Browsers and apps that are selected but no longer installed keep their tick,
+    /// so reinstalling one brings the choice back.</summary>
+    private async Task<TriggerItems?> PickItemsAsync(string title, TriggerItems current)
     {
-        var panel = new StackPanel { Spacing = 6 };
-        var boxes = new List<(string Key, CheckBox Box)>();
-        foreach (var (key, label, chk) in CategoryItems(current))
+        var browsers = await Task.Run(() => BrowserCatalog.InstalledCacheBrowsers());
+        var apps = await Task.Run(() => AppCleanupService.InstalledApps());
+
+        var panel = new StackPanel { Spacing = 12 };
+        panel.Children.Add(Note("Tick what this trigger should clean. Items are grouped by the CleanMachine page they come from; tick a page heading to select or clear its whole section. Only items that are safe to remove unattended are listed."));
+
+        // Windows Cleanup, sub-grouped the same way as its own page.
+        var categoryBoxes = new List<(string Id, CheckBox Box)>();
+        var windowsSection = AddSection(panel, "Windows Cleanup",
+            "Safe categories only. Review and Advanced categories (Recycle Bin, Downloads, Prefetch, ...) are never cleaned automatically.");
+        foreach (var group in SafeCategories.GroupBy(c => c.Group))
         {
-            var box = new CheckBox { Content = label, IsChecked = chk };
-            boxes.Add((key, box));
-            panel.Children.Add(box);
+            windowsSection.Children.Children.Add(GroupLabel(group.Key));
+            foreach (var category in group)
+            {
+                var box = ChildBox(category.Name, category.Description, IsCategoryChecked(category, current.Categories));
+                categoryBoxes.Add((category.Id, box));
+                windowsSection.Children.Children.Add(box);
+            }
         }
+        WireSection(windowsSection.Header, categoryBoxes.Select(b => b.Box).ToList());
+
+        var browserBoxes = new List<(string Id, CheckBox Box)>();
+        var appBoxes = new List<(string Id, CheckBox Box)>();
+        var browserSection = AddSection(panel, "Browser Cleaner - Internet Cache",
+            "Clears each ticked browser's cache. History, cookies, passwords and other saved data are never touched, and the browser can stay open (files it is using are skipped).");
+        foreach (var browser in browsers)
+        {
+            var box = ChildBox(browser.Name, "Internet Cache", current.Browsers.Contains(browser.Id));
+            browserBoxes.Add((browser.Id, box));
+            browserSection.Children.Children.Add(box);
+        }
+        if (browsers.Count == 0)
+            browserSection.Children.Children.Add(Note("No supported browsers were found on this PC."));
+        WireSection(browserSection.Header, browserBoxes.Select(b => b.Box).ToList());
+
+        var appSection = AddSection(panel, "Application Cleanup - Temp Files",
+            "Clears the temporary, cache and log files listed for each ticked app on the Application Cleanup page.");
+        foreach (var group in apps.GroupBy(a => a.Group))
+        {
+            appSection.Children.Children.Add(GroupLabel(group.Key));
+            foreach (var app in group)
+            {
+                var box = ChildBox(app.Name, null, current.Apps.Contains(app.Id));
+                appBoxes.Add((app.Id, box));
+                appSection.Children.Children.Add(box);
+            }
+        }
+        if (apps.Count == 0)
+            appSection.Children.Children.Add(Note("No supported applications were found on this PC."));
+        WireSection(appSection.Header, appBoxes.Select(b => b.Box).ToList());
+
+        panel.Children.Add(Note("Registry Care is not available here: registry fixes need a review and a backup each time, so they only run from the Registry Care page or a schedule."));
 
         var dialog = new ContentDialog
         {
             Title = title,
-            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 360 },
+            Content = new ScrollViewer
+            {
+                Content = panel,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                MaxHeight = 460,
+                Padding = new Thickness(0, 0, 12, 0)
+            },
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
@@ -299,36 +408,146 @@ public sealed partial class AutomaticCleanupPage : Page
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return null;
 
-        return boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        static HashSet<string> Ticked(IEnumerable<(string Id, CheckBox Box)> boxes)
+            => boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Keep ticks for browsers/apps the dialog could not show (not installed now).
+        var chosenBrowsers = Ticked(browserBoxes);
+        chosenBrowsers.UnionWith(current.Browsers.Where(id => browserBoxes.All(b => !b.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
+        var chosenApps = Ticked(appBoxes);
+        chosenApps.UnionWith(current.Apps.Where(id => appBoxes.All(b => !b.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
+
+        return new TriggerItems(Ticked(categoryBoxes), chosenBrowsers, chosenApps);
     }
+
+    /// <summary>Adds one page's card: a bold tri-state heading checkbox, a one-line
+    /// explanation, and an indented panel for its items.</summary>
+    private static (CheckBox Header, StackPanel Children) AddSection(StackPanel parent, string heading, string explanation)
+    {
+        var header = new CheckBox
+        {
+            Content = new TextBlock
+            {
+                Text = heading,
+                FontSize = 14,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = HeadingBrush
+            }
+        };
+        var children = new StackPanel { Spacing = 2, Margin = new Thickness(28, 4, 0, 0) };
+        var body = new StackPanel { Spacing = 2 };
+        body.Children.Add(header);
+        body.Children.Add(new TextBlock
+        {
+            Text = explanation,
+            FontSize = 11,
+            Foreground = MutedBrush,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(28, 0, 0, 0)
+        });
+        body.Children.Add(children);
+        parent.Children.Add(new Border
+        {
+            BorderBrush = CardBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12, 10, 12, 10),
+            Child = body
+        });
+        return (header, children);
+    }
+
+    private static TextBlock GroupLabel(string text) => new()
+    {
+        Text = text.ToUpperInvariant(),
+        FontSize = 10,
+        Foreground = GroupBrush,
+        Margin = new Thickness(0, 8, 0, 2)
+    };
+
+    private static TextBlock Note(string text) => new()
+    {
+        Text = text,
+        FontSize = 11,
+        Foreground = MutedBrush,
+        TextWrapping = TextWrapping.Wrap
+    };
+
+    private static CheckBox ChildBox(string label, string? tooltip, bool isChecked)
+    {
+        var box = new CheckBox { Content = label, IsChecked = isChecked, MinHeight = 28 };
+        if (!string.IsNullOrWhiteSpace(tooltip))
+            ToolTipService.SetToolTip(box, tooltip);
+        return box;
+    }
+
+    /// <summary>Keeps a section heading in step with its items: checked when all are,
+    /// cleared when none are, indeterminate in between; clicking the heading ticks or
+    /// clears every item.</summary>
+    private static void WireSection(CheckBox header, List<CheckBox> children)
+    {
+        var syncing = false;
+        void Refresh()
+        {
+            syncing = true;
+            var ticked = children.Count(c => c.IsChecked == true);
+            header.IsChecked = ticked == 0 ? false : ticked == children.Count ? true : null;
+            syncing = false;
+        }
+        header.IsEnabled = children.Count > 0;
+        header.Click += (_, _) =>
+        {
+            var value = header.IsChecked == true;
+            syncing = true;
+            foreach (var child in children) child.IsChecked = value;
+            syncing = false;
+            Refresh();
+        };
+        foreach (var child in children)
+        {
+            child.Checked += (_, _) => { if (!syncing) Refresh(); };
+            child.Unchecked += (_, _) => { if (!syncing) Refresh(); };
+        }
+        Refresh();
+    }
+
+    private TriggerItems MonitorItems => new(_settings.SystemMonitorCategories, _settings.SystemMonitorBrowsers, _settings.SystemMonitorApps);
+    private TriggerItems StartupItems => new(_settings.StartupCleanCategories, _settings.StartupCleanBrowsers, _settings.StartupCleanApps);
+    private TriggerItems IdleItems => new(_settings.IdleCleanCategories, _settings.IdleCleanBrowsers, _settings.IdleCleanApps);
 
     private async void ChooseMonitorItems_Click(object sender, RoutedEventArgs e)
     {
-        var chosen = await PickCategoriesAsync("Items to clean when disk space is low", _settings.SystemMonitorCategories);
+        var chosen = await PickItemsAsync("Items to clean when disk space is low", MonitorItems);
         if (chosen is null) return;
-        _settings.SystemMonitorCategories = chosen;
+        _settings.SystemMonitorCategories = chosen.Categories;
+        _settings.SystemMonitorBrowsers = chosen.Browsers;
+        _settings.SystemMonitorApps = chosen.Apps;
         await _settings.SaveAsync();
-        UpdateItemsSummary(MonitorItemsSummary, chosen);
+        UpdateItemsSummary(MonitorItemsSummary, MonitorItems);
         StatusText.Text = "Saved.";
     }
 
     private async void ChooseStartupItems_Click(object sender, RoutedEventArgs e)
     {
-        var chosen = await PickCategoriesAsync("Items to clean at startup", _settings.StartupCleanCategories);
+        var chosen = await PickItemsAsync("Items to clean at startup", StartupItems);
         if (chosen is null) return;
-        _settings.StartupCleanCategories = chosen;
+        _settings.StartupCleanCategories = chosen.Categories;
+        _settings.StartupCleanBrowsers = chosen.Browsers;
+        _settings.StartupCleanApps = chosen.Apps;
         await _settings.SaveAsync();
-        UpdateItemsSummary(StartupItemsSummary, chosen);
+        UpdateItemsSummary(StartupItemsSummary, StartupItems);
         StatusText.Text = "Saved.";
     }
 
     private async void ChooseIdleItems_Click(object sender, RoutedEventArgs e)
     {
-        var chosen = await PickCategoriesAsync("Items to clean when idle", _settings.IdleCleanCategories);
+        var chosen = await PickItemsAsync("Items to clean when idle", IdleItems);
         if (chosen is null) return;
-        _settings.IdleCleanCategories = chosen;
+        _settings.IdleCleanCategories = chosen.Categories;
+        _settings.IdleCleanBrowsers = chosen.Browsers;
+        _settings.IdleCleanApps = chosen.Apps;
         await _settings.SaveAsync();
-        UpdateItemsSummary(IdleItemsSummary, chosen);
+        UpdateItemsSummary(IdleItemsSummary, IdleItems);
         StatusText.Text = "Saved.";
     }
 

@@ -67,6 +67,13 @@ public static class BrowserCatalog
         ];
     }
 
+    /// <summary>The installed browsers whose Internet Cache the unattended runs
+    /// (Quick Clean, schedules, automatic triggers) can clear. Internet Explorer is
+    /// left out: its cache is the Windows Internet Cache, already a Windows Cleanup
+    /// category. A profile-directory probe, cheap enough for a picker.</summary>
+    public static IReadOnlyList<BrowserDefinition> InstalledCacheBrowsers()
+        => Browsers.Where(b => b.Family != BrowserFamily.InternetExplorer && IsInstalled(b)).ToList();
+
     public static BrowserDefinition? Find(string id)
         => Browsers.FirstOrDefault(b => b.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
 

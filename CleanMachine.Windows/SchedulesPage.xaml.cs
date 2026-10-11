@@ -22,18 +22,40 @@ public sealed partial class SchedulesPage : Page
     private async Task LoadAsync()
     {
         _settings = await AppSettings.LoadAsync();
-        BuildItemsPanel();
+        // Only browsers and apps present on this PC are offered; the probes touch
+        // the disk, so they run off the UI thread.
+        var browsers = await Task.Run(() => BrowserCatalog.InstalledCacheBrowsers());
+        var apps = await Task.Run(() => AppCleanupService.InstalledApps());
+        BuildItemsPanel(browsers, apps);
         RebuildList();
     }
 
-    private void BuildItemsPanel()
+    /// <summary>Lists everything a schedule can clean, grouped under the page each
+    /// item comes from, with that page's own sub-groups beneath.</summary>
+    private void BuildItemsPanel(IReadOnlyList<BrowserDefinition> browsers, IReadOnlyList<AppDefinition> apps)
     {
         ItemsPanel.Children.Clear();
         _itemBoxes.Clear();
 
-        AddItemBox("browser", "Browser Caches", "Clears Chrome, Edge, and Firefox cache files (locked files are skipped)");
-        AddItemBox("apps", "Application Temp Files", "Clears temp and cache files for detected apps (Application Cleanup catalog)");
+        ItemsPanel.Children.Add(ParentLabel("Browser Cleaner - Internet Cache",
+            "Cache only - history, cookies and passwords are never touched. Files the browser is using are skipped."));
+        foreach (var browser in browsers)
+            AddItemBox($"browser:{browser.Id}", browser.Name, "Clears this browser's Internet Cache (every profile)");
+        if (browsers.Count == 0)
+            ItemsPanel.Children.Add(Hint("No supported browsers were found on this PC."));
 
+        ItemsPanel.Children.Add(ParentLabel("Application Cleanup - Temp Files",
+            "Temporary, cache and log files listed for each app on the Application Cleanup page."));
+        foreach (var group in apps.GroupBy(a => a.Group))
+        {
+            ItemsPanel.Children.Add(SectionLabel(group.Key));
+            foreach (var app in group)
+                AddItemBox($"app:{app.Id}", app.Name, "Clears this app's temp and cache files");
+        }
+        if (apps.Count == 0)
+            ItemsPanel.Children.Add(Hint("No supported applications were found on this PC."));
+
+        ItemsPanel.Children.Add(ParentLabel("Windows Cleanup", null));
         foreach (var group in WindowsCleanupService.Catalog.GroupBy(c => c.Group))
         {
             ItemsPanel.Children.Add(SectionLabel(group.Key));
@@ -41,12 +63,36 @@ public sealed partial class SchedulesPage : Page
                 AddItemBox($"win:{category.Id}", category.Name, category.Description);
         }
 
-        ItemsPanel.Children.Add(SectionLabel("Registry Care"));
+        ItemsPanel.Children.Add(ParentLabel("Registry Care",
+            "Only low-risk items are cleaned, always after a backup."));
         // Single source of truth (shared with Overview Quick Clean) so new registry
         // categories appear here automatically.
         foreach (var category in QuickCleanService.RegistryCategories)
             AddItemBox($"reg:{category}", category, "Read-only scan; only low-risk items are cleaned, always after a backup");
     }
+
+    private static StackPanel ParentLabel(string text, string? explanation)
+    {
+        var panel = new StackPanel { Spacing = 1, Margin = new Thickness(0, 14, 0, 0) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30))
+        });
+        if (!string.IsNullOrWhiteSpace(explanation))
+            panel.Children.Add(Hint(explanation));
+        return panel;
+    }
+
+    private static TextBlock Hint(string text) => new()
+    {
+        Text = text,
+        FontSize = 11,
+        TextWrapping = TextWrapping.Wrap,
+        Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
+    };
 
     private static TextBlock SectionLabel(string text) => new()
     {
@@ -178,8 +224,14 @@ public sealed partial class SchedulesPage : Page
         foreach (var (key, box) in _itemBoxes)
             box.IsChecked = key switch
             {
-                "browser" => schedule.CleanBrowserCache,
-                "apps" => schedule.CleanAppTempFiles,
+                // Schedules saved before browsers/apps could be chosen have no list:
+                // they cleaned Chrome, Edge and Firefox, and every detected app.
+                var k when k.StartsWith("browser:") => schedule.CleanBrowserCache
+                    && (schedule.BrowserIds is { } chosen
+                        ? chosen.Contains(k[8..], StringComparer.OrdinalIgnoreCase)
+                        : _settings.ProtectedBrowsers.Contains(k[8..])),
+                var k when k.StartsWith("app:") => schedule.CleanAppTempFiles
+                    && (schedule.AppIds?.Contains(k[4..], StringComparer.OrdinalIgnoreCase) ?? true),
                 var k when k.StartsWith("win:") => schedule.WindowsCategoryIds.Contains(k[4..], StringComparer.OrdinalIgnoreCase),
                 var k when k.StartsWith("reg:") => schedule.RegistryCategories.Contains(k[4..], StringComparer.OrdinalIgnoreCase),
                 _ => false
@@ -237,6 +289,15 @@ public sealed partial class SchedulesPage : Page
         var name = NameBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(name)) { StatusText.Text = "Give the schedule a name."; return; }
 
+        // Ticks for browsers/apps not installed right now are kept, so reinstalling
+        // one brings the choice back.
+        var browserIds = TickedIds("browser:");
+        if (_current.CleanBrowserCache && _current.BrowserIds is { } previousBrowsers)
+            browserIds.AddRange(previousBrowsers.Where(id => !IsShown("browser:", id) && !browserIds.Contains(id, StringComparer.OrdinalIgnoreCase)));
+        var appIds = TickedIds("app:");
+        if (_current.CleanAppTempFiles && _current.AppIds is { } previousApps)
+            appIds.AddRange(previousApps.Where(id => !IsShown("app:", id) && !appIds.Contains(id, StringComparer.OrdinalIgnoreCase)));
+
         var schedule = new CleanupSchedule
         {
             Id = _currentId ?? Guid.NewGuid().ToString("N"),
@@ -249,8 +310,10 @@ public sealed partial class SchedulesPage : Page
             DayOfMonth = double.IsNaN(DayOfMonthBox.Value) ? 1 : (int)Math.Clamp(DayOfMonthBox.Value, 1, 31),
             AfterClean = (ScheduleAction)Math.Max(0, AfterCombo.SelectedIndex),
             WakeToRun = WakeCheck.IsChecked == true && TriggerCombo.SelectedIndex != (int)ScheduleTrigger.AtLogon,
-            CleanBrowserCache = _itemBoxes.Any(b => b.Key == "browser" && b.Box.IsChecked == true),
-            CleanAppTempFiles = _itemBoxes.Any(b => b.Key == "apps" && b.Box.IsChecked == true),
+            CleanBrowserCache = browserIds.Count > 0,
+            BrowserIds = browserIds,
+            CleanAppTempFiles = appIds.Count > 0,
+            AppIds = appIds,
             WindowsCategoryIds = _itemBoxes.Where(b => b.Key.StartsWith("win:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList(),
             RegistryCategories = _itemBoxes.Where(b => b.Key.StartsWith("reg:") && b.Box.IsChecked == true).Select(b => b.Key[4..]).ToList()
         };
@@ -282,6 +345,15 @@ public sealed partial class SchedulesPage : Page
                 ? "Saved. The task is registered with Windows Task Scheduler."
                 : "Saved, but Windows could not register the task. Check Task Scheduler permissions.";
     }
+
+    private List<string> TickedIds(string prefix)
+        => _itemBoxes
+            .Where(b => b.Key.StartsWith(prefix, StringComparison.Ordinal) && b.Box.IsChecked == true)
+            .Select(b => b.Key[prefix.Length..])
+            .ToList();
+
+    private bool IsShown(string prefix, string id)
+        => _itemBoxes.Any(b => b.Key.Equals(prefix + id, StringComparison.OrdinalIgnoreCase));
 
     private async void Delete_Click(object sender, RoutedEventArgs e)
     {

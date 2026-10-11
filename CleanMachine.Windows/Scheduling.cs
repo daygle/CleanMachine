@@ -38,11 +38,22 @@ public sealed class CleanupSchedule
     /// <summary>Windows cleanup category ids (see <see cref="WindowsCleanupService.Catalog"/>).</summary>
     public List<string> WindowsCategoryIds { get; set; } = [];
 
-    /// <summary>Clean every monitored browser's cache.</summary>
+    /// <summary>Clean browser caches (Browser Cleaner's Internet Cache item only).</summary>
     public bool CleanBrowserCache { get; set; }
 
-    /// <summary>Clean temp files for every detected application (Application Cleanup).</summary>
+    /// <summary>Which browsers' caches <see cref="CleanBrowserCache"/> clears
+    /// (<see cref="BrowserCatalog"/> ids). Null on schedules saved before browsers
+    /// could be chosen; those keep their old behaviour (Chrome, Edge and Firefox,
+    /// via <see cref="AppSettings.ProtectedBrowsers"/>).</summary>
+    public List<string>? BrowserIds { get; set; }
+
+    /// <summary>Clean application temp files (Application Cleanup).</summary>
     public bool CleanAppTempFiles { get; set; }
+
+    /// <summary>Which apps <see cref="CleanAppTempFiles"/> cleans (<see cref="AppCatalog"/>
+    /// ids). Null on schedules saved before apps could be chosen; those keep their
+    /// old behaviour of cleaning every detected app.</summary>
+    public List<string>? AppIds { get; set; }
 
     /// <summary>Registry Care category names (e.g. "MUI Cache", "Windows Startup").</summary>
     public List<string> RegistryCategories { get; set; } = [];

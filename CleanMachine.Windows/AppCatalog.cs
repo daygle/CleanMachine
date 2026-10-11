@@ -123,16 +123,6 @@ public static class AppCatalog
             ])
         ]),
 
-        new("microsoft-edge", "Microsoft Edge", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
-                new("Microsoft\\Edge\\User Data\\Default\\Cache", "Browser Cache"),
-                new("Microsoft\\Edge\\User Data\\Default\\Code Cache", "Code Cache"),
-                new("Microsoft\\Edge\\User Data\\Default\\GPUCache", "GPU Cache"),
-                new("Microsoft\\Edge\\User Data\\Default\\Service Worker\\CacheStorage", "Service Worker Cache")
-            ])
-        ]),
-
         new("activity-history", "Activity History", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
@@ -223,26 +213,6 @@ public static class AppCatalog
             ])
         ]),
 
-        new("chrome", "Google Chrome", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
-                new("Google\\Chrome\\User Data\\Default\\Cache", "Browser Cache"),
-                new("Google\\Chrome\\User Data\\Default\\Code Cache", "Code Cache"),
-                new("Google\\Chrome\\User Data\\Default\\GPUCache", "GPU Cache"),
-                new("Google\\Chrome\\User Data\\Default\\Service Worker\\CacheStorage", "Service Worker Cache")
-            ])
-        ]),
-
-        new("brave", "Brave", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
-                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Cache", "Browser Cache"),
-                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Code Cache", "Code Cache"),
-                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\GPUCache", "GPU Cache"),
-                new("BraveSoftware\\Brave-Browser\\User Data\\Default\\Service Worker\\CacheStorage", "Service Worker Cache")
-            ])
-        ]),
-
         new("adobe-acrobat", "Adobe Acrobat", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
@@ -277,26 +247,6 @@ public static class AppCatalog
                 new("Postman\\Code Cache", "Code Cache"),
                 new("Postman\\GPUCache", "GPU Cache"),
                 new("Postman\\Service Worker\\CacheStorage", "Service Worker Cache")
-            ])
-        ]),
-
-        new("vivaldi", "Vivaldi", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
-                new("Vivaldi\\User Data\\Default\\Cache", "Browser Cache"),
-                new("Vivaldi\\User Data\\Default\\Code Cache", "Code Cache"),
-                new("Vivaldi\\User Data\\Default\\GPUCache", "GPU Cache"),
-                new("Vivaldi\\User Data\\Default\\Service Worker\\CacheStorage", "Service Worker Cache")
-            ])
-        ]),
-
-        new("opera", "Opera", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
-                new("Opera Software\\Opera Stable\\Cache", "Browser Cache"),
-                new("Opera Software\\Opera Stable\\Code Cache", "Code Cache"),
-                new("Opera Software\\Opera Stable\\GPUCache", "GPU Cache"),
-                new("Opera Software\\Opera Stable\\Service Worker\\CacheStorage", "Service Worker Cache")
             ])
         ]),
 

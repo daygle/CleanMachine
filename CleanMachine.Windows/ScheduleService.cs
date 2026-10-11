@@ -125,7 +125,7 @@ public sealed class ScheduleService
                 // Cache only, never user data, and without requiring the browsers
                 // to be closed - the same rules as the browser Quick Clean.
                 var report = await new BrowserCleanupService().CleanItemsAsync(
-                    QuickCleanService.BrowserCacheSelection(settings.ProtectedBrowsers),
+                    QuickCleanService.BrowserCacheSelection((IEnumerable<string>?)schedule.BrowserIds ?? settings.ProtectedBrowsers),
                     token, requireBrowsersClosed: false,
                     excludedPaths: settings.ExcludedPaths,
                     skipModifiedWithin: QuickCleanService.BrowserCacheRecentWindow);
@@ -145,7 +145,10 @@ public sealed class ScheduleService
             try
             {
                 var appService = new AppCleanupService();
-                var selection = AppCleanupService.AllItems(await appService.ScanAllAsync(token));
+                var scans = await appService.ScanAllAsync(token);
+                var selection = AppCleanupService.AllItems(schedule.AppIds is { } ids
+                    ? scans.Where(s => ids.Contains(s.Id, StringComparer.OrdinalIgnoreCase))
+                    : scans);
                 if (selection.Count > 0)
                 {
                     var report = await appService.CleanAsync(selection, token, excludedPaths: settings.ExcludedPaths);

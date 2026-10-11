@@ -7,7 +7,7 @@
         <FontIcon Glyph="&#xE9F5;" FontSize="24" Foreground="#286E58" VerticalAlignment="Center"/>
         <TextBlock Text="Automatic Cleanup" FontSize="30" FontWeight="SemiBold" Foreground="#273630" VerticalAlignment="Center"/>
       </StackPanel>
-      <TextBlock Text="Let CleanMachine clean on its own - when browsers close, when free space runs low, at startup, while the PC is idle, and by keeping the Recycle Bin tidy. Each trigger below has its own on/off switch and its own choice of what to clean. Automatic runs only ever touch cleanup categories, never the Review or Advanced ones from Windows Cleanup."
+      <TextBlock Text="Let CleanMachine clean on its own - when browsers close, when free space runs low, at startup, while the PC is idle, and by keeping the Recycle Bin tidy. Each trigger below has its own on/off switch and its own choice of what to clean. Automatic runs only clean items that are safe to remove unattended: Safe Windows Cleanup categories (never the Review or Advanced ones), browser caches, and application temp files. Registry Care never runs automatically."
                  TextWrapping="Wrap" Foreground="#89958F"/>
 
       <!-- Browser close -->
@@ -17,7 +17,8 @@
           <CheckBox x:Name="CleanToggle" Content="Clean up when a supported browser closes"
                     FontSize="13" Checked="CleanToggle_Changed" Unchecked="CleanToggle_Changed"/>
           <Border x:Name="BrowserTable" Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="8" Padding="14">
-            <Grid MinWidth="460">
+            <!-- One row per installed browser, added in code (AutomaticCleanupPage.BuildBrowserRows). -->
+            <Grid x:Name="BrowserGrid" MinWidth="460">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="230"/>
@@ -25,47 +26,14 @@
               </Grid.ColumnDefinitions>
               <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
               </Grid.RowDefinitions>
               <TextBlock Grid.Row="0" Grid.Column="0" Text="Browser" FontSize="11" Foreground="#7F9189" Margin="0,0,0,6"/>
               <TextBlock Grid.Row="0" Grid.Column="1" Text="After Closing" FontSize="11" Foreground="#7F9189" Margin="0,0,0,6"/>
               <TextBlock Grid.Row="0" Grid.Column="2" Text="Items Cleaned" FontSize="11" Foreground="#7F9189" Margin="0,0,0,6"/>
-              <CheckBox Grid.Row="1" Grid.Column="0" x:Name="ChromeEnabled" Content="Google Chrome" Margin="0,4,0,4"
-                        Checked="BrowserMonitor_Changed" Unchecked="BrowserMonitor_Changed"/>
-              <ComboBox Grid.Row="1" Grid.Column="1" x:Name="ChromeAction" SelectedIndex="2" Margin="0,4,0,4"
-                        SelectionChanged="BrowserMonitor_Changed">
-                <ComboBoxItem Content="Do nothing"/>
-                <ComboBoxItem Content="Clean silently"/>
-                <ComboBoxItem Content="Clean and notify"/>
-              </ComboBox>
-              <Button Grid.Row="1" Grid.Column="2" x:Name="ChromeItemsButton" Tag="chrome" Click="ChooseExitItems_Click"
-                      Padding="14,8" VerticalAlignment="Center" HorizontalAlignment="Left"/>
-              <CheckBox Grid.Row="2" Grid.Column="0" x:Name="EdgeEnabled" Content="Microsoft Edge" Margin="0,4,0,4"
-                        Checked="BrowserMonitor_Changed" Unchecked="BrowserMonitor_Changed"/>
-              <ComboBox Grid.Row="2" Grid.Column="1" x:Name="EdgeAction" SelectedIndex="2" Margin="0,4,0,4"
-                        SelectionChanged="BrowserMonitor_Changed">
-                <ComboBoxItem Content="Do nothing"/>
-                <ComboBoxItem Content="Clean silently"/>
-                <ComboBoxItem Content="Clean and notify"/>
-              </ComboBox>
-              <Button Grid.Row="2" Grid.Column="2" x:Name="EdgeItemsButton" Tag="edge" Click="ChooseExitItems_Click"
-                      Padding="14,8" VerticalAlignment="Center" HorizontalAlignment="Left"/>
-              <CheckBox Grid.Row="3" Grid.Column="0" x:Name="FirefoxEnabled" Content="Firefox" Margin="0,4,0,4"
-                        Checked="BrowserMonitor_Changed" Unchecked="BrowserMonitor_Changed"/>
-              <ComboBox Grid.Row="3" Grid.Column="1" x:Name="FirefoxAction" SelectedIndex="2" Margin="0,4,0,4"
-                        SelectionChanged="BrowserMonitor_Changed">
-                <ComboBoxItem Content="Do nothing"/>
-                <ComboBoxItem Content="Clean silently"/>
-                <ComboBoxItem Content="Clean and notify"/>
-              </ComboBox>
-              <Button Grid.Row="3" Grid.Column="2" x:Name="FirefoxItemsButton" Tag="firefox" Click="ChooseExitItems_Click"
-                      Padding="14,8" VerticalAlignment="Center" HorizontalAlignment="Left"/>
             </Grid>
           </Border>
           <TextBlock x:Name="NoBrowsersNote" Visibility="Collapsed" FontSize="12" Foreground="#709086" TextWrapping="Wrap"
-                     Text="No supported browsers (Google Chrome, Microsoft Edge or Firefox) were found on this PC."/>
+                     Text="No supported browsers (Google Chrome, Microsoft Edge, Mozilla Firefox, Brave, Vivaldi or Opera) were found on this PC."/>
           <TextBlock x:Name="MonitoringHint"
                      FontSize="11" Foreground="#709086" TextWrapping="Wrap"/>
         </StackPanel>
@@ -96,7 +64,7 @@
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
             <Button Content="Choose items..." Click="ChooseMonitorItems_Click" Padding="14,8"/>
-            <TextBlock x:Name="MonitorItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
+            <TextBlock x:Name="MonitorItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F" TextWrapping="Wrap" MaxWidth="560"/>
           </StackPanel>
           <TextBlock Text="Runs at most once per hour and waits until space recovers before triggering again."
                      FontSize="11" Foreground="#89958F" TextWrapping="Wrap"/>
@@ -111,7 +79,7 @@
                     Checked="Setting_Changed" Unchecked="Setting_Changed"/>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
             <Button Content="Choose items..." Click="ChooseStartupItems_Click" Padding="14,8"/>
-            <TextBlock x:Name="StartupItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
+            <TextBlock x:Name="StartupItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F" TextWrapping="Wrap" MaxWidth="560"/>
           </StackPanel>
           <CheckBox x:Name="StartupNotifyToggle" Content="Show a notification when this runs" Margin="26,0,0,0"
                     Checked="Setting_Changed" Unchecked="Setting_Changed"/>
@@ -133,7 +101,7 @@
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,0,0,0">
             <Button Content="Choose items..." Click="ChooseIdleItems_Click" Padding="14,8"/>
-            <TextBlock x:Name="IdleItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F"/>
+            <TextBlock x:Name="IdleItemsSummary" VerticalAlignment="Center" FontSize="11" Foreground="#89958F" TextWrapping="Wrap" MaxWidth="560"/>
           </StackPanel>
           <CheckBox x:Name="IdleNotifyToggle" Content="Show a notification when this runs" Margin="26,0,0,0"
                     Checked="Setting_Changed" Unchecked="Setting_Changed"/>

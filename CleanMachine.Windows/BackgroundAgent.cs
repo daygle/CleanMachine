@@ -4,16 +4,17 @@ namespace CleanMachine.Windows;
 
 public sealed class BackgroundAgent : IDisposable
 {
-    private static readonly string[] BrowserProcessNames = ["chrome", "msedge", "firefox"];
+    // Canonical browser ids keyed by process name, for every browser Browser Cleaner
+    // supports (Internet Explorer aside: it has no profile of its own to clean).
+    // Derived from the catalog so a browser added there is monitored too - a
+    // hand-kept list of three left Brave, Vivaldi and Opera without exit cleaning.
+    internal static readonly Dictionary<string, string> ProcessToBrowser = BrowserCatalog.Browsers
+        .Where(b => b.Family != BrowserFamily.InternetExplorer)
+        .SelectMany(b => b.ProcessNames.Select(process => (Process: process, Browser: b.Id)))
+        .DistinctBy(p => p.Process, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(p => p.Process, p => p.Browser, StringComparer.OrdinalIgnoreCase);
 
-    // Canonical setting ids keyed by process name, so per-browser monitoring
-    // settings map from whichever process name was seen.
-    private static readonly Dictionary<string, string> ProcessToBrowser = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["chrome"] = "chrome",
-        ["msedge"] = "edge",
-        ["firefox"] = "firefox"
-    };
+    private static readonly string[] BrowserProcessNames = [.. ProcessToBrowser.Keys];
 
     private readonly TimeSpan _pollInterval;
     private readonly Func<string, CancellationToken, Task> _onBrowserExit;
@@ -49,7 +50,7 @@ public sealed class BackgroundAgent : IDisposable
                 // by name instead of sweeping Process.GetProcesses(): the latter
                 // allocates a Process for every running process on the machine (hundreds
                 // of objects) on every 5-second tick just to throw almost all of them
-                // away. Targeted queries touch only the three browsers we monitor.
+                // away. Targeted queries touch only the browsers we monitor.
                 var current = new Dictionary<string, HashSet<int>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var name in BrowserProcessNames)
                 {
