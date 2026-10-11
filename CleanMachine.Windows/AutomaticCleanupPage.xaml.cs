@@ -346,7 +346,7 @@ public sealed partial class AutomaticCleanupPage : Page
             browserSection.Children.Children.Add(Note("No supported browsers were found on this PC."));
         WireSection(browserSection.Header, browserBoxes.Select(b => b.Box).ToList());
 
-        var appSection = AddSection(panel, "Application Cleanup - temp files",
+        var appSection = AddSection(panel, "Application Cleanup - Temp Files",
             "Clears the temporary, cache and log files listed for each ticked app on the Application Cleanup page.");
         foreach (var group in apps.GroupBy(a => a.Group))
         {
