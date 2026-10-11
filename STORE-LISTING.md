@@ -20,9 +20,9 @@ Store policy notes before you submit:
 ## Description
 
 ```text
-CleanMachine is a Windows cleanup utility that shows you what it would remove
-before it removes anything. Nothing is deleted without a review step, and
-nothing runs unattended that you have not explicitly turned on.
+CleanMachine is a Windows cleanup utility built around review. Manual cleans
+show you what will be removed before anything is deleted, and one-click and
+automatic cleans only ever touch the safe items you have chosen in advance.
 
 CLEAN WHAT ACTUALLY CLUTTERS YOUR PC
 - Browser caches for Google Chrome, Microsoft Edge, Mozilla Firefox, Brave,
@@ -30,6 +30,7 @@ CLEAN WHAT ACTUALLY CLUTTERS YOUR PC
 - Temporary files, thumbnail and icon caches, error reports, internet cache,
   jump lists and other files Windows regenerates on demand
 - Temp files left behind by installed desktop and Microsoft Store applications
+- Broken desktop and Start menu shortcuts, listed for review first
 
 REVIEW-FIRST REGISTRY CARE
 Registry Care scans your per-user (HKCU) registry only, and never touches
@@ -37,12 +38,10 @@ machine-wide keys. It reports dangling file associations, leftover uninstall
 entries, stale startup commands and cached program names. It will not delete
 anything until it has written a .reg backup you can restore from, and a
 confidence gate holds back low-risk findings unless you choose to see them.
-Every key and value is shown before it is removed.
 
-ONE CLICK, STILL REVIEW-FIRST
-"Clean All Safe Items" runs every area's safe items behind a single
-confirmation, with per-area figures, live progress and a cancel button.
-Downloads, documents and advanced categories are never included in it.
+QUICK CLEAN
+Each area on the Overview has a Quick Clean button that cleans only the safe
+items you picked for it. Downloaded files and documents are never included.
 
 AUTOMATIC CLEANING YOU OPT INTO
 - Clean a browser's cache when it closes
@@ -51,6 +50,7 @@ AUTOMATIC CLEANING YOU OPT INTO
 - Empty Recycle Bin items older than a set number of days
 - Run on a daily, weekly, monthly or at-logon schedule, even while the app is
   closed
+Choose exactly which browsers, apps and Windows items each one cleans.
 
 ALSO INCLUDED
 Enable, disable and remove startup programs, and browse installed apps and
@@ -60,9 +60,10 @@ per area. Any folder can be excluded from cleanup.
 
 BUILT FOR REVIEW, NOT SURPRISE
 Protected, recently modified, locked and reparse-point (junction) paths are
-refused. The Windows component store is never modified. Registry changes can
-always be restored from the backup CleanMachine takes first. The app runs
-entirely in your own user account and never requests administrator rights.
+refused. Browser caches are cleaned around an open browser, and CleanMachine
+never force-closes a browser you are using. Registry changes can always be
+restored from the backup CleanMachine takes first. The app runs entirely in
+your own user account and never requests administrator rights.
 
 NO ACCOUNT, NO ADS, NO TRACKING
 No advertising, no telemetry, no third-party analytics, and no network
@@ -79,12 +80,12 @@ below are the recommended set, ordered so the strongest selling point is first.
 
 **Recommended (enter these nine):**
 
-1. Review-first cleaning: every deletion is shown before it happens
+1. Review-first: manual cleans show everything before it is removed
 2. Browser cache cleaning for Chrome, Edge, Firefox, Brave, Opera and Vivaldi
 3. Temporary file, thumbnail, error report and internet cache cleanup
 4. Temp file cleanup for installed desktop and Microsoft Store apps
 5. Read-only per-user registry scanning, with a backup taken before any change
-6. "Clean All Safe Items" behind a single confirmation, with progress and cancel
+6. Quick Clean per area, limited to the safe items you choose
 7. Automatic cleaning when a browser closes, when disk space runs low, at sign-in or when idle
 8. Recycle Bin auto-empty for items older than a chosen age
 9. No advertising, no telemetry, no third-party analytics
@@ -93,13 +94,15 @@ below are the recommended set, ordered so the strongest selling point is first.
 
 10. One-click restore from the registry backup CleanMachine created
 11. Daily, weekly, monthly and at-logon schedules that run while the app is closed
-12. Startup program management: enable, disable and remove auto-start entries
-13. Installed app browser that hands off to each vendor's own uninstaller
-14. Activity log of every automated and manual cleanup run
-15. Lifetime and last-30-days cleanup statistics
-16. Exclude any folder from cleanup
-17. System tray support: start minimised, minimise or close to tray
-18. Runs in your own user account and never requests administrator rights
+12. Choose which browsers, apps and Windows items each schedule and trigger cleans
+13. Broken desktop and Start menu shortcut cleanup, reviewed first
+14. Never force-closes a browser you are using
+15. Startup program management: enable, disable and remove auto-start entries
+16. Installed app browser that hands off to each vendor's own uninstaller
+17. Activity log of every automated and manual cleanup run
+18. Lifetime and last-30-days cleanup statistics
+19. Exclude any folder from cleanup
+20. Runs in your own user account and never requests administrator rights
 
 Note the ordering intent: "review-first" and "no telemetry" are the two
 differentiators for a cleanup utility, so they lead and close the list rather
@@ -187,11 +190,11 @@ and assertive version of the long description:
 
 ```text
 Review-first cleanup for Windows. Clear browser caches, temporary files, app
-leftovers and stale per-user registry entries. Everything is shown to you
-before anything is removed, and registry changes are backed up first.
+leftovers and stale per-user registry entries. Manual cleans show you what
+will be removed first, and registry changes are always backed up.
 ```
 
-232 characters.
+217 characters.
 
 ### Keywords
 
