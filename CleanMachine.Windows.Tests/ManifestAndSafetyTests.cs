@@ -578,6 +578,38 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
+    public void StartupAndIdleBrowserAndAppSelectionsDefaultEmptyAndRoundTrip()
+    {
+        // Existing setups must keep cleaning only their Windows categories until
+        // the user opts browsers or apps in.
+        var fresh = new AppSettings();
+        Assert.Empty(fresh.StartupCleanBrowsers);
+        Assert.Empty(fresh.StartupCleanApps);
+        Assert.Empty(fresh.IdleCleanBrowsers);
+        Assert.Empty(fresh.IdleCleanApps);
+
+        var settings = new AppSettings
+        {
+            StartupCleanBrowsers = ["chrome"],
+            StartupCleanApps = ["7zip", "steam"],
+            IdleCleanBrowsers = ["edge", "firefox"],
+            IdleCleanApps = ["notepadpp"]
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json)!.Sanitize();
+
+        Assert.Equal(new[] { "chrome" }, clone.StartupCleanBrowsers.Order());
+        Assert.Equal(new[] { "7zip", "steam" }, clone.StartupCleanApps.Order());
+        Assert.Equal(new[] { "edge", "firefox" }, clone.IdleCleanBrowsers.Order());
+        Assert.Equal(new[] { "notepadpp" }, clone.IdleCleanApps.Order());
+
+        // A hand-edited null degrades to "nothing selected", never a crash.
+        var broken = new AppSettings { StartupCleanBrowsers = null!, IdleCleanApps = null! }.Sanitize();
+        Assert.Empty(broken.StartupCleanBrowsers);
+        Assert.Empty(broken.IdleCleanApps);
+    }
+
+    [Fact]
     public void ExitItemsDefaultToEverySafeCatalogItem()
     {
         var settings = new AppSettings();

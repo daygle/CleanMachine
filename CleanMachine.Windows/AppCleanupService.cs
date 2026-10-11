@@ -249,7 +249,7 @@ public sealed class AppCleanupService
         return current;
     }
 
-    private static bool IsInstalled(AppDefinition def)
+    internal static bool IsInstalled(AppDefinition def)
     {
         // For Store apps, check if the package folder exists.
         if (def.IsStoreApp)

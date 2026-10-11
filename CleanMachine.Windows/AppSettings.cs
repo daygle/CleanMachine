@@ -156,6 +156,14 @@ public sealed class AppSettings
     // ever offer/clean Safe-risk categories (Review/Advanced are never included).
     public HashSet<string>? StartupCleanCategories { get; set; }
     public HashSet<string>? IdleCleanCategories { get; set; }
+    // Browser Cleaner and Application Cleanup items the startup and idle cleans also
+    // remove: browser ids whose Internet Cache is cleared (never history, cookies or
+    // other saved data) and AppCatalog ids whose temp files are cleared. Empty by
+    // default, so existing setups keep cleaning only their Windows categories.
+    public HashSet<string> StartupCleanBrowsers { get; set; } = [];
+    public HashSet<string> StartupCleanApps { get; set; } = [];
+    public HashSet<string> IdleCleanBrowsers { get; set; } = [];
+    public HashSet<string> IdleCleanApps { get; set; } = [];
     // Which Safe Windows categories the low-disk-space monitor cleans. A null set
     // means "not configured" - it falls back to every Safe category enabled on the
     // Windows Cleanup page. An empty set means the user deselected everything, so
@@ -278,6 +286,10 @@ public sealed class AppSettings
         QuickCleanApps = CapSetOrNull(QuickCleanApps);
         StartupCleanCategories = CapSetOrNull(StartupCleanCategories);
         IdleCleanCategories = CapSetOrNull(IdleCleanCategories);
+        StartupCleanBrowsers = CapSet(StartupCleanBrowsers, []);
+        StartupCleanApps = CapSet(StartupCleanApps, []);
+        IdleCleanBrowsers = CapSet(IdleCleanBrowsers, []);
+        IdleCleanApps = CapSet(IdleCleanApps, []);
         SystemMonitorCategories = CapSetOrNull(SystemMonitorCategories);
 
         if (BrowserCleanupSelection is null || BrowserCleanupSelection.Count > MaxCollectionEntries)

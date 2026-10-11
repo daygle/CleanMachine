@@ -102,7 +102,8 @@ public partial class App : Application
         {
             try
             {
-                await RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, settings.StartupCleanNotify, CancellationToken.None);
+                await RunSafeCleanAsync(settings, "Startup Cleanup", "At startup", settings.StartupCleanCategories, settings.StartupCleanNotify, CancellationToken.None,
+                    settings.StartupCleanBrowsers, settings.StartupCleanApps);
             }
             catch { /* the startup clean is best-effort, like every automatic run */ }
         }
@@ -363,28 +364,101 @@ public partial class App : Application
                     : WindowsCleanupService.IsEnabled(c, settings)))
             .ToList();
 
-    /// <summary>Cleans the given category selection and logs the result (with a
-    /// per-category breakdown) when anything was removed. Shared by the startup and
-    /// idle triggers; shows a toast only when the trigger's notify option is on
-    /// (on by default, so every automatic run reports what it did).</summary>
-    private static async Task RunSafeCleanAsync(AppSettings settings, string activityTitle, string reason, IReadOnlySet<string>? categoryIds, bool notify, CancellationToken token)
+    /// <summary>Cleans the given category selection - plus, for the startup and idle
+    /// triggers, the chosen browsers' Internet Cache and applications' temp files - and
+    /// logs the result (with a per-area breakdown) when anything was removed. Shared by
+    /// the startup, idle and low-disk triggers; shows a toast only when the trigger's
+    /// notify option is on (on by default, so every automatic run reports what it did).
+    /// <para>Browser caches follow the Quick Clean rules: cache only, never history,
+    /// cookies or passwords, and without requiring the browser to be closed (recently
+    /// written cache files are left alone). One area failing never stops the others.</para></summary>
+    private static async Task RunSafeCleanAsync(
+        AppSettings settings,
+        string activityTitle,
+        string reason,
+        IReadOnlySet<string>? categoryIds,
+        bool notify,
+        CancellationToken token,
+        IReadOnlyCollection<string>? browserIds = null,
+        IReadOnlyCollection<string>? appIds = null)
     {
         var selected = SelectedSafeCategories(settings, categoryIds);
-        if (selected.Count == 0) return;
-        var report = await new WindowsCleanupService().CleanSelectedAsync(
-            selected,
-            new WindowsCleanupOptions(ConfirmReviewCategories: false, ExcludedPaths: settings.ExcludedPaths),
-            cancellationToken: token);
-        await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
-        if (report.Result.ItemsRemoved > 0)
+        var browsers = browserIds is { Count: > 0 }
+            ? QuickCleanService.BrowserCacheSelection(browserIds)
+            : [];
+        var apps = appIds is { Count: > 0 }
+            ? appIds.Select(AppCatalog.Find).OfType<AppDefinition>().DistinctBy(a => a.Id).ToList()
+            : [];
+        if (selected.Count == 0 && browsers.Count == 0 && apps.Count == 0) return;
+
+        var removed = 0;
+        long bytes = 0;
+        var details = new List<string>();
+
+        if (selected.Count > 0)
+        {
+            try
+            {
+                var report = await new WindowsCleanupService().CleanSelectedAsync(
+                    selected,
+                    new WindowsCleanupOptions(ConfirmReviewCategories: false, ExcludedPaths: settings.ExcludedPaths),
+                    cancellationToken: token);
+                removed += report.Result.ItemsRemoved;
+                bytes += report.Result.BytesRecovered;
+                details.AddRange(ActivityStore.BreakdownLines(report.Breakdown) ?? []);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException) { /* best-effort; still run the other areas */ }
+        }
+
+        // One browser at a time so the activity entry can say which browser
+        // each cache total came from.
+        foreach (var browser in browsers)
+        {
+            try
+            {
+                var report = await new BrowserCleanupService().CleanItemsAsync(
+                    [browser], token, requireBrowsersClosed: false,
+                    excludedPaths: settings.ExcludedPaths,
+                    skipModifiedWithin: QuickCleanService.BrowserCacheRecentWindow);
+                removed += report.Result.ItemsRemoved;
+                bytes += report.Result.BytesRecovered;
+                if (report.Result.ItemsRemoved > 0)
+                    details.Add($"{BrowserCatalog.Find(browser.BrowserId)?.Name ?? browser.BrowserId} cache - {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)}");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException) { /* best-effort per browser */ }
+        }
+
+        if (apps.Count > 0)
+        {
+            var appService = new AppCleanupService();
+            foreach (var app in apps)
+            {
+                try
+                {
+                    var scan = await appService.ScanAsync(app.Id, token);
+                    var selection = scan is null ? [] : AppCleanupService.AllItems([scan]);
+                    if (selection.Count == 0) continue;
+                    var report = await appService.CleanAsync(selection, token, excludedPaths: settings.ExcludedPaths);
+                    removed += report.Result.ItemsRemoved;
+                    bytes += report.Result.BytesRecovered;
+                    if (report.Result.ItemsRemoved > 0)
+                        details.Add($"{app.Name} temp files - {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)}");
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { /* best-effort per app */ }
+            }
+        }
+
+        var result = new CleanupResult(removed, bytes);
+        await new CleanupStatsStore().RecordAsync(result.ItemsRemoved, result.BytesRecovered, token);
+        if (result.ItemsRemoved > 0)
         {
             if (notify)
-                AppNotifications.ShowAutomaticCleanupComplete(activityTitle, report.Result);
+                AppNotifications.ShowAutomaticCleanupComplete(activityTitle, result);
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,
                 activityTitle,
-                $"{reason} - cleaned {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)} recovered",
-                ActivityStore.BreakdownLines(report.Breakdown)), token);
+                $"{reason} - cleaned {result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(result.BytesRecovered)} recovered",
+                details.Count > 0 ? details : null), token);
         }
     }
 
@@ -398,7 +472,8 @@ public partial class App : Application
             if (IdleTime().TotalMinutes < Math.Max(1, settings.IdleCleanMinutes)) { _idleCleanArmed = true; return; }
             if (!_idleCleanArmed) return;
             _idleCleanArmed = false; // one clean per idle period
-            await RunSafeCleanAsync(settings, "Idle Cleanup", $"Idle {Math.Max(1, settings.IdleCleanMinutes)}+ min", settings.IdleCleanCategories, settings.IdleCleanNotify, token);
+            await RunSafeCleanAsync(settings, "Idle Cleanup", $"Idle {Math.Max(1, settings.IdleCleanMinutes)}+ min", settings.IdleCleanCategories, settings.IdleCleanNotify, token,
+                settings.IdleCleanBrowsers, settings.IdleCleanApps);
         }
         catch { /* best-effort; never kill the agent loop */ }
     }
