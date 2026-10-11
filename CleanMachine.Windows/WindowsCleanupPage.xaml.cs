@@ -58,7 +58,7 @@ public sealed partial class WindowsCleanupPage : Page
         var bytesById = _lastScan.ToDictionary(i => i.Category.Id, i => i.Bytes);
         var shown = 0;
 
-        foreach (var group in WindowsCleanupService.Available
+        foreach (var group in WindowsCleanupService.Catalog
                      .GroupBy(c => c.Group)
                      .OrderBy(g => GroupIndex(g.Key)))
         {
@@ -176,7 +176,7 @@ public sealed partial class WindowsCleanupPage : Page
     }
 
     private CleanupCategory[] EnabledCategories() =>
-        WindowsCleanupService.Available.Where(c => WindowsCleanupService.IsEnabled(c, _settings)).ToArray();
+        WindowsCleanupService.Catalog.Where(c => WindowsCleanupService.IsEnabled(c, _settings)).ToArray();
 
     /// <summary>Analysis: measure every enabled category and render a CCleaner-style
     /// report (one row per category with its size and item count). Nothing is removed.</summary>

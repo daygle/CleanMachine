@@ -92,7 +92,7 @@ public sealed class ScheduleService
 
         try
         {
-            var categories = WindowsCleanupService.Available
+            var categories = WindowsCleanupService.Catalog
                 .Where(c => schedule.WindowsCategoryIds.Contains(c.Id, StringComparer.OrdinalIgnoreCase))
                 .ToList();
             if (categories.Count > 0)

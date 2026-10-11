@@ -56,9 +56,7 @@ public sealed partial class SchedulesPage : Page
             ItemsPanel.Children.Add(Hint("No supported applications were found on this PC."));
 
         ItemsPanel.Children.Add(ParentLabel("Windows Cleanup", null));
-        // Categories that need administrator rights are left out: scheduled tasks run
-        // with least privilege, so they could never clean them.
-        foreach (var group in WindowsCleanupService.Catalog.Where(c => !c.RequiresAdministrator).GroupBy(c => c.Group))
+        foreach (var group in WindowsCleanupService.Catalog.GroupBy(c => c.Group))
         {
             ItemsPanel.Children.Add(SectionLabel(group.Key));
             foreach (var category in group)
