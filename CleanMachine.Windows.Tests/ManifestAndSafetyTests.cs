@@ -578,7 +578,7 @@ public sealed class ManifestAndSafetyTests
     }
 
     [Fact]
-    public void StartupAndIdleBrowserAndAppSelectionsDefaultEmptyAndRoundTrip()
+    public void TriggerBrowserAndAppSelectionsDefaultEmptyAndRoundTrip()
     {
         // Existing setups must keep cleaning only their Windows categories until
         // the user opts browsers or apps in.
@@ -587,13 +587,17 @@ public sealed class ManifestAndSafetyTests
         Assert.Empty(fresh.StartupCleanApps);
         Assert.Empty(fresh.IdleCleanBrowsers);
         Assert.Empty(fresh.IdleCleanApps);
+        Assert.Empty(fresh.SystemMonitorBrowsers);
+        Assert.Empty(fresh.SystemMonitorApps);
 
         var settings = new AppSettings
         {
             StartupCleanBrowsers = ["chrome"],
             StartupCleanApps = ["7zip", "steam"],
             IdleCleanBrowsers = ["edge", "firefox"],
-            IdleCleanApps = ["notepadpp"]
+            IdleCleanApps = ["notepadpp"],
+            SystemMonitorBrowsers = ["brave"],
+            SystemMonitorApps = ["vlc"]
         };
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
         var clone = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json)!.Sanitize();
@@ -602,6 +606,8 @@ public sealed class ManifestAndSafetyTests
         Assert.Equal(new[] { "7zip", "steam" }, clone.StartupCleanApps.Order());
         Assert.Equal(new[] { "edge", "firefox" }, clone.IdleCleanBrowsers.Order());
         Assert.Equal(new[] { "notepadpp" }, clone.IdleCleanApps.Order());
+        Assert.Equal(new[] { "brave" }, clone.SystemMonitorBrowsers.Order());
+        Assert.Equal(new[] { "vlc" }, clone.SystemMonitorApps.Order());
 
         // A hand-edited null degrades to "nothing selected", never a crash.
         var broken = new AppSettings { StartupCleanBrowsers = null!, IdleCleanApps = null! }.Sanitize();

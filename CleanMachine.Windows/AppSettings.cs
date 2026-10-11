@@ -169,6 +169,10 @@ public sealed class AppSettings
     // Windows Cleanup page. An empty set means the user deselected everything, so
     // the monitor cleans nothing.
     public HashSet<string>? SystemMonitorCategories { get; set; }
+    // Browser caches and application temp files the low-disk-space monitor also
+    // clears, like the startup and idle selections above. Empty by default.
+    public HashSet<string> SystemMonitorBrowsers { get; set; } = [];
+    public HashSet<string> SystemMonitorApps { get; set; } = [];
 
     // The background agent has no standalone switch: it runs whenever a service
     // that needs it is enabled (automatic cleanup).
@@ -291,6 +295,8 @@ public sealed class AppSettings
         IdleCleanBrowsers = CapSet(IdleCleanBrowsers, []);
         IdleCleanApps = CapSet(IdleCleanApps, []);
         SystemMonitorCategories = CapSetOrNull(SystemMonitorCategories);
+        SystemMonitorBrowsers = CapSet(SystemMonitorBrowsers, []);
+        SystemMonitorApps = CapSet(SystemMonitorApps, []);
 
         if (BrowserCleanupSelection is null || BrowserCleanupSelection.Count > MaxCollectionEntries)
             BrowserCleanupSelection = [];

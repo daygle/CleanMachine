@@ -364,8 +364,8 @@ public partial class App : Application
                     : WindowsCleanupService.IsEnabled(c, settings)))
             .ToList();
 
-    /// <summary>Cleans the given category selection - plus, for the startup and idle
-    /// triggers, the chosen browsers' Internet Cache and applications' temp files - and
+    /// <summary>Cleans the given category selection - plus the trigger's chosen
+    /// browsers' Internet Cache and applications' temp files - and
     /// logs the result (with a per-area breakdown) when anything was removed. Shared by
     /// the startup, idle and low-disk triggers; shows a toast only when the trigger's
     /// notify option is on (on by default, so every automatic run reports what it did).
@@ -560,7 +560,9 @@ public partial class App : Application
 
             // Nothing selected means nothing to do, so leave the trigger armed: the
             // user may enable a category later while the drive is still full.
-            if (SelectedSafeCategories(settings, settings.SystemMonitorCategories).Count == 0) return;
+            if (SelectedSafeCategories(settings, settings.SystemMonitorCategories).Count == 0
+                && settings.SystemMonitorBrowsers.Count == 0
+                && settings.SystemMonitorApps.Count == 0) return;
 
             // Consume the trigger BEFORE the clean. Doing it afterwards meant a
             // failing clean (a locked-file storm, a vanished drive) left both flags
@@ -578,7 +580,9 @@ public partial class App : Application
                 $"Free space below {thresholdLabel}",
                 settings.SystemMonitorCategories,
                 settings.SystemMonitorAction == ExitAction.CleanAndNotify,
-                token);
+                token,
+                settings.SystemMonitorBrowsers,
+                settings.SystemMonitorApps);
         }
         catch { /* monitoring is best-effort; never let it kill the agent loop */ }
     }

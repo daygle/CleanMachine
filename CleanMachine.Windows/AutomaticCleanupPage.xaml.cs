@@ -64,9 +64,9 @@ public sealed partial class AutomaticCleanupPage : Page
         RecycleBinDaysBox.Value = Math.Clamp(_settings.RecycleBinAutoEmptyDays, 1, 365);
         RecycleBinNotifyToggle.IsChecked = _settings.RecycleBinAutoEmptyNotify;
 
-        UpdateItemsSummary(MonitorItemsSummary, MonitorItems, includeBrowsersAndApps: false);
-        UpdateItemsSummary(StartupItemsSummary, StartupItems, includeBrowsersAndApps: true);
-        UpdateItemsSummary(IdleItemsSummary, IdleItems, includeBrowsersAndApps: true);
+        UpdateItemsSummary(MonitorItemsSummary, MonitorItems);
+        UpdateItemsSummary(StartupItemsSummary, StartupItems);
+        UpdateItemsSummary(IdleItemsSummary, IdleItems);
 
         _ready = true;
     }
@@ -277,7 +277,7 @@ public sealed partial class AutomaticCleanupPage : Page
         .Where(AppCleanupService.IsInstalled)
         .ToList();
 
-    private void UpdateItemsSummary(TextBlock target, TriggerItems items, bool includeBrowsersAndApps)
+    private void UpdateItemsSummary(TextBlock target, TriggerItems items)
     {
         string windows;
         if (items.Categories is { } set)
@@ -290,12 +290,6 @@ public sealed partial class AutomaticCleanupPage : Page
         {
             windows = "Windows Cleanup: everything enabled on its page";
         }
-        if (!includeBrowsersAndApps)
-        {
-            target.Text = items.Categories is { Count: 0 } ? "Nothing selected - this will clean nothing." : windows + ".";
-            return;
-        }
-
         var browserNames = items.Browsers
             .Select(BrowserCatalog.Find).OfType<BrowserDefinition>()
             .Select(b => b.Name).ToList();
@@ -314,15 +308,13 @@ public sealed partial class AutomaticCleanupPage : Page
     /// heading is a tri-state checkbox that selects or clears its whole section.
     /// Browsers and apps that are selected but no longer installed keep their tick,
     /// so reinstalling one brings the choice back.</summary>
-    private async Task<TriggerItems?> PickItemsAsync(string title, TriggerItems current, bool includeBrowsersAndApps)
+    private async Task<TriggerItems?> PickItemsAsync(string title, TriggerItems current)
     {
-        var browsers = includeBrowsersAndApps ? await Task.Run(() => InstalledBrowsers()) : [];
-        var apps = includeBrowsersAndApps ? await Task.Run(() => InstalledApps()) : [];
+        var browsers = await Task.Run(() => InstalledBrowsers());
+        var apps = await Task.Run(() => InstalledApps());
 
         var panel = new StackPanel { Spacing = 12 };
-        panel.Children.Add(Note(includeBrowsersAndApps
-            ? "Tick what this trigger should clean. Items are grouped by the CleanMachine page they come from; tick a page heading to select or clear its whole section. Only items that are safe to remove unattended are listed."
-            : "Tick what this trigger should clean. Tick the section heading to select or clear everything in it. Only items that are safe to remove unattended are listed."));
+        panel.Children.Add(Note("Tick what this trigger should clean. Items are grouped by the CleanMachine page they come from; tick a page heading to select or clear its whole section. Only items that are safe to remove unattended are listed."));
 
         // Windows Cleanup, sub-grouped the same way as its own page.
         var categoryBoxes = new List<(string Id, CheckBox Box)>();
@@ -342,38 +334,35 @@ public sealed partial class AutomaticCleanupPage : Page
 
         var browserBoxes = new List<(string Id, CheckBox Box)>();
         var appBoxes = new List<(string Id, CheckBox Box)>();
-        if (includeBrowsersAndApps)
+        var browserSection = AddSection(panel, "Browser Cleaner - Internet Cache",
+            "Clears each ticked browser's cache. History, cookies, passwords and other saved data are never touched, and the browser can stay open (files it is using are skipped).");
+        foreach (var browser in browsers)
         {
-            var browserSection = AddSection(panel, "Browser Cleaner - Internet Cache",
-                "Clears each ticked browser's cache. History, cookies, passwords and other saved data are never touched, and the browser can stay open (files it is using are skipped).");
-            foreach (var browser in browsers)
-            {
-                var box = ChildBox(browser.Name, "Internet Cache", current.Browsers.Contains(browser.Id));
-                browserBoxes.Add((browser.Id, box));
-                browserSection.Children.Children.Add(box);
-            }
-            if (browsers.Count == 0)
-                browserSection.Children.Children.Add(Note("No supported browsers were found on this PC."));
-            WireSection(browserSection.Header, browserBoxes.Select(b => b.Box).ToList());
-
-            var appSection = AddSection(panel, "Application Cleanup - temp files",
-                "Clears the temporary, cache and log files listed for each ticked app on the Application Cleanup page.");
-            foreach (var group in apps.GroupBy(a => a.Group))
-            {
-                appSection.Children.Children.Add(GroupLabel(group.Key));
-                foreach (var app in group)
-                {
-                    var box = ChildBox(app.Name, null, current.Apps.Contains(app.Id));
-                    appBoxes.Add((app.Id, box));
-                    appSection.Children.Children.Add(box);
-                }
-            }
-            if (apps.Count == 0)
-                appSection.Children.Children.Add(Note("No supported applications were found on this PC."));
-            WireSection(appSection.Header, appBoxes.Select(b => b.Box).ToList());
-
-            panel.Children.Add(Note("Registry Care is not available here: registry fixes need a review and a backup each time, so they only run from the Registry Care page or a schedule."));
+            var box = ChildBox(browser.Name, "Internet Cache", current.Browsers.Contains(browser.Id));
+            browserBoxes.Add((browser.Id, box));
+            browserSection.Children.Children.Add(box);
         }
+        if (browsers.Count == 0)
+            browserSection.Children.Children.Add(Note("No supported browsers were found on this PC."));
+        WireSection(browserSection.Header, browserBoxes.Select(b => b.Box).ToList());
+
+        var appSection = AddSection(panel, "Application Cleanup - temp files",
+            "Clears the temporary, cache and log files listed for each ticked app on the Application Cleanup page.");
+        foreach (var group in apps.GroupBy(a => a.Group))
+        {
+            appSection.Children.Children.Add(GroupLabel(group.Key));
+            foreach (var app in group)
+            {
+                var box = ChildBox(app.Name, null, current.Apps.Contains(app.Id));
+                appBoxes.Add((app.Id, box));
+                appSection.Children.Children.Add(box);
+            }
+        }
+        if (apps.Count == 0)
+            appSection.Children.Children.Add(Note("No supported applications were found on this PC."));
+        WireSection(appSection.Header, appBoxes.Select(b => b.Box).ToList());
+
+        panel.Children.Add(Note("Registry Care is not available here: registry fixes need a review and a backup each time, so they only run from the Registry Care page or a schedule."));
 
         var dialog = new ContentDialog
         {
@@ -495,41 +484,43 @@ public sealed partial class AutomaticCleanupPage : Page
         Refresh();
     }
 
-    private TriggerItems MonitorItems => new(_settings.SystemMonitorCategories, [], []);
+    private TriggerItems MonitorItems => new(_settings.SystemMonitorCategories, _settings.SystemMonitorBrowsers, _settings.SystemMonitorApps);
     private TriggerItems StartupItems => new(_settings.StartupCleanCategories, _settings.StartupCleanBrowsers, _settings.StartupCleanApps);
     private TriggerItems IdleItems => new(_settings.IdleCleanCategories, _settings.IdleCleanBrowsers, _settings.IdleCleanApps);
 
     private async void ChooseMonitorItems_Click(object sender, RoutedEventArgs e)
     {
-        var chosen = await PickItemsAsync("Items to clean when disk space is low", MonitorItems, includeBrowsersAndApps: false);
+        var chosen = await PickItemsAsync("Items to clean when disk space is low", MonitorItems);
         if (chosen is null) return;
         _settings.SystemMonitorCategories = chosen.Categories;
+        _settings.SystemMonitorBrowsers = chosen.Browsers;
+        _settings.SystemMonitorApps = chosen.Apps;
         await _settings.SaveAsync();
-        UpdateItemsSummary(MonitorItemsSummary, MonitorItems, includeBrowsersAndApps: false);
+        UpdateItemsSummary(MonitorItemsSummary, MonitorItems);
         StatusText.Text = "Saved.";
     }
 
     private async void ChooseStartupItems_Click(object sender, RoutedEventArgs e)
     {
-        var chosen = await PickItemsAsync("Items to clean at startup", StartupItems, includeBrowsersAndApps: true);
+        var chosen = await PickItemsAsync("Items to clean at startup", StartupItems);
         if (chosen is null) return;
         _settings.StartupCleanCategories = chosen.Categories;
         _settings.StartupCleanBrowsers = chosen.Browsers;
         _settings.StartupCleanApps = chosen.Apps;
         await _settings.SaveAsync();
-        UpdateItemsSummary(StartupItemsSummary, StartupItems, includeBrowsersAndApps: true);
+        UpdateItemsSummary(StartupItemsSummary, StartupItems);
         StatusText.Text = "Saved.";
     }
 
     private async void ChooseIdleItems_Click(object sender, RoutedEventArgs e)
     {
-        var chosen = await PickItemsAsync("Items to clean when idle", IdleItems, includeBrowsersAndApps: true);
+        var chosen = await PickItemsAsync("Items to clean when idle", IdleItems);
         if (chosen is null) return;
         _settings.IdleCleanCategories = chosen.Categories;
         _settings.IdleCleanBrowsers = chosen.Browsers;
         _settings.IdleCleanApps = chosen.Apps;
         await _settings.SaveAsync();
-        UpdateItemsSummary(IdleItemsSummary, IdleItems, includeBrowsersAndApps: true);
+        UpdateItemsSummary(IdleItemsSummary, IdleItems);
         StatusText.Text = "Saved.";
     }
 
