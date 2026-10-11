@@ -583,11 +583,11 @@ public sealed partial class CleanerPage : Page
         // the default behavior (the clean below refuses).
         if (_settings.CloseOpenBrowsersAutomatically)
         {
-            var running = BrowserCleanupService.GetRunningBrowsers(
-                BrowserCleanupService.ProcessNamesFor(selected.Select(s => s.BrowserId)));
+            var cleaning = selected.Select(s => s.BrowserId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var running = BrowserCleanupService.GetRunningBrowsers(BrowserCleanupService.ProcessNamesFor(cleaning));
             if (running.Count > 0)
             {
-                var names = string.Join(", ", running.Select(BrowserCleanupService.DisplayNameForProcess).Distinct());
+                var names = string.Join(", ", running.Select(p => BrowserCleanupService.DisplayNameForProcess(p, cleaning)).Distinct());
                 var confirm = new ContentDialog
                 {
                     Title = "Close running browsers?",
@@ -609,7 +609,7 @@ public sealed partial class CleanerPage : Page
                 var stillRunning = await BrowserCleanupService.CloseRunningBrowsersAsync(running);
                 if (stillRunning.Count > 0)
                 {
-                    var remaining = string.Join(", ", stillRunning.Select(BrowserCleanupService.DisplayNameForProcess));
+                    var remaining = string.Join(", ", stillRunning.Select(p => BrowserCleanupService.DisplayNameForProcess(p, cleaning)));
                     await new ActivityStore().AddAsync(new ActivityEntry(
                         DateTimeOffset.UtcNow,
                         "Browser Cleanup",

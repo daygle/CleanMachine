@@ -8,13 +8,17 @@ public sealed class BackgroundAgent : IDisposable
     // supports (Internet Explorer aside: it has no profile of its own to clean).
     // Derived from the catalog so a browser added there is monitored too - a
     // hand-kept list of three left Brave, Vivaldi and Opera without exit cleaning.
-    internal static readonly Dictionary<string, string> ProcessToBrowser = BrowserCatalog.Browsers
+    // One process name can belong to several browsers (chrome.exe is Google Chrome
+    // and Chromium; opera.exe is Opera and Opera GX). They cannot be told apart by
+    // name, so when that process is gone every browser using it has exited and
+    // each one's exit action runs.
+    internal static readonly Dictionary<string, string[]> ProcessToBrowsers = BrowserCatalog.Browsers
         .Where(b => b.Family != BrowserFamily.InternetExplorer)
         .SelectMany(b => b.ProcessNames.Select(process => (Process: process, Browser: b.Id)))
-        .DistinctBy(p => p.Process, StringComparer.OrdinalIgnoreCase)
-        .ToDictionary(p => p.Process, p => p.Browser, StringComparer.OrdinalIgnoreCase);
+        .GroupBy(p => p.Process, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(g => g.Key, g => g.Select(p => p.Browser).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), StringComparer.OrdinalIgnoreCase);
 
-    private static readonly string[] BrowserProcessNames = [.. ProcessToBrowser.Keys];
+    private static readonly string[] BrowserProcessNames = [.. ProcessToBrowsers.Keys];
 
     private readonly TimeSpan _pollInterval;
     private readonly Func<string, CancellationToken, Task> _onBrowserExit;
@@ -77,8 +81,8 @@ public sealed class BackgroundAgent : IDisposable
                     var wasRunning = known is { Count: > 0 };
                     var stillRunning = current.TryGetValue(name, out var nowSet) && nowSet.Count > 0;
                     if (wasRunning && !stillRunning &&
-                        ProcessToBrowser.TryGetValue(name, out var browser))
-                        exited.Add(browser);
+                        ProcessToBrowsers.TryGetValue(name, out var browsers))
+                        exited.AddRange(browsers);
                     _knownPids[name] = current.TryGetValue(name, out var set) ? set : [];
                 }
 

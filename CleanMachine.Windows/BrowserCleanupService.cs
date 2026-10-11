@@ -67,11 +67,25 @@ public sealed class BrowserCleanupService
     }
 
     /// <summary>User-facing name for a browser process ("msedge" -> "Microsoft Edge").
-    /// Unknown process names fall back to the name itself.</summary>
-    public static string DisplayNameForProcess(string processName)
-        => BrowserCatalog.Browsers
-            .FirstOrDefault(b => b.ProcessNames.Contains(processName, StringComparer.OrdinalIgnoreCase))?.Name
-            ?? processName;
+    /// Several browsers can share a process name (chrome.exe is Google Chrome and
+    /// Chromium), so when <paramref name="amongBrowserIds"/> is given the name comes
+    /// from those browsers - the ones being cleaned - first. Unknown process names
+    /// fall back to the name itself.</summary>
+    public static string DisplayNameForProcess(string processName, IEnumerable<string>? amongBrowserIds = null)
+    {
+        var matches = BrowserCatalog.Browsers
+            .Where(b => b.ProcessNames.Contains(processName, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+        if (amongBrowserIds is not null)
+        {
+            var preferred = matches
+                .Where(b => amongBrowserIds.Contains(b.Id, StringComparer.OrdinalIgnoreCase))
+                .Select(b => b.Name)
+                .ToList();
+            if (preferred.Count > 0) return string.Join(" / ", preferred);
+        }
+        return matches.FirstOrDefault()?.Name ?? processName;
+    }
 
     /// <summary>Close-assist for the manual cleaning flow, used only after the user
     /// confirms. Asks each requested browser to close politely (the same close the
@@ -229,7 +243,7 @@ public sealed class BrowserCleanupService
                 var running = GetRunningBrowsers(ProcessNamesFor(selectedBrowsers));
                 if (running.Count > 0)
                     throw new InvalidOperationException(
-                        $"Close these browsers before cleaning: {string.Join(", ", running.Select(DisplayNameForProcess).Distinct())}.");
+                        $"Close these browsers before cleaning: {string.Join(", ", running.Select(p => DisplayNameForProcess(p, selectedBrowsers)).Distinct())}.");
             }
 
             // Deleting the selected items is long-running disk work; keep it off

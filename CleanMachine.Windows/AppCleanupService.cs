@@ -316,6 +316,20 @@ public sealed class AppCleanupService
             "go" => DirExists(LocalAppData, "go-build"),
             "rust-cargo" => DirExists(UserProfile, ".cargo"),
             "gradle" => DirExists(UserProfile, ".gradle"),
+            "python-poetry" => DirExists(LocalAppData, "pypoetry"),
+            "python-uv" => DirExists(LocalAppData, "uv"),
+            "composer" => DirExists(LocalAppData, "Composer"),
+            "bun" => DirExists(UserProfile, ".bun"),
+            "visual-studio" => DirExists(LocalAppData, "Microsoft\\VisualStudio"),
+            "canva" => DirExists(RoamingAppData, "Canva"),
+            "element" => DirExists(RoamingAppData, "Element"),
+            "mattermost" => DirExists(RoamingAppData, "Mattermost"),
+            "insomnia" => DirExists(RoamingAppData, "Insomnia"),
+            "docker-desktop" => DirExists(RoamingAppData, "Docker Desktop"),
+            "unity-hub" => DirExists(RoamingAppData, "UnityHub"),
+            "riot-client" => DirExists(LocalAppData, "Riot Games"),
+            "google-drive" => DirExists(LocalAppData, "Google\\DriveFS"),
+            "minecraft-launcher" => DirExists(RoamingAppData, ".minecraft"),
             _ => false
         };
     }

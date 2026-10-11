@@ -26,10 +26,12 @@ automatic cleans only ever touch the safe items you have chosen in advance.
 
 CLEAN WHAT ACTUALLY CLUTTERS YOUR PC
 - Browser caches for Google Chrome, Microsoft Edge, Mozilla Firefox, Brave,
-  Opera and Vivaldi, across every profile on the machine
+  Opera, Opera GX, Vivaldi, Chromium, Thorium, LibreWolf, Waterfox and Floorp,
+  across every profile on the machine
 - Temporary files, thumbnail and icon caches, error reports, internet cache,
   jump lists and other files Windows regenerates on demand
-- Temp files left behind by installed desktop and Microsoft Store applications
+- Temp files left behind by installed desktop and Microsoft Store applications,
+  and download caches from developer tools such as npm, pip and NuGet
 - Broken desktop and Start menu shortcuts, listed for review first
 
 REVIEW-FIRST REGISTRY CARE
@@ -81,7 +83,7 @@ below are the recommended set, ordered so the strongest selling point is first.
 **Recommended (enter these nine):**
 
 1. Review-first: manual cleans show everything before it is removed
-2. Browser cache cleaning for Chrome, Edge, Firefox, Brave, Opera and Vivaldi
+2. Browser cache cleaning for Chrome, Edge, Firefox, Brave, Opera, Vivaldi and more
 3. Temporary file, thumbnail, error report and internet cache cleanup
 4. Temp file cleanup for installed desktop and Microsoft Store apps
 5. Read-only per-user registry scanning, with a backup taken before any change

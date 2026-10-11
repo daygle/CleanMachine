@@ -44,24 +44,41 @@ public static class BrowserCatalog
                 RootIsProfile: false);
         }
 
+        // Opera keeps the profile in Roaming but its disk cache in Local AppData,
+        // so both folders are profile roots; the cache item resolves in either.
+        // Opera GX runs as opera.exe too.
+        BrowserDefinition Opera(string id, string name, string folder)
+            => new(id, name, BrowserFamily.Chromium, ["opera"],
+                ProfileRoots: [Path.Combine(roaming, "Opera Software", folder), Path.Combine(local, "Opera Software", folder)],
+                UserDataRoots: [Path.Combine(roaming, "Opera Software", folder)],
+                RootIsProfile: true);
+
+        // Firefox-family profiles live in Roaming, with the disk cache (cache2) in a
+        // matching Local AppData folder.
+        BrowserDefinition Firefox(string id, string name, string vendor, string[] processes)
+            => new(id, name, BrowserFamily.Firefox, processes,
+                ProfileRoots: [Path.Combine(roaming, vendor, "Profiles"), Path.Combine(local, vendor, "Profiles")],
+                UserDataRoots: [],
+                RootIsProfile: false);
+
         return
         [
             Chromium("chrome", "Google Chrome", Path.Combine("Google", "Chrome"), ["chrome"]),
             Chromium("edge", "Microsoft Edge", Path.Combine("Microsoft", "Edge"), ["msedge"]),
             Chromium("brave", "Brave", Path.Combine("BraveSoftware", "Brave-Browser"), ["brave"]),
             Chromium("vivaldi", "Vivaldi", "Vivaldi", ["vivaldi"]),
-            new("opera", "Opera", BrowserFamily.Chromium, ["opera"],
-                ProfileRoots: [Path.Combine(roaming, "Opera Software", "Opera Stable")],
-                UserDataRoots: [Path.Combine(roaming, "Opera Software", "Opera Stable")],
-                RootIsProfile: true),
-            new("firefox", "Mozilla Firefox", BrowserFamily.Firefox, ["firefox"],
-                ProfileRoots:
-                [
-                    Path.Combine(roaming, "Mozilla", "Firefox", "Profiles"),
-                    Path.Combine(local, "Mozilla", "Firefox", "Profiles")
-                ],
-                UserDataRoots: [],
-                RootIsProfile: false),
+            Opera("opera", "Opera", "Opera Stable"),
+            Opera("opera-gx", "Opera GX", "Opera GX Stable"),
+            // Chromium and Thorium share Chrome's layout (a "User Data" folder with
+            // one directory per profile). Chromium's executable is chrome.exe, the
+            // same name as Google Chrome's.
+            Chromium("chromium", "Chromium", "Chromium", ["chrome"]),
+            Chromium("thorium", "Thorium", "Thorium", ["thorium"]),
+            Firefox("firefox", "Mozilla Firefox", Path.Combine("Mozilla", "Firefox"), ["firefox"]),
+            // Firefox-based browsers with Firefox's profile layout.
+            Firefox("librewolf", "LibreWolf", "librewolf", ["librewolf"]),
+            Firefox("waterfox", "Waterfox", "Waterfox", ["waterfox"]),
+            Firefox("floorp", "Floorp", "Floorp", ["floorp"]),
             new("ie", "Internet Explorer", BrowserFamily.InternetExplorer, ["iexplore"],
                 ProfileRoots: [], UserDataRoots: [], RootIsProfile: false)
         ];
