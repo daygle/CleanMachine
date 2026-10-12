@@ -77,18 +77,28 @@ CleanMachine is Windows-specific and requires validation on each supported Windo
 
 The project does not request vulnerability reports containing secrets. Remove API keys, certificates, passwords, browser data, registry exports, and other private information before sharing diagnostics.
 
-## Audit follow-up
+## Deletion, locking and rollback limits
 
-See [AUDIT.md](AUDIT.md) for the October 2026 review, fixes and outstanding checks.
 On Windows, every cleanup deletion holds the target and each of its ancestor
 folders open while it checks and deletes, so a same-user process cannot swap in
 a link or rename a folder mid-delete; browser preference edits hold their folder
 the same way. Other steps - the one-time data migration copy and CleanMachine's
 handling of its own temp, backup and uninstall files - still check links by path
 only, so they are not a defense against a same-user process concurrently
-replacing directories. Cleanup coordination and store write gates are per-user
-interprocess file locks (in `%LOCALAPPDATA%\CleanMachine.Locks`), so a headless
-schedule and the GUI are serialized; the OS releases a lock if its process
-crashes. Restore now holds the payload read-locked across verification/import
-and uses the cleanup gate, but interrupted imports are not transactional
-rollbacks.
+replacing directories. Code running as the same user can still modify
+CleanMachine's data or drive the app; this is not an isolation boundary.
+
+Cleanup coordination and store write gates are per-user interprocess file locks
+(in `%LOCALAPPDATA%\CleanMachine.Locks`), so a headless schedule and the GUI are
+serialized; the OS releases a lock if its process crashes.
+
+Deletions and registry imports are not transactional. Cancellation records the
+work already completed, but nothing is rolled back, and a crash between a change
+and its journal entry can leave activity or statistics incomplete. Restore holds
+the payload read-locked across verification and import and uses the cleanup
+gate, but an interrupted import is not rolled back.
+
+Registry scans are conservative heuristics: Windows can report access failures
+ambiguously, so inaccessible or offline targets are treated as present rather
+than orphaned. Entry, depth and time budgets bound the major file, browser and
+registry walkers, not every Windows call or a single very large file or hash.
