@@ -71,14 +71,28 @@ public static class NativeSafety
         return true;
     }
 
-    /// <summary>Whether a path is a reparse point (junction, symlink, mount point).
-    /// Fails closed: anything that cannot be inspected counts as one, because the
-    /// only safe reading of "I could not check" is "skip it".</summary>
+    /// <summary>Whether a path or any of its ancestors is a reparse point
+    /// (junction, symlink, mount point). Checking only the leaf misses ordinary
+    /// files reached through a redirected profile/cache directory. Fails closed
+    /// if any component cannot be inspected. This is not a handle-based defense
+    /// against a concurrent, same-user process swapping directories.</summary>
     public static bool IsReparsePoint(string path)
     {
-        try { return File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint); }
+        if (!TryGetFullPath(path, out var full)) return true;
+        try
+        {
+            for (string? current = Path.TrimEndingDirectorySeparator(full);
+                 current is not null;
+                 current = Path.GetDirectoryName(current))
+            {
+                if (File.GetAttributes(current).HasFlag(FileAttributes.ReparsePoint)) return true;
+            }
+            return false;
+        }
         catch (IOException) { return true; }
         catch (UnauthorizedAccessException) { return true; }
+        catch (ArgumentException) { return true; }
+        catch (NotSupportedException) { return true; }
     }
 
     public static bool TryGetFullPath(string path, out string full)
@@ -86,6 +100,7 @@ public static class NativeSafety
         try { full = Path.GetFullPath(path); return !string.IsNullOrWhiteSpace(full); }
         catch (ArgumentException) { full = string.Empty; return false; }
         catch (NotSupportedException) { full = string.Empty; return false; }
+        catch (IOException) { full = string.Empty; return false; }
     }
 
     public static bool IsWithin(string path, string parent)

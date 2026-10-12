@@ -40,7 +40,9 @@ jobs:
         shell: pwsh
         run: |
           dotnet restore $env:PROJECT
+          if ($LASTEXITCODE -ne 0) { throw "App restore failed (exit $LASTEXITCODE)." }
           dotnet restore $env:TESTS
+          if ($LASTEXITCODE -ne 0) { throw "Test restore failed (exit $LASTEXITCODE)." }
 
       - name: Build app (x64)
         shell: pwsh
@@ -128,11 +130,12 @@ jobs:
           $work = Join-Path $env:RUNNER_TEMP "upload-expanded"
           Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
           # A .msixupload is a zip holding a .msixbundle (or loose .msix files).
-          Expand-Archive -Path $upload.FullName -DestinationPath $work -Force
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($upload.FullName, $work)
           $inner = Join-Path $work "bundle"
           $bundle = Get-ChildItem $work -Recurse -Filter *.msixbundle | Select-Object -First 1
           if ($null -ne $bundle) {
-            Expand-Archive -Path $bundle.FullName -DestinationPath $inner -Force
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($bundle.FullName, $inner)
           }
           else {
             $inner = $work

@@ -72,6 +72,15 @@ public sealed partial class SettingsPage : Page
     /// effects. Called on any change (instant save) and by Restore Defaults.</summary>
     private async Task PersistAsync()
     {
+        try { await PersistCoreAsync(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusText.Text = $"Settings could not be saved: {ex.Message}";
+        }
+    }
+
+    private async Task PersistCoreAsync()
+    {
         _settings.StartWithWindows = StartWithWindowsToggle.IsChecked == true;
         _settings.ShowInTaskbar = ShowInTaskbarToggle.IsChecked == true;
         _settings.StartMinimizedToTray = StartMinimizedToTrayToggle.IsChecked == true;
@@ -158,14 +167,19 @@ public sealed partial class SettingsPage : Page
         var removeData = dataChoice == ContentDialogResult.Primary;
 
         UninstallButton.IsEnabled = false;
-        var started = await Task.Run(() => MsixUninstallService.Start(removeData));
+        var (started, error) = await Task.Run(() =>
+        {
+            var success = MsixUninstallService.Start(removeData, out var failure);
+            return (success, failure);
+        });
         if (!started)
         {
             UninstallButton.IsEnabled = true;
             var failed = new ContentDialog
             {
                 Title = "Could not start the removal",
-                Content = "Nothing was changed. Uninstall through Windows Settings > Apps instead.",
+                Content = (error ?? "The uninstall could not be started.") +
+                          " Uninstall through Windows Settings > Apps instead. Your original data has not been removed.",
                 CloseButtonText = "OK",
                 XamlRoot = XamlRoot
             };

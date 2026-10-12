@@ -40,6 +40,9 @@ public sealed class TrayIcon : IDisposable
     private readonly TrayWndProc _wndProc;
     private string _className = string.Empty;
     private bool _added;
+    private bool _disposed;
+
+    public bool IsVisible => _added;
 
     /// <summary>Left-click, or the "Open" context-menu item: restore the window.</summary>
     public event Action? Clicked;
@@ -57,7 +60,7 @@ public sealed class TrayIcon : IDisposable
 
     public void Show()
     {
-        if (_added) return;
+        if (_added || _disposed || _hwnd == IntPtr.Zero) return;
         var data = CreateData();
         if (Shell_NotifyIcon(NIM_ADD, ref data)) _added = true;
     }
@@ -94,6 +97,8 @@ public sealed class TrayIcon : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         Hide();
         if (_hwnd != IntPtr.Zero)
         {
@@ -122,7 +127,7 @@ public sealed class TrayIcon : IDisposable
             if (_added)
             {
                 var data = CreateData();
-                Shell_NotifyIcon(NIM_ADD, ref data);
+                _added = Shell_NotifyIcon(NIM_ADD, ref data);
             }
         }
         else if (msg == WM_TRAYICON)

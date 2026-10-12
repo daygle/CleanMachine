@@ -10,16 +10,21 @@ public sealed partial class BackupsPage : Page
     public BackupsPage()
     {
         InitializeComponent();
-        Loaded += (_, _) => LoadBackups();
+        Loaded += async (_, _) => await LoadBackupsAsync();
     }
 
-    private void LoadBackups()
+    private int _loadGeneration;
+    private async Task LoadBackupsAsync()
     {
-        var backups = RegistryCareService.ListBackups();
+        var generation = ++_loadGeneration;
+        var sized = await Task.Run(() => RegistryCareService.ListBackups()
+            .Select(backup => (Backup: backup, Size: GetSize(backup.FilePath))).ToArray());
+        if (generation != _loadGeneration) return;
+        var backups = sized.Select(entry => entry.Backup).ToArray();
         BackupsPanel.Children.Clear();
 
-        var count = backups.Count;
-        var totalBytes = backups.Sum(b => File.Exists(b.FilePath) ? new FileInfo(b.FilePath).Length : 0);
+        var count = backups.Length;
+        var totalBytes = sized.Sum(entry => entry.Size);
         CountText.Text = $"{count} {(count == 1 ? "backup" : "backups")}";
         SizeText.Text = $"{AppNotifications.FormatBytes(totalBytes)} total";
 
@@ -31,12 +36,19 @@ public sealed partial class BackupsPage : Page
         }
 
         EmptyState.Visibility = Visibility.Collapsed;
-        foreach (var backup in backups)
-            BackupsPanel.Children.Add(BuildBackupCard(backup));
+        foreach (var entry in sized)
+            BackupsPanel.Children.Add(BuildBackupCard(entry.Backup, entry.Size));
         FooterText.Text = $"Stored in {RegistryCareService.BackupsDirectory}.";
     }
 
-    private Border BuildBackupCard(RegistryBackup backup)
+    private static long GetSize(string path)
+    {
+        try { return new FileInfo(path).Length; }
+        catch (IOException) { return 0; }
+        catch (UnauthorizedAccessException) { return 0; }
+    }
+
+    private Border BuildBackupCard(RegistryBackup backup, long size)
     {
         var grid = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44, GridUnitType.Pixel) }); // icon
@@ -62,7 +74,6 @@ public sealed partial class BackupsPage : Page
         };
         Grid.SetColumn(iconBorder, 0);
 
-        var size = File.Exists(backup.FilePath) ? new FileInfo(backup.FilePath).Length : 0;
         var info = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         info.Children.Add(new TextBlock
         {
@@ -175,10 +186,10 @@ public sealed partial class BackupsPage : Page
 
         try
         {
-            RegistryCareService.DeleteBackup(backup);
+            await Task.Run(() => RegistryCareService.DeleteBackup(backup));
             await new ActivityStore().AddAsync(new ActivityEntry(DateTimeOffset.UtcNow,
                 "Registry Backup Deleted", $"Deleted {Path.GetFileName(backup.FilePath)} from the backups folder."));
-            LoadBackups();
+            await LoadBackupsAsync();
             FooterText.Text = $"Deleted '{Path.GetFileName(backup.FilePath)}'.";
         }
         catch (Exception ex)

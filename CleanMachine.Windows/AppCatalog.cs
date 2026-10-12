@@ -105,7 +105,7 @@ public static class AppCatalog
         new("microsoft-office", "Microsoft Office", "Desktop Application", false,
         [
             (AppDataRoot.LocalAppData, [
-                new("Microsoft\\Office\\16.0\\OfficeFileCache", "Office File Cache"),
+                // OfficeFileCache may contain unsynced documents. Office owns its cleanup.
                 new("Microsoft\\Office\\16.0\\Wef\\Cache", "Workflow Cache"),
                 new("Microsoft\\Office\\16.0\\OfficeNotification", "Notification Cache")
             ]),
@@ -142,7 +142,7 @@ public static class AppCatalog
         new("mediaplayer", "Windows Media Player", "Desktop Application", false,
         [
             (AppDataRoot.RoamingAppData, [
-                new("Microsoft\\Media Player\\CurrentDatabase_*.wmdb", "Old Database"),
+                // CurrentDatabase_*.wmdb is the user's media library, not temp data.
                 new("Microsoft\\Media Player\\Cache", "Cache Files")
             ])
         ]),

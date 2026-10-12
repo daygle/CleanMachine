@@ -250,14 +250,9 @@ public static class SingleInstance
             // Process object is disposed even on an early exit: this helper is
             // polled every 200 ms during a shutdown wait, so leaking handles here
             // would accumulate for seconds at a time.
-            foreach (var process in Process.GetProcessesByName(processName))
-            {
-                using (process)
-                {
-                    if (process.Id != Environment.ProcessId) return true;
-                }
-            }
-            return false;
+            var processes = Process.GetProcessesByName(processName);
+            try { return processes.Any(process => process.Id != Environment.ProcessId); }
+            finally { foreach (var process in processes) process.Dispose(); }
         }
         catch { return false; }
     }

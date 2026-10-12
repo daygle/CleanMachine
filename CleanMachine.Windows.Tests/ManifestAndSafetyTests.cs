@@ -280,8 +280,8 @@ public sealed class ManifestAndSafetyTests
             new RegistryFinding("HKCU", "unsafe", "review", false, 100)
         };
         var review = await service.PrepareReviewAsync(findings);
-        Assert.Single(review.Findings);
-        Assert.Equal("safe", review.Findings[0].Path);
+        // Risk/confidence alone do not authorize arbitrary registry paths.
+        Assert.Empty(review.Findings);
     }
 
     [Fact]
@@ -800,14 +800,12 @@ public sealed class ManifestAndSafetyTests
             key.SetValue("RemoveMe", "remove");
         }
 
-        var backupPath = Path.Combine(Path.GetTempPath(), $"cleanmachine-registry-test-{Guid.NewGuid():N}.reg");
-        await File.WriteAllTextAsync(backupPath, "Windows Registry Editor Version 5.00\n");
+        var service = new RegistryCareService();
+        var review = await service.PrepareReviewAsync(
+            [new RegistryFinding("HKCU", path, "orphaned value", true, 75, "File Extensions", "RemoveMe")]);
+        Assert.NotEmpty(review.Backups);
         try
         {
-            var review = new RegistryReview(
-            [
-                new RegistryFinding("HKCU", path, "orphaned value", true, 75, "File Extensions", "RemoveMe")
-            ], [new RegistryBackup(backupPath, DateTimeOffset.UtcNow)]);
             var result = await new RegistryCareService().CleanAsync(review);
 
             Assert.Equal(1, result.Removed);
@@ -820,7 +818,7 @@ public sealed class ManifestAndSafetyTests
         }
         finally
         {
-            try { File.Delete(backupPath); } catch { }
+            foreach (var backup in review.Backups) RegistryCareService.DeleteBackup(backup);
             root.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
         }
     }
@@ -1144,7 +1142,7 @@ public sealed class ManifestAndSafetyTests
     {
         foreach (var item in BrowserCatalog.ItemsFor(BrowserFamily.Chromium))
         {
-            var destructive = item.Id is "history" or "download-history" or "cookies" or "autofill" or "passwords" or "last-download-location";
+            var destructive = item.Id is "history" or "download-history" or "cookies" or "autofill" or "passwords" or "last-download-location" or "sessions" or "bookmarks-backup";
             Assert.Equal(destructive, item.Destructive);
         }
 

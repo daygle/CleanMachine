@@ -192,6 +192,79 @@ public sealed class AppDataPathsTests
     }
 
     [Fact]
+    public void PartialMigrationIsNotMarkedCompleteAndRetriesAfterTheConflictIsFixed()
+    {
+        using var scratch = new ScratchScope();
+        var legacy = Path.Combine(scratch.Root, "package");
+        var durable = Path.Combine(scratch.Root, "profile");
+        Directory.CreateDirectory(legacy);
+        Directory.CreateDirectory(Path.Combine(durable, "settings.json"));
+        File.WriteAllText(Path.Combine(legacy, "settings.json"), "source settings");
+        var marker = Path.Combine(durable, ".legacy-migration-v1-complete");
+        File.WriteAllText(marker, "stale completion claim");
+
+        var failed = AppDataPaths.TryMigrateToDurableRoot(durable, legacy);
+
+        Assert.False(failed.Complete);
+        Assert.False(File.Exists(marker));
+        Assert.True(File.Exists(Path.Combine(legacy, "settings.json")));
+        Assert.NotNull(failed.Error);
+
+        Directory.Delete(Path.Combine(durable, "settings.json"));
+        var retried = AppDataPaths.TryMigrateToDurableRoot(durable, legacy);
+        Assert.True(retried.Complete);
+        Assert.Equal(durable, retried.Root);
+        Assert.True(File.Exists(marker));
+        Assert.Equal("source settings", File.ReadAllText(Path.Combine(durable, "settings.json")));
+    }
+
+    [Fact]
+    public void CompletedMigrationNeverReimportsStaleLegacyFilesOnRetry()
+    {
+        using var scratch = new ScratchScope();
+        var legacy = Path.Combine(scratch.Root, "package");
+        var durable = Path.Combine(scratch.Root, "profile");
+        Directory.CreateDirectory(legacy);
+        File.WriteAllText(Path.Combine(legacy, "settings.json"), "old settings");
+        File.WriteAllText(Path.Combine(legacy, "activity.json"), "old activity");
+
+        var first = AppDataPaths.TryMigrateToDurableRoot(durable, legacy);
+        Assert.True(first.Complete);
+        File.Delete(Path.Combine(durable, "activity.json"));
+        File.WriteAllText(Path.Combine(legacy, "activity.json"), "stale activity");
+        File.WriteAllText(Path.Combine(durable, "settings.json"), "current settings");
+
+        var retry = AppDataPaths.TryMigrateToDurableRoot(durable, legacy);
+
+        Assert.True(retry.Complete);
+        Assert.Equal(durable, retry.Root);
+        Assert.False(File.Exists(Path.Combine(durable, "activity.json")));
+        Assert.Equal("current settings", File.ReadAllText(Path.Combine(durable, "settings.json")));
+    }
+
+    [Fact]
+    public void MigrationReportsWorkBudgetExhaustionRatherThanClaimingSuccess()
+    {
+        using var scratch = new ScratchScope();
+        var legacy = Path.Combine(scratch.Root, "package");
+        var durable = Path.Combine(scratch.Root, "profile");
+        var nested = legacy;
+        for (var i = 0; i < 6; i++)
+        {
+            nested = Path.Combine(nested, "level" + i);
+            Directory.CreateDirectory(nested);
+        }
+        File.WriteAllText(Path.Combine(nested, "settings.json"), "keep me");
+
+        var result = AppDataPaths.TryMigrateToDurableRoot(durable, legacy);
+
+        Assert.False(result.Complete);
+        Assert.False(File.Exists(Path.Combine(durable, ".legacy-migration-v1-complete")));
+        Assert.True(File.Exists(Path.Combine(nested, "settings.json")));
+        Assert.NotNull(result.Error);
+    }
+
+    [Fact]
     public void RemovalCommandEscapesThePackageIdentity()
     {
         var command = MsixUninstallService.BuildRemovalCommand("Evil'name'; Stop-Process *; '");
@@ -205,10 +278,42 @@ public sealed class AppDataPathsTests
         Assert.Contains("PackageFullName", command);
     }
 
+    [Fact]
+    public void MigrationDoesNotCopyFilesThroughLinkedSources()
+    {
+        var scope = TestScope();
+        var legacy = Path.Combine(scope, "legacy");
+        var outside = Path.Combine(scope, "outside");
+        var target = Path.Combine(scope, "durable");
+        var link = Path.Combine(legacy, "Backups");
+        try
+        {
+            Directory.CreateDirectory(legacy);
+            Directory.CreateDirectory(outside);
+            File.WriteAllText(Path.Combine(outside, "private.txt"), "do not copy");
+            Directory.CreateSymbolicLink(link, outside);
+            File.WriteAllText(Path.Combine(legacy, "settings.json"), "{}");
+            AppDataPaths.MigrateToDurableRoot(target, legacy);
+            Assert.True(File.Exists(Path.Combine(target, "settings.json")));
+            Assert.False(File.Exists(Path.Combine(target, "Backups", "private.txt")));
+        }
+        finally
+        {
+            if (Directory.Exists(link)) Directory.Delete(link);
+            Directory.Delete(scope, recursive: true);
+        }
+    }
+
     private static string TestScope()
     {
         var scope = Path.Combine(Path.GetTempPath(), $"cm-apptest-{Guid.NewGuid():N}");
         Directory.CreateDirectory(scope);
         return scope;
+    }
+
+    private sealed class ScratchScope : IDisposable
+    {
+        internal string Root { get; } = TestScope();
+        public void Dispose() => Directory.Delete(Root, recursive: true);
     }
 }
