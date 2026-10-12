@@ -4,7 +4,11 @@ namespace CleanMachine.Windows;
 
 /// <summary>Async-compatible, crash-released per-user interprocess exclusion.
 /// The lock file is never deleted: unlinking it could create two different locks.
-/// Files live outside package virtualization and outside the deletable data tree.
+/// Files live in %LOCALAPPDATA%\CleanMachine.Locks: a sibling of, not inside, the
+/// data folder that "remove my data" deletes, and outside the Temp tree the app
+/// cleans. Under MSIX the folder is redirected into the package, which is fine:
+/// every process that takes these gates (UI, tray, scheduled runs) runs packaged
+/// and so resolves the same redirected path.
 /// FileShare.None is enforced by .NET on Windows and Unix; no thread-affine mutex
 /// is held over an await. Access errors fail closed instead of disabling locking.</summary>
 internal sealed class ProcessGate
@@ -15,7 +19,7 @@ internal sealed class ProcessGate
 
     internal ProcessGate(string name, string? directory = null)
     {
-        directory ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".CleanMachine-locks");
+        directory ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CleanMachine.Locks");
         _path = Path.Combine(directory, name + ".lock");
     }
 
