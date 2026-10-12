@@ -91,6 +91,9 @@ internal static class SafeDeletion
         }
     }
 
+    private const uint PinAccess = 0x00100081; // SYNCHRONIZE | FILE_READ_ATTRIBUTES | FILE_READ_DATA
+    private const uint PinShare = 3;            // FILE_SHARE_READ | FILE_SHARE_WRITE, never DELETE
+
     internal static Lease Pin(string path, bool delete = false)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Native path pinning requires Windows.");
@@ -101,7 +104,12 @@ internal static class SafeDeletion
         var lease = new Lease();
         try
         {
-            var rootHandle = CreateFileW(root, 0x00100080, 1 /* share read only */, IntPtr.Zero,
+            // Windows only enforces share modes against handles that hold data
+            // access, so a READ_ATTRIBUTES-only handle pins nothing. Ask for
+            // FILE_READ_DATA (list directory) and share read+write but never
+            // delete: a rename or delete of any pinned component then fails,
+            // while ordinary writes and renames *into* a pinned directory work.
+            var rootHandle = CreateFileW(root, PinAccess, PinShare, IntPtr.Zero,
                 3, 0x02200000 /* backup semantics + open reparse point */, IntPtr.Zero);
             if (rootHandle.IsInvalid) { rootHandle.Dispose(); ThrowLastError(); }
             lease.Add(rootHandle);
@@ -123,8 +131,8 @@ internal static class SafeDeletion
                         ObjectName = unicodePointer, Attributes = 0x40 /* case-insensitive */
                     };
                     var status = NtCreateFile(out var child,
-                        0x00100080u | (leaf && delete ? 0x00010000u : 0), ref attributes, out _, IntPtr.Zero,
-                        0, 1 /* share read only */, 1 /* FILE_OPEN */,
+                        PinAccess | (leaf && delete ? 0x00010000u /* DELETE */ : 0), ref attributes, out _, IntPtr.Zero,
+                        0, leaf && delete ? 1u /* share read only */ : PinShare, 1 /* FILE_OPEN */,
                         0x00200020 /* OPEN_REPARSE_POINT + SYNCHRONOUS_IO_NONALERT */, IntPtr.Zero, 0);
                     if (status < 0)
                     {

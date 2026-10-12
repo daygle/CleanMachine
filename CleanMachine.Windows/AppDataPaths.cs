@@ -211,12 +211,16 @@ internal static class AppDataPaths
             // complete. Verify content before the atomic publish; interrupted or
             // short copies remain a retryable temp file instead of masquerading as
             // the destination.
-            using var original = File.OpenRead(source);
-            using var staged = File.OpenRead(temporary);
-            if (original.Length != staged.Length
-                || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                    HashBounded(original, budget), HashBounded(staged, budget)))
-                return false;
+            // The verification handles must be closed before the move: Windows
+            // refuses to rename a file that is still open without delete sharing.
+            using (var original = File.OpenRead(source))
+            using (var staged = File.OpenRead(temporary))
+            {
+                if (original.Length != staged.Length
+                    || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                        HashBounded(original, budget), HashBounded(staged, budget)))
+                    return false;
+            }
 
             try { File.Move(temporary, destination, overwrite: false); }
             catch (IOException) when (ExistingAttributes(destination) is { } raced
