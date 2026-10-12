@@ -80,9 +80,15 @@ The project does not request vulnerability reports containing secrets. Remove AP
 ## Audit follow-up
 
 See [AUDIT.md](AUDIT.md) for the October 2026 review, fixes and outstanding checks.
-Reparse checks include ancestors but are path-based, not a defense against a
-same-user process concurrently replacing directories. Cleanup coordination and
-store write gates are per-user interprocess file locks (in
-`%LOCALAPPDATA%\CleanMachine.Locks`), so a headless schedule and the GUI are
-serialized; the OS releases a lock if its process crashes. Restore now holds the payload read-locked across verification/import and
-uses the cleanup gate, but interrupted imports are not transactional rollbacks.
+On Windows, every cleanup deletion holds the target and each of its ancestor
+folders open while it checks and deletes, so a same-user process cannot swap in
+a link or rename a folder mid-delete; browser preference edits hold their folder
+the same way. Other steps - the one-time data migration copy and CleanMachine's
+handling of its own temp, backup and uninstall files - still check links by path
+only, so they are not a defense against a same-user process concurrently
+replacing directories. Cleanup coordination and store write gates are per-user
+interprocess file locks (in `%LOCALAPPDATA%\CleanMachine.Locks`), so a headless
+schedule and the GUI are serialized; the OS releases a lock if its process
+crashes. Restore now holds the payload read-locked across verification/import
+and uses the cleanup gate, but interrupted imports are not transactional
+rollbacks.
