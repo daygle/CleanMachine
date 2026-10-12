@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 
 namespace CleanMachine.Windows;
 
@@ -35,7 +36,7 @@ public sealed class AppSettings
     public bool CleanOnBrowserExit { get; set; } = true;
     // Browser Cleaner page: when true, "Clean selected" closes running browsers
     // itself instead of refusing while any are open (graceful close first, then
-    // force-kill for whatever is still alive after a 5s wait). Off by default,
+    // leave any remaining processes alone after a 5s wait). Off by default,
     // which keeps the ask-first behavior of listing what must be closed.
     public bool CloseOpenBrowsersAutomatically { get; set; }
     // Explicit "start with Windows" preference, independent of background services.
@@ -203,10 +204,9 @@ public sealed class AppSettings
     /// <summary>The item ids a browser's after-exit clean covers: the monitor's
     /// explicit selection when configured, otherwise every non-destructive catalog
     /// item for that browser's family (the safe "caches and similar" default).
-    /// Destructive items (cookies, history, passwords, ...) are never included
-    /// automatically - auto-cleaning user data without the user present is not
-    /// something a background pass may decide on its own. Unknown ids (items the
-    /// catalog no longer offers) are ignored; an explicit empty set means the
+    /// Destructive items are excluded from the default. An explicit per-browser
+    /// opt-in may include them, but only while that browser is still closed.
+    /// Unknown ids (items the catalog no longer offers) are ignored; an explicit empty set means the
     /// exit-clean does nothing for that browser.</summary>
     public IReadOnlySet<string> EffectiveExitItems(string browser)
     {
@@ -256,15 +256,23 @@ public sealed class AppSettings
             if (File.Exists(FilePath) && new FileInfo(FilePath).Length <= MaxSettingsBytes)
             {
                 await using var stream = File.OpenRead(FilePath);
+                if (stream.Length > MaxSettingsBytes) return new AppSettings();
                 var loaded = await JsonSerializer.DeserializeAsync<AppSettings>(
                     stream, cancellationToken: cancellationToken);
-                if (loaded is not null) return loaded.Sanitize();
+                if (loaded is not null)
+                {
+                    loaded.Sanitize();
+                    loaded._baseline = JsonSerializer.SerializeToNode(loaded)!.AsObject();
+                    return loaded;
+                }
             }
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
         catch (JsonException) { }
-        return new AppSettings();
+        var defaults = new AppSettings();
+        defaults._baseline = JsonSerializer.SerializeToNode(defaults)!.AsObject();
+        return defaults;
     }
 
     /// <summary>Puts everything read from disk back into the range the app can
@@ -335,7 +343,7 @@ public sealed class AppSettings
                     ? null
                     : monitor.Items.Where(id => !string.IsNullOrWhiteSpace(id) && id.Length <= MaxEntryLength)
                         .Take(MaxCollectionEntries)
-                        .ToHashSet();
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
             }
         }
 
@@ -350,6 +358,7 @@ public sealed class AppSettings
             // rather than trusted from the file.
             Schedules = Schedules
                 .Where(s => s is not null && ScheduledTask.IsValidScheduleId(s.Id))
+                .DistinctBy(s => s.Id, StringComparer.OrdinalIgnoreCase)
                 .Take(MaxSchedules)
                 .Select(s =>
                 {
@@ -383,19 +392,19 @@ public sealed class AppSettings
             : stored
                 .Where(value => !string.IsNullOrWhiteSpace(value) && value.Length <= MaxEntryLength)
                 .Take(MaxCollectionEntries)
-                .ToHashSet();
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The nullable-property form of <see cref="CapSet"/>. Null has to
     /// stay null here: to the callers a null set means "not configured, use the
     /// default", while an empty set means "the user chose nothing", and those
     /// are different decisions that must not collapse into each other.</summary>
     private static HashSet<string>? CapSetOrNull(HashSet<string>? stored)
-        => stored is null || stored.Count > MaxCollectionEntries
-            ? null
+        => stored is null ? null : stored.Count > MaxCollectionEntries
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : stored
                 .Where(value => !string.IsNullOrWhiteSpace(value) && value.Length <= MaxEntryLength)
                 .Take(MaxCollectionEntries)
-                .ToHashSet();
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private static List<string> CapList(List<string>? stored)
         => stored is null || stored.Count > MaxCollectionEntries
@@ -404,30 +413,92 @@ public sealed class AppSettings
                     .Take(MaxCollectionEntries)
                     .ToList();
 
-    public async Task SaveAsync(CancellationToken cancellationToken = default)
+    private JsonObject? _baseline;
+    private readonly SemaphoreSlim _instanceSaveGate = new(1, 1);
+
+    public Task SaveAsync(CancellationToken cancellationToken = default)
+        => SaveToAsync(FilePath, cancellationToken);
+
+    // Test seam uses scratch storage; production callers cannot change the path.
+    internal async Task SaveToAsync(string path, CancellationToken token = default)
     {
-        var directory = Path.GetDirectoryName(FilePath)!;
-        Directory.CreateDirectory(directory);
-        // Instant-save handlers fire concurrently (every toggle/keystroke), so writes
-        // are serialized: two simultaneous saves would otherwise collide on one temp
-        // file and throw IOException from an async-void handler (a hard crash).
-        await SaveGate.WaitAsync(cancellationToken);
-        var temporary = $"{FilePath}.{Guid.NewGuid():N}.tmp";
+        await _instanceSaveGate.WaitAsync(token);
         try
         {
-            await using (var stream = File.Create(temporary))
-                await JsonSerializer.SerializeAsync(stream, this,
-                    new JsonSerializerOptions { WriteIndented = true }, cancellationToken);
-            File.Move(temporary, FilePath, true);
+            var snapshot = JsonSerializer.SerializeToNode(this)!.AsObject();
+            var baseline = _baseline ?? JsonSerializer.SerializeToNode(new AppSettings())!.AsObject();
+            await SaveGate.WaitAsync(token);
+            try
+            {
+                var latest = new JsonObject();
+                if (File.Exists(path))
+                {
+                    await using var input = File.OpenRead(path);
+                    if (input.Length > MaxSettingsBytes) throw new InvalidDataException("Settings file exceeds the size limit.");
+                    latest = (await JsonNode.ParseAsync(input, cancellationToken: token))?.AsObject() ?? new();
+                }
+                else latest = baseline.DeepClone().AsObject();
+                var merged = MergeChanges(baseline, snapshot, latest);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                var temp = path + $".{Guid.NewGuid():N}.tmp";
+                try
+                {
+                    await File.WriteAllTextAsync(temp, merged.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), token);
+                    token.ThrowIfCancellationRequested();
+                    File.Move(temp, path, true);
+                    // Retain the local snapshot baseline, NOT merged external values:
+                    // a stale page must not turn unrelated values into local edits.
+                    _baseline = snapshot;
+                }
+                finally { if (File.Exists(temp)) File.Delete(temp); }
+            }
+            finally { SaveGate.Release(); }
         }
-        finally
-        {
-            SaveGate.Release();
-            try { if (File.Exists(temporary)) File.Delete(temporary); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-        }
+        finally { _instanceSaveGate.Release(); }
     }
 
-    private static readonly SemaphoreSlim SaveGate = new(1, 1);
+    internal static JsonObject MergeChanges(JsonObject baseline, JsonObject edited, JsonObject latest)
+    {
+        var result = latest.DeepClone().AsObject();
+        foreach (var (key, value) in edited)
+        {
+            var old = baseline[key];
+            if (JsonNode.DeepEquals(old, value)) continue;
+            if (old is JsonObject oldMap && value is JsonObject newMap && result[key] is JsonObject currentMap)
+            {
+                var updated = MergeChanges(oldMap, newMap, currentMap);
+                foreach (var removed in oldMap.Select(p => p.Key).Except(newMap.Select(p => p.Key))) updated.Remove(removed);
+                result[key] = updated;
+            }
+            else if (old is JsonArray oldArray && value is JsonArray newArray && result[key] is JsonArray currentArray)
+            {
+                if (key is "Schedules" or "BrowserMonitors")
+                {
+                    var identity = key == "Schedules" ? "Id" : "Browser";
+                    JsonObject Map(JsonArray array) => new(array.OfType<JsonObject>()
+                        .Where(n => n[identity] is not null)
+                        .Select(n => KeyValuePair.Create<string, JsonNode?>(n[identity]!.GetValue<string>().ToUpperInvariant(), n.DeepClone())));
+                    var oldEntries = Map(oldArray);
+                    var newEntries = Map(newArray);
+                    var entries = MergeChanges(oldEntries, newEntries, Map(currentArray));
+                    foreach (var removed in oldEntries.Select(p => p.Key).Except(newEntries.Select(p => p.Key))) entries.Remove(removed);
+                    result[key] = new JsonArray(entries.Select(p => p.Value?.DeepClone()).ToArray());
+                }
+                else if (oldArray.All(n => n is JsonValue) && newArray.All(n => n is JsonValue))
+                {
+                    var removed = oldArray.Where(n => !newArray.Any(v => JsonNode.DeepEquals(v, n))).ToArray();
+                    var added = newArray.Where(n => !oldArray.Any(v => JsonNode.DeepEquals(v, n))).ToArray();
+                    var array = new JsonArray(currentArray.Where(n => !removed.Any(v => JsonNode.DeepEquals(v, n)))
+                        .Select(n => n?.DeepClone()).ToArray());
+                    foreach (var n in added) if (!array.Any(v => JsonNode.DeepEquals(v, n))) array.Add(n?.DeepClone());
+                    result[key] = array;
+                }
+                else result[key] = value.DeepClone();
+            }
+            else result[key] = value?.DeepClone();
+        }
+        return result;
+    }
+
+    private static readonly ProcessGate SaveGate = new("settings");
 }

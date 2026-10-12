@@ -23,7 +23,7 @@ public sealed class CleanupStatsStore
     // RecordAsync is a read-modify-write of stats.json and can be called
     // concurrently (background agent + UI runs); without this gate two overlapping
     // records would load the same baseline and one run's totals would be lost.
-    private static readonly SemaphoreSlim RecordGate = new(1, 1);
+    private static readonly ProcessGate RecordGate = new("stats");
 
     public async Task<CleanupStatsFile> LoadAsync(CancellationToken token = default)
     {
@@ -31,11 +31,20 @@ public sealed class CleanupStatsStore
         {
             if (!File.Exists(FilePath)) return Empty;
             await using var stream = File.OpenRead(FilePath);
+            if (stream.Length > 4L * 1024 * 1024) return Empty;
             var stats = await JsonSerializer.DeserializeAsync<CleanupStatsFile>(stream, cancellationToken: token);
             if (stats is null) return Empty;
             // A file with "Runs": null (hand-edited or truncated) must not break every
             // later RecordAsync, which appends to this list.
-            return stats.Runs is null ? stats with { Runs = [] } : stats;
+            return stats with
+            {
+                ItemsRemoved = Math.Max(0, stats.ItemsRemoved),
+                BytesRecovered = Math.Max(0, stats.BytesRecovered),
+                Runs = (stats.Runs ?? []).Where(r => r is not null)
+                    .OrderByDescending(r => r.Time).Take(MaxRuns)
+                    .Select(r => r with { ItemsRemoved = Math.Max(0, r.ItemsRemoved), BytesRecovered = Math.Max(0, r.BytesRecovered) })
+                    .ToList()
+            };
         }
         catch (IOException) { return Empty; }
         catch (UnauthorizedAccessException) { return Empty; }
@@ -62,15 +71,16 @@ public sealed class CleanupStatsStore
                     .Take(MaxRuns)
                     .ToList();
                 var updated = new CleanupStatsFile(
-                    current.ItemsRemoved + Math.Max(itemsRemoved, 0),
-                    current.BytesRecovered + Math.Max(bytesRecovered, 0),
+                    AddNonNegative(current.ItemsRemoved, itemsRemoved),
+                    AddNonNegative(current.BytesRecovered, bytesRecovered),
                     DateTimeOffset.UtcNow,
                     runs);
                 await SaveAsync(updated, token);
             }
             finally { RecordGate.Release(); }
         }
-        catch { /* stats are best-effort */ }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        { /* stats are best-effort; cancellation still propagates */ }
     }
 
     /// <summary>Items and bytes cleaned within the recent window of an already-loaded
@@ -82,17 +92,24 @@ public sealed class CleanupStatsStore
         foreach (var run in stats.Runs)
         {
             if (run.Time < cutoff) continue;
-            items += run.ItemsRemoved;
-            bytes += run.BytesRecovered;
+            items = AddNonNegative(items, run.ItemsRemoved);
+            bytes = AddNonNegative(bytes, run.BytesRecovered);
         }
         return (items, bytes);
+    }
+
+    internal static long AddNonNegative(long current, long addition)
+    {
+        current = Math.Max(0, current);
+        addition = Math.Max(0, addition);
+        return addition > long.MaxValue - current ? long.MaxValue : current + addition;
     }
 
     private static async Task SaveAsync(CleanupStatsFile stats, CancellationToken token)
     {
         var directory = Path.GetDirectoryName(FilePath)!;
         Directory.CreateDirectory(directory);
-        // Unique per write: the gate only serializes this process, and a headless
+        // Unique per write: the gate serializes cooperating processes, and a headless
         // scheduled run can record at the same moment as the open app.
         var temp = $"{FilePath}.{Guid.NewGuid():N}.tmp";
         try

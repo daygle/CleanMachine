@@ -26,6 +26,7 @@ public sealed class CleanupService
         // thread, so the scan itself must run on a worker thread.
         => Task.Run<IReadOnlyList<RegistryFinding>>(() =>
         {
+        using var budgetScope = new RegistryScanScope(cancellationToken);
         var findings = new List<RegistryFinding>();
         ScanUninstallEntries(RegistryHive.CurrentUser, findings);
         ScanFileAssociations(RegistryHive.CurrentUser, findings);
@@ -44,6 +45,14 @@ public sealed class CleanupService
         return findings;
         }, cancellationToken);
 
+    private static readonly AsyncLocal<WorkBudget?> ScanBudget = new();
+    private sealed class RegistryScanScope : IDisposable
+    {
+        private readonly WorkBudget? _previous = ScanBudget.Value;
+        internal RegistryScanScope(CancellationToken token) => ScanBudget.Value = new WorkBudget(token, 50000);
+        public void Dispose() => ScanBudget.Value = _previous;
+    }
+
     private static void ScanUninstallEntries(RegistryHive hive, ICollection<RegistryFinding> findings)
     {
         using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Default);
@@ -51,6 +60,7 @@ public sealed class CleanupService
         if (uninstall is null) return;
         foreach (var name in uninstall.GetSubKeyNames())
         {
+            ScanBudget.Value?.Check();
             using var entry = uninstall.OpenSubKey(name);
             var displayName = entry?.GetValue("DisplayName") as string;
             var uninstallString = entry?.GetValue("UninstallString") as string;
@@ -59,7 +69,7 @@ public sealed class CleanupService
             {
                 findings.Add(new RegistryFinding("HKCU",
                     $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{name}",
-                    "Uninstall metadata has no removal command", true, 75, "Installer/Uninstaller"));
+                    "Uninstall metadata has no removal command; this may be a managed installation", false, 40, "Installer/Uninstaller"));
                 continue;
             }
             // The uninstall command names an uninstaller that is gone: the program
@@ -85,6 +95,7 @@ public sealed class CleanupService
         if (classes is null) return;
         foreach (var ext in classes.GetSubKeyNames())
         {
+            ScanBudget.Value?.Check();
             if (!ext.StartsWith('.')) continue; // only file-extension keys
             using var extKey = classes.OpenSubKey(ext);
             if (extKey?.GetValue(null) is not string progId || string.IsNullOrWhiteSpace(progId)) continue;
@@ -130,10 +141,12 @@ public sealed class CleanupService
         if (fileExts is null) return;
         foreach (var ext in fileExts.GetSubKeyNames())
         {
+            ScanBudget.Value?.Check();
             using var progids = fileExts.OpenSubKey($@"{ext}\OpenWithProgids");
             if (progids is null) continue;
             foreach (var progId in progids.GetValueNames())
             {
+            ScanBudget.Value?.Check();
                 if (string.IsNullOrEmpty(progId)) continue;
                 using var handler = Registry.ClassesRoot.OpenSubKey(progId);
                 if (handler is null)
@@ -157,10 +170,12 @@ public sealed class CleanupService
         if (fileExts is null) return;
         foreach (var ext in fileExts.GetSubKeyNames())
         {
+            ScanBudget.Value?.Check();
             using var list = fileExts.OpenSubKey($@"{ext}\OpenWithList");
             if (list is null) continue;
             foreach (var valueName in list.GetValueNames())
             {
+            ScanBudget.Value?.Check();
                 // MRUList just orders the letters; the a/b/c values hold the programs.
                 if (string.IsNullOrEmpty(valueName) || valueName.Equals("MRUList", StringComparison.OrdinalIgnoreCase)) continue;
                 if (list.GetValue(valueName) is not string target || string.IsNullOrWhiteSpace(target)) continue;
@@ -185,10 +200,12 @@ public sealed class CleanupService
         using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
         foreach (var keyPath in new[] { CompatAssistantStoreKey, CompatAssistantPersistedKey })
         {
+            ScanBudget.Value?.Check();
             using var key = root.OpenSubKey(keyPath);
             if (key is null) continue;
             foreach (var valueName in key.GetValueNames())
             {
+            ScanBudget.Value?.Check();
                 // Value names are full executable paths; only act on absolute local
                 // paths we can positively verify are gone.
                 if (string.IsNullOrEmpty(valueName) || valueName.Contains('%') || !Path.IsPathFullyQualified(valueName)) continue;
@@ -226,6 +243,7 @@ public sealed class CleanupService
             if (key is null) continue;
             foreach (var valueName in key.GetValueNames())
             {
+            ScanBudget.Value?.Check();
                 // Never offer to delete CleanMachine's own autostart entry. The app
                 // re-registers it (StartupRegistration.Sync), so removing it here
                 // just made it reappear and read as a failed cleanup. It is also
@@ -251,10 +269,12 @@ public sealed class CleanupService
         if (apps is null) return;
         foreach (var appName in apps.GetSubKeyNames())
         {
+            ScanBudget.Value?.Check();
             using var appKey = apps.OpenSubKey(appName);
             if (appKey is null) continue;
             foreach (var eventName in appKey.GetSubKeyNames())
             {
+            ScanBudget.Value?.Check();
                 using var eventKey = appKey.OpenSubKey(eventName);
                 var wav = eventKey?.GetValue(".Default") as string;
                 if (string.IsNullOrWhiteSpace(wav) || wav.Contains('%') || !Path.IsPathFullyQualified(wav)) continue;
@@ -278,12 +298,14 @@ public sealed class CleanupService
         if (key is null) return;
         foreach (var valueName in key.GetValueNames())
         {
+            ScanBudget.Value?.Check();
             if (string.IsNullOrEmpty(valueName)) continue;
             // Value names look like "<full exe path>.FriendlyAppName" or
             // ".ApplicationCompany"; strip the known suffix to get the executable.
             var exe = valueName;
             foreach (var suffix in new[] { ".FriendlyAppName", ".ApplicationCompany" })
             {
+            ScanBudget.Value?.Check();
                 if (exe.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                 {
                     exe = exe[..^suffix.Length];
@@ -311,6 +333,7 @@ public sealed class CleanupService
         if (appPaths is null) return;
         foreach (var name in appPaths.GetSubKeyNames())
         {
+            ScanBudget.Value?.Check();
             using var entry = appPaths.OpenSubKey(name);
             var target = entry?.GetValue(null) as string; // (Default) = executable path
             if (string.IsNullOrWhiteSpace(target)) continue;
@@ -335,6 +358,7 @@ public sealed class CleanupService
         if (key is null) return;
         foreach (var valueName in key.GetValueNames())
         {
+            ScanBudget.Value?.Check();
             if (string.IsNullOrEmpty(valueName)) continue;
             if (key.GetValue(valueName) is not string file || string.IsNullOrWhiteSpace(file)) continue;
             file = file.Trim().Trim('"');
@@ -357,6 +381,7 @@ public sealed class CleanupService
         using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
         foreach (var type in ContextMenuTypes)
         {
+            ScanBudget.Value?.Check();
             var shellPath = $@"Software\Classes\{type}\shell";
             using var shell = root.OpenSubKey(shellPath);
             if (shell is not null) ScanShellVerbs(shell, shellPath, findings);
@@ -372,6 +397,7 @@ public sealed class CleanupService
     {
         foreach (var verb in shell.GetSubKeyNames())
         {
+            ScanBudget.Value?.Check();
             using var verbKey = shell.OpenSubKey(verb);
             if (verbKey is null || HasValue(verbKey, "ExplorerCommandHandler")) continue;
             using var command = verbKey.OpenSubKey("command");
@@ -399,12 +425,14 @@ public sealed class CleanupService
         if (clsids is null) return;
         foreach (var clsid in clsids.GetSubKeyNames())
         {
+            ScanBudget.Value?.Check();
             if (!IsGuidKeyName(clsid)) continue;
             using var cls = clsids.OpenSubKey(clsid);
             if (cls is null) continue;
             var servers = new List<(bool IsLocal, string? Raw)>();
             foreach (var server in new[] { "InprocServer32", "LocalServer32" })
             {
+            ScanBudget.Value?.Check();
                 using var serverKey = cls.OpenSubKey(server);
                 if (serverKey is null) continue;
                 // Expanded on read (the default), so %LOCALAPPDATA%-style paths
@@ -430,6 +458,7 @@ public sealed class CleanupService
         string? missing = null;
         foreach (var (isLocal, raw) in servers)
         {
+            ScanBudget.Value?.Check();
             if (string.IsNullOrWhiteSpace(raw)) return null;
             var file = isLocal ? ResolveStartupExecutable(raw) : raw.Trim().Trim('"');
             if (file is null || file.Contains('%') || !Path.IsPathFullyQualified(file)) return null;
@@ -469,6 +498,7 @@ public sealed class CleanupService
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var part in path.Split(';'))
         {
+            ScanBudget.Value?.Check();
             var entry = part.Trim().Trim('"').Trim();
             if (entry.Length == 0 || !seen.Add(entry)) continue;
             var expanded = Environment.ExpandEnvironmentVariables(entry);
@@ -488,9 +518,45 @@ public sealed class CleanupService
     {
         // UNC shares may simply be offline; never call them missing.
         if (path.StartsWith(@"\\", StringComparison.Ordinal)) return false;
+        if (directoryExists is null && fileExists is null) return IsPositivelyMissing(path);
         var root = Path.GetPathRoot(path);
         if (string.IsNullOrEmpty(root) || !(directoryExists ?? Directory.Exists)(root)) return false;
         return !(fileExists ?? File.Exists)(path);
+    }
+
+    internal static bool IsPositivelyMissing(string path)
+    {
+        if (!Path.IsPathFullyQualified(path) || path.StartsWith(@"\\", StringComparison.Ordinal)) return false;
+        try { _ = File.GetAttributes(path); return false; }
+        catch (FileNotFoundException)
+        {
+            var parent = Path.GetDirectoryName(path);
+            return parent is not null && !NativeSafety.IsReparsePoint(parent);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // Prove each existing ancestor is accessible: Exists() hides access
+            // errors. A missing drive, unreadable ancestor or link is uncertainty.
+            var parent = Path.GetDirectoryName(path);
+            while (parent is not null)
+            {
+                try
+                {
+                    var attributes = File.GetAttributes(parent);
+                    return attributes.HasFlag(FileAttributes.Directory)
+                        && !NativeSafety.IsReparsePoint(parent);
+                }
+                catch (DirectoryNotFoundException) { parent = Path.GetDirectoryName(parent); }
+                catch (FileNotFoundException) { parent = Path.GetDirectoryName(parent); }
+                catch (IOException) { return false; }
+                catch (UnauthorizedAccessException) { return false; }
+            }
+            return false;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+        catch (ArgumentException) { return false; }
+        catch (NotSupportedException) { return false; }
     }
 
     /// <summary>Extracts the fully-qualified executable a command line runs (a Run

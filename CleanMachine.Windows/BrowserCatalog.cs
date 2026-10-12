@@ -120,7 +120,7 @@ public static class BrowserCatalog
         {
             try
             {
-                if (!Directory.Exists(root)) continue;
+                if (!Directory.Exists(root) || NativeSafety.IsReparsePoint(root)) continue;
                 if (browser.RootIsProfile)
                 {
                     profiles.Add(root);
@@ -128,6 +128,7 @@ public static class BrowserCatalog
                 }
                 foreach (var dir in Directory.EnumerateDirectories(root))
                 {
+                    if (NativeSafety.IsReparsePoint(dir)) continue;
                     // Chromium profiles contain Preferences; Firefox profiles are plain dirs.
                     if (browser.Family == BrowserFamily.Chromium
                         && !File.Exists(Path.Combine(dir, "Preferences"))) continue;
@@ -137,7 +138,7 @@ public static class BrowserCatalog
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
-        return profiles;
+        return profiles.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     public static IReadOnlyList<BrowserItemDefinition> ItemsFor(BrowserFamily family) => family switch
@@ -170,8 +171,8 @@ public static class BrowserCatalog
         (BrowserFamily.Firefox, "sessions") => Rel(BrowserItemRoot.Profile, ["sessionstore-backups", "sessionstore.jsonlz4"]),
         (BrowserFamily.Firefox, "crash-reports") => Rel(BrowserItemRoot.Profile, ["crashes", "minidumps"]),
         (BrowserFamily.Firefox, "bookmarks-backup") => Rel(BrowserItemRoot.Profile, ["bookmarkbackups"]),
-        (BrowserFamily.Firefox, "history") => Rel(BrowserItemRoot.Profile, ["places.sqlite", "places.sqlite-wal", "places.sqlite-shm"]),
-        (BrowserFamily.Firefox, "download-history") => Rel(BrowserItemRoot.Profile, ["places.sqlite", "places.sqlite-wal", "places.sqlite-shm"]),
+        // places.sqlite also holds bookmarks. Whole-file deletion is not a
+        // history-only operation; defer these two items to Firefox's own UI.
         (BrowserFamily.Firefox, "cookies") => Rel(BrowserItemRoot.Profile, ["cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm"]),
         (BrowserFamily.Firefox, "autofill") => Rel(BrowserItemRoot.Profile, ["formhistory.sqlite"]),
         (BrowserFamily.Firefox, "passwords") => Rel(BrowserItemRoot.Profile, ["logins.json", "key4.db", "key3.db"]),
@@ -202,10 +203,10 @@ public static class BrowserCatalog
     private static readonly BrowserItemDefinition[] ChromiumItems =
     [
         new("cache", "Internet Cache", false, "Recreatable page, code, GPU, and service-worker caches"),
-        new("sessions", "Sessions", false, "Session/tab restore files"),
+        new("sessions", "Sessions", true, "Session/tab restore files (removes recovery data)"),
         new("crash-reports", "Crash Reports", false, "Browser crash dumps"),
         new("metrics", "Metrics Temp Files", false, "Anonymous usage metrics pending upload"),
-        new("bookmarks-backup", "Bookmarks Backup", false, "Automatic backup copy of bookmarks"),
+        new("bookmarks-backup", "Bookmarks Backup", true, "Automatic backup copy of bookmarks (removes recovery data)"),
         new("history", "Internet History", true, "Deletes the entire browsing history database"),
         new("download-history", "Download History", true, "Deletes recorded downloads (shares the history database)"),
         new("cookies", "Cookies", true, "Signs you out of every site until you log in again"),
@@ -217,11 +218,11 @@ public static class BrowserCatalog
     private static readonly BrowserItemDefinition[] FirefoxItems =
     [
         new("cache", "Internet Cache", false, "Recreatable page and media caches"),
-        new("sessions", "Sessions", false, "Session/tab restore backups"),
+        new("sessions", "Sessions", true, "Session/tab restore backups (removes recovery data)"),
         new("crash-reports", "Crash Reports", false, "Browser crash dumps"),
-        new("bookmarks-backup", "Bookmarks Backup", false, "Automatic backup copies of bookmarks"),
-        new("history", "Internet History", true, "Deletes the entire browsing history database"),
-        new("download-history", "Download History", true, "Deletes recorded downloads (shares the places database)"),
+        new("bookmarks-backup", "Bookmarks Backup", true, "Automatic backup copies of bookmarks (removes recovery data)"),
+        new("history", "Internet History", true, "Use Firefox's Clear History: its database also contains bookmarks and is never deleted here"),
+        new("download-history", "Download History", true, "Use Firefox's Downloads list: its shared bookmarks database is never deleted here"),
         new("cookies", "Cookies", true, "Signs you out of every site until you log in again"),
         new("autofill", "AutoFill Form History", true, "Deletes saved form autofill entries"),
         new("passwords", "Saved Passwords", true, "Permanently deletes all passwords saved in the browser"),

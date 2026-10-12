@@ -76,3 +76,12 @@ schedule or an unbounded exclusion list.
 CleanMachine is Windows-specific and requires validation on each supported Windows version. Registry Care only cleans findings that pass its low-risk confidence gate (always after a backup). CleanMachine ships no secure-erase or drive-wiping tool and makes no claim of sanitizing storage; use device encryption for sensitive data. Do not interpret the presence of a UI option as proof of production-grade protection.
 
 The project does not request vulnerability reports containing secrets. Remove API keys, certificates, passwords, browser data, registry exports, and other private information before sharing diagnostics.
+
+## Audit follow-up
+
+See [AUDIT.md](AUDIT.md) for the October 2026 review, fixes and outstanding checks.
+Reparse checks include ancestors but are path-based, not a defense against a
+same-user process concurrently replacing directories. Cleanup coordination and
+store write gates are process-local; a headless schedule and the GUI can still
+race. Restore now holds the payload read-locked across verification/import and
+uses the cleanup gate, but interrupted imports are not transactional rollbacks.

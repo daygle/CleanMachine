@@ -12,9 +12,9 @@ namespace CleanMachine.Windows.Tests;
 /// cleaner is allowed to touch at all.
 /// </para>
 /// <para>
-/// They are kept out of the "Cleaning" collection on purpose: none of them touch
-/// the registry or the shared cleaning counter, and they should not be made to
-/// wait behind real cleaning work.</para></summary>
+/// Restore now participates in the shared cleaning counter, so this class shares
+/// the "Cleaning" collection with counter-sensitive service tests.</para></summary>
+[Collection("Cleaning")]
 public sealed class BackupProvenanceTests
 {
     private const string UninstallRoot = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";

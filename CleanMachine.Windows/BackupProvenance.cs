@@ -52,7 +52,7 @@ internal static class BackupProvenance
     /// Backups page into an unbounded allocation.</summary>
     internal const long MaxManifestBytes = 4L * 1024 * 1024;
 
-    private static readonly object Sync = new();
+    private static readonly ProcessGate Sync = new("provenance");
 
     /// <summary>The one place provenance is recorded. Deliberately outside every
     /// backup directory (see the type summary).</summary>
@@ -63,6 +63,7 @@ internal static class BackupProvenance
     internal static string ComputeSha256(string filePath)
     {
         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length > RegistryPayload.MaxBytes) throw new InvalidDataException("Registry backup exceeds the size limit.");
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
@@ -79,9 +80,14 @@ internal static class BackupProvenance
         {
             if (!File.Exists(manifestPath)) return [];
             if (new FileInfo(manifestPath).Length > MaxManifestBytes) return [];
-            return JsonSerializer.Deserialize<List<BackupProvenanceEntry>>(
-                       File.ReadAllBytes(manifestPath))
-                   ?? [];
+            using var stream = new FileStream(manifestPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (stream.Length > MaxManifestBytes) return [];
+            return (JsonSerializer.Deserialize<List<BackupProvenanceEntry>>(stream) ?? [])
+                .Where(e => e is not null && !string.IsNullOrWhiteSpace(e.FileName)
+                    && e.FileName.Length <= 255 && Path.GetFileName(e.FileName) == e.FileName
+                    && !string.IsNullOrWhiteSpace(e.KeyRoot) && e.KeyRoot.Length <= 500
+                    && e.SizeBytes > 0 && e.Sha256 is { Length: 64 } && e.Sha256.All(char.IsAsciiHexDigit))
+                .OrderByDescending(e => e.CreatedAtUtc).Take(MaxEntries).ToArray();
         }
         catch (IOException) { return []; }
         catch (JsonException) { return []; }
@@ -111,7 +117,8 @@ internal static class BackupProvenance
         catch (UnauthorizedAccessException) { return; }
 
         var name = Path.GetFileName(filePath);
-        lock (Sync)
+        Sync.Wait();
+        try
         {
             try
             {
@@ -135,6 +142,7 @@ internal static class BackupProvenance
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
+        finally { Sync.Release(); }
     }
 
     /// <summary>The recorded entry for a file whose bytes still hash to what was
@@ -143,9 +151,11 @@ internal static class BackupProvenance
     /// real backup's bytes with a different payload detectable.</summary>
     internal static BackupProvenanceEntry? Match(string filePath, IReadOnlyList<BackupProvenanceEntry> entries)
     {
+        if (NativeSafety.IsReparsePoint(filePath)) return null;
         var name = Path.GetFileName(filePath);
         foreach (var entry in entries)
         {
+            if (entry is null) continue;
             if (!string.Equals(entry.FileName, name, StringComparison.OrdinalIgnoreCase)) continue;
             if (string.IsNullOrWhiteSpace(entry.Sha256) || string.IsNullOrWhiteSpace(entry.KeyRoot)) continue;
             try

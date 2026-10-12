@@ -605,7 +605,7 @@ public sealed partial class MainWindow : Window
             _trayIcon.ExitRequested += OnTrayExitRequested;
         }
         _trayIcon.Show();
-        return true;
+        return _trayIcon.IsVisible;
     }
 
     private void HideTrayIcon()

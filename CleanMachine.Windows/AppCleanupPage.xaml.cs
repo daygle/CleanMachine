@@ -267,7 +267,7 @@ public sealed partial class AppCleanupPage : Page
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            detailsButton.Click += (_, _) => ShowItemDetail(scan, itemIndex);
+            detailsButton.Click += async (_, _) => await ShowItemDetailAsync(scan, itemIndex);
             ToolTipService.SetToolTip(detailsButton, item.FullPath);
 
             var row = new Grid { MinHeight = 30 };
@@ -293,6 +293,7 @@ public sealed partial class AppCleanupPage : Page
     /// card's box in _itemBoxes, so the card stays the single source of truth.</summary>
     private void ShowAppDetail(AppScan scan)
     {
+        ++_detailGeneration;
         _detailContext = scan;
         _detailItemIndex = null;
         DetailBackButton.Visibility = Visibility.Collapsed;
@@ -370,7 +371,7 @@ public sealed partial class AppCleanupPage : Page
                 Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
             });
             body.Content = label;
-            body.Click += (_, _) => ShowItemDetail(scan, index);
+            body.Click += async (_, _) => await ShowItemDetailAsync(scan, index);
             ToolTipService.SetToolTip(body, item.FullPath);
             Grid.SetColumn(body, 1);
             row.Children.Add(body);
@@ -413,11 +414,13 @@ public sealed partial class AppCleanupPage : Page
 
     /// <summary>Item-level detail: a location banner plus the files of the item
     /// drilled into. The back button returns to the app-level view.</summary>
-    private void ShowItemDetail(AppScan scan, int itemIndex)
+    private int _detailGeneration;
+    private async Task ShowItemDetailAsync(AppScan scan, int itemIndex)
     {
         var item = scan.Items.ElementAtOrDefault(itemIndex);
         if (item is null) return;
 
+        var generation = ++_detailGeneration;
         _detailContext = scan;
         _detailItemIndex = itemIndex;
         DetailBackButton.Visibility = Visibility.Visible;
@@ -433,20 +436,18 @@ public sealed partial class AppCleanupPage : Page
 
         try
         {
-            if (Directory.Exists(item.FullPath))
+            var files = await Task.Run(() => AppCleanupService.ListItemFiles(item.FullPath));
+            if (generation != _detailGeneration) return;
+            if (files.Count > 0)
             {
-                var files = FileEnumeration.Files(item.FullPath)
-                    .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
-                    .Take(200)
-                    .ToList();
 
                 if (files.Count == 0)
                     DetailPanel.Children.Add(BuildDetailPlaceholder("No files in this location right now."));
 
                 foreach (var file in files)
                 {
-                    var info = new FileInfo(file);
-                    var relPath = file[item.FullPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    var relPath = Path.GetRelativePath(item.FullPath, file.Path);
+                    if (relPath == ".") relPath = Path.GetFileName(file.Path);
                     var fileRow = new Grid { ColumnSpacing = 12 };
                     fileRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                     fileRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -462,7 +463,7 @@ public sealed partial class AppCleanupPage : Page
                     fileRow.Children.Add(nameText);
                     var sizeText = new TextBlock
                     {
-                        Text = WindowsCleanupPage.FormatBytes(info.Length),
+                        Text = WindowsCleanupPage.FormatBytes(file.Bytes),
                         FontSize = 10,
                         Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F)),
                         VerticalAlignment = VerticalAlignment.Center
@@ -491,40 +492,7 @@ public sealed partial class AppCleanupPage : Page
                     });
                 }
             }
-            else if (File.Exists(item.FullPath))
-            {
-                var info = new FileInfo(item.FullPath);
-                DetailPanel.Children.Add(new Border
-                {
-                    Background = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xFB, 0xFD, 0xFC)),
-                    BorderBrush = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7)),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(6),
-                    Padding = new Thickness(10, 6, 10, 6),
-                    Child = new TextBlock
-                    {
-                        Text = item.FullPath,
-                        FontSize = 11,
-                        Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30)),
-                        TextWrapping = TextWrapping.Wrap
-                    }
-                });
-                DetailPanel.Children.Add(new TextBlock
-                {
-                    Text = WindowsCleanupPage.FormatBytes(info.Length),
-                    FontSize = 10,
-                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F))
-                });
-            }
-            else
-            {
-                DetailPanel.Children.Add(new TextBlock
-                {
-                    Text = "Path not found",
-                    FontSize = 11,
-                    Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xC7, 0x77, 0x5D))
-                });
-            }
+            else DetailPanel.Children.Add(BuildDetailPlaceholder("No files in this location right now."));
         }
         catch (Exception ex)
         {

@@ -42,10 +42,8 @@ public sealed class WindowsCleanupService
     private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private static readonly string LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
     private static readonly string AppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-    // Use the OS-resolved temp directory rather than trusting the mutable TEMP
-    // environment variable. Cleanup categories must never be redirected to an
-    // arbitrary user-selected path through process environment state.
-    private static readonly string Temp = Path.GetFullPath(Path.GetTempPath());
+    // Known-folder resolution does not trust TEMP/TMP environment overrides.
+    private static readonly string Temp = TrustedTemp.Root;
     private static readonly string Downloads = Path.Combine(UserProfile, "Downloads");
 
     /// <summary>Well-known, recreatable locations the app is allowed to clean.</summary>
@@ -165,7 +163,8 @@ public sealed class WindowsCleanupService
             // Deleting thousands of files (and registry values) is long-running disk
             // work; the UI pages await this directly, so run the whole pass on a
             // worker thread and only the progress callbacks hop back to the UI.
-            return await Task.Run(() => CleanSelectedCore(categories, options, progress, cancellationToken), cancellationToken);
+            return await CleanupJournal.RunAsync("Windows Cleanup", () =>
+                Task.Run(() => CleanSelectedCore(categories, options, progress, cancellationToken), cancellationToken));
         }
         finally
         {
@@ -218,8 +217,20 @@ public sealed class WindowsCleanupService
                 var file = files[index];
                 try
                 {
-                    var length = new FileInfo(file).Length;
-                    File.Delete(file);
+                    // Discovery is not authorization: inspect again immediately
+                    // before deleting, including every ancestor and exclusions.
+                    if (NativeSafety.IsProtectedPath(file) || NativeSafety.IsReparsePoint(file) || IsExcluded(file, options.ExcludedPaths)
+                        || IsProtectedFile(file) || IsRecentlyModified(file))
+                    {
+                        issues.Add(new(file, "Safety check changed since discovery"));
+                        categorySkipped++;
+                        continue;
+                    }
+                    var allowed = category.Kind == CleanupKind.BrokenShortcuts
+                        ? BrokenShortcuts.Locations().First(l => NativeSafety.IsWithin(file, l.Root)).Root
+                        : category.Path!;
+                    var length = SafeDeletion.DeleteFile(file, allowed, DateTime.UtcNow.AddHours(-2));
+                    CleanupJournal.Record(1, length);
                     removed++;
                     recovered += length;
                     categoryRemoved++;
@@ -266,6 +277,7 @@ public sealed class WindowsCleanupService
                     // instead of always showing 0 B recovered.
                     var binBytes = GetRecycleBinSize();
                     EmptyRecycleBin();
+                    CleanupJournal.Record(1, binBytes);
                     removed++;
                     recovered += binBytes;
                     breakdown.Add(new CleanupCategoryResult(category.Name, 1, binBytes));
@@ -273,12 +285,14 @@ public sealed class WindowsCleanupService
                 else if (category.Kind == CleanupKind.ClipboardHistory)
                 {
                     ClearClipboardHistory();
+                    CleanupJournal.Record(1, 0);
                     removed++;
                     breakdown.Add(new CleanupCategoryResult(category.Name, 1, 0));
                 }
                 else
                 {
                     FlushDnsCache();
+                    CleanupJournal.Record(1, 0);
                     removed++;
                     breakdown.Add(new CleanupCategoryResult(category.Name, 1, 0));
                 }
@@ -346,9 +360,7 @@ public sealed class WindowsCleanupService
     }
 
     private static IReadOnlyList<string> GetCleanableFiles(CleanupCategory category, IReadOnlySet<string>? excludedPaths)
-        => EnumerateCleanableFiles(category.Path!, category.Pattern, category.Extensions, excludedPaths)
-            .Where(f => !IsRecentlyModified(f))
-            .ToArray();
+        => EnumerateCleanableFiles(category.Path!, category.Pattern, category.Extensions, excludedPaths).ToArray();
 
     /// <summary>True when the file was written in the last two hours, i.e. something
     /// is probably still using it. FAILS CLOSED: an unreadable timestamp counts as
@@ -363,16 +375,12 @@ public sealed class WindowsCleanupService
 
     private static IEnumerable<string> EnumerateCleanableFiles(string directory, string? pattern, string[]? extensions, IReadOnlySet<string>? exclusions)
     {
-        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory) || !IsTrustedRoot(directory) || IsExcluded(directory, exclusions)) return [];
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory) || !IsTrustedRoot(directory) || NativeSafety.IsProtectedPath(directory) || NativeSafety.IsReparsePoint(directory) || IsExcluded(directory, exclusions)) return [];
         try
         {
-            return Directory.EnumerateFiles(directory, pattern ?? "*", new EnumerationOptions
-            {
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = true,
-                AttributesToSkip = FileAttributes.ReparsePoint
-            })
-            .Where(f => !IsExcluded(f, exclusions) && !NativeSafety.IsReparsePoint(f) && MatchesExtensions(f, extensions) && !IsProtectedFile(f))
+            return FileEnumeration.Files(directory)
+            .Where(f => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(pattern ?? "*", Path.GetFileName(f), ignoreCase: true))
+            .Where(f => !IsExcluded(f, exclusions) && !NativeSafety.IsReparsePoint(f) && MatchesExtensions(f, extensions) && !IsProtectedFile(f) && !IsRecentlyModified(f))
             .Take(MaxFiles)
             .ToArray();
         }
@@ -421,26 +429,34 @@ public sealed class WindowsCleanupService
 
     /// <summary>Counts values in a key and all of its sub-keys, matching what the
     /// recursive cleaner will remove.</summary>
-    private static long CountValuesRecursive(RegistryKey key)
+    private static long CountValuesRecursive(RegistryKey key, WorkBudget? budget = null, int depth = 0)
     {
+        budget ??= new WorkBudget();
+        budget.Check(depth);
+        if (key.ValueCount > 100000 || key.SubKeyCount > 10000) throw new IOException("Registry key exceeds work limits.");
         long count = key.ValueCount;
         foreach (var subName in key.GetSubKeyNames())
         {
-            try { using var child = key.OpenSubKey(subName); if (child is not null) count += CountValuesRecursive(child); }
-            catch { /* skip inaccessible sub-keys */ }
+            try { using var child = key.OpenSubKey(subName); if (child is not null) count += CountValuesRecursive(child, budget, depth + 1); }
+            catch (UnauthorizedAccessException) { /* skip inaccessible sub-keys */ }
+            catch (System.Security.SecurityException) { /* skip inaccessible sub-keys */ }
         }
         return count;
     }
 
     /// <summary>Deletes every value in a key and, recursively, in its sub-keys,
     /// leaving the key structure intact. Returns how many values were removed.</summary>
-    private static int DeleteValuesRecursive(RegistryKey key, CancellationToken cancellationToken)
+    private static int DeleteValuesRecursive(RegistryKey key, CancellationToken cancellationToken, WorkBudget? budget = null, int depth = 0)
     {
+        budget ??= new WorkBudget(cancellationToken);
+        budget.Check(depth);
+        if (key.ValueCount > 100000 || key.SubKeyCount > 10000) throw new IOException("Registry key exceeds work limits.");
         var removed = 0;
         foreach (var name in key.GetValueNames())
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            budget.Check(depth);
             key.DeleteValue(name, throwOnMissingValue: false);
+            CleanupJournal.Record(1, 0);
             removed++;
         }
         foreach (var subName in key.GetSubKeyNames())
@@ -449,7 +465,7 @@ public sealed class WindowsCleanupService
             try
             {
                 using var child = key.OpenSubKey(subName, writable: true);
-                if (child is not null) removed += DeleteValuesRecursive(child, cancellationToken);
+                if (child is not null) removed += DeleteValuesRecursive(child, cancellationToken, budget, depth + 1);
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
             {
@@ -501,7 +517,7 @@ public sealed class WindowsCleanupService
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("DNS cache flush is supported on Windows only.");
         using var process = new Process
         {
-            StartInfo = new ProcessStartInfo("ipconfig", "/flushdns")
+            StartInfo = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "ipconfig.exe"), "/flushdns")
             {
                 CreateNoWindow = true,
                 UseShellExecute = false,

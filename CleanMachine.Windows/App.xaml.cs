@@ -280,7 +280,20 @@ public partial class App : Application
         // thread made every tick - the 5-second process poll, browser-exit cleans,
         // monitors - run on the WinUI dispatcher, where any slow
         // synchronous stretch froze the window and fed WER's hang reports.
-        _agentTask = Task.Run(() => _agent.RunAsync(_agentCts.Token));
+        var agent = _agent;
+        var cts = _agentCts;
+        _agentTask = Task.Run(async () =>
+        {
+            try { await agent.RunAsync(cts.Token); }
+            finally
+            {
+                lock (_agentLock)
+                {
+                    if (ReferenceEquals(_agentCts, cts)) _agentCts = null;
+                    cts.Dispose();
+                }
+            }
+        });
     }
 
     /// <summary>Runs the configured after-exit action for one specific browser.
@@ -300,7 +313,8 @@ public partial class App : Application
             // EffectiveExitItems): the catalog's safe items unless configured
             // otherwise. The browser that just closed is gone, but other browsers
             // may still be open - their files are never part of this browser's
-            // item paths, so skip the global all-browsers-closed check.
+            // item paths. Recheck only this browser after the delay, so a reopened
+            // browser cannot have its saved data removed while running.
             var itemIds = settings.EffectiveExitItems(browser).ToArray();
             if (itemIds.Length == 0) return;
 
@@ -317,11 +331,11 @@ public partial class App : Application
                 await Task.Delay(TimeSpan.FromSeconds(2), token);
                 report = await cleanup.CleanItemsAsync(
                     itemIds.Select(id => (browser, id)),
-                    token, requireBrowsersClosed: false,
+                    token, requireBrowsersClosed: true,
                     excludedPaths: settings.ExcludedPaths);
                 if (report.Result.ItemsRemoved > 0 || report.Skipped.Count == 0 || ++attempt >= 2) break;
             }
-            await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, token);
+            await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered, CancellationToken.None);
 
             var displayName = BrowserCatalog.Find(browser)?.Name ?? browser;
             if (monitor.AfterExit == ExitAction.CleanAndNotify && report.Result.ItemsRemoved > 0)
@@ -395,6 +409,8 @@ public partial class App : Application
         long bytes = 0;
         var details = new List<string>();
 
+        try
+        {
         if (selected.Count > 0)
         {
             try
@@ -449,7 +465,7 @@ public partial class App : Application
         }
 
         var result = new CleanupResult(removed, bytes);
-        await new CleanupStatsStore().RecordAsync(result.ItemsRemoved, result.BytesRecovered, token);
+        await new CleanupStatsStore().RecordAsync(result.ItemsRemoved, result.BytesRecovered, CancellationToken.None);
         if (result.ItemsRemoved > 0)
         {
             if (notify)
@@ -458,7 +474,13 @@ public partial class App : Application
                 DateTimeOffset.UtcNow,
                 activityTitle,
                 $"{reason} - cleaned {result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(result.BytesRecovered)} recovered",
-                details.Count > 0 ? details : null), token);
+                details.Count > 0 ? details : null), CancellationToken.None);
+        }
+        }
+        catch (OperationCanceledException)
+        {
+            await CleanupJournal.RecordInterruptedAsync(activityTitle + " (completed areas)", removed, bytes);
+            throw;
         }
     }
 
@@ -493,8 +515,8 @@ public partial class App : Application
             long bytes;
             try
             {
-                (removed, bytes) = await Task.Run(
-                    () => RecycleBinService.EmptyOlderThan(settings.RecycleBinAutoEmptyDays, token), token);
+                (removed, bytes) = await CleanupJournal.RunAsync("Recycle Bin", () => Task.Run(
+                    () => RecycleBinService.EmptyOlderThan(settings.RecycleBinAutoEmptyDays, token), token));
             }
             finally
             {
@@ -502,7 +524,7 @@ public partial class App : Application
             }
             if (removed > 0)
             {
-                await new CleanupStatsStore().RecordAsync(removed, bytes, token);
+                await new CleanupStatsStore().RecordAsync(removed, bytes, CancellationToken.None);
                 if (settings.RecycleBinAutoEmptyNotify)
                     AppNotifications.ShowAutomaticCleanupComplete("Recycle Bin", removed, bytes);
                 await new ActivityStore().AddAsync(new ActivityEntry(

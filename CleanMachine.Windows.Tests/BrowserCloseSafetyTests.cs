@@ -16,9 +16,8 @@ public sealed class BrowserCloseSafetyTests
         // An open window after the polite close means the browser is in use - most
         // often a "Leave site? Changes may not be saved" prompt.
         Assert.False(BrowserCleanupService.MayEndWithoutLosingWork(hasOpenWindow: true));
-        // Windowless background leftovers (Chrome background apps, Edge Startup
-        // Boost) are the only thing ever ended.
-        Assert.True(BrowserCleanupService.MayEndWithoutLosingWork(hasOpenWindow: false));
+        // Windowless processes can still hold work or upload data.
+        Assert.False(BrowserCleanupService.MayEndWithoutLosingWork(hasOpenWindow: false));
     }
 
     [Fact]
@@ -49,18 +48,23 @@ public sealed class BrowserCloseSafetyTests
     }
 
     [Fact]
-    public void UnattendedCleansNeverRequireBrowsersToBeClosed()
+    public void CacheOnlyCleansAllowOpenBrowsersButExitCleansRecheckTheSelectedBrowser()
     {
-        // Every browser clean outside the manual page passes requireBrowsersClosed:
-        // false, so it works around an open browser (cache only, recent files
-        // skipped) instead of refusing - and nothing nudges toward closing one.
+        // Cache-only Quick Clean/automatic/scheduled runs may work around open
+        // browsers. Exit cleaning can include saved data and must refuse if its
+        // browser reopened during the wait; this never closes a browser.
         foreach (var file in SourceFiles().Where(f => Path.GetFileName(f) is "App.xaml.cs" or "QuickCleanService.cs" or "ScheduleService.cs"))
         {
             var source = File.ReadAllText(file);
             var calls = Regex.Matches(source, @"CleanItemsAsync\((?<args>[^;]*);", RegexOptions.Singleline);
             Assert.NotEmpty(calls);
             Assert.All(calls, call =>
-                Assert.Contains("requireBrowsersClosed: false", call.Groups["args"].Value, StringComparison.Ordinal));
+            {
+                var args = call.Groups["args"].Value;
+                var expected = args.Contains("itemIds.Select", StringComparison.Ordinal)
+                    ? "requireBrowsersClosed: true" : "requireBrowsersClosed: false";
+                Assert.Contains(expected, args, StringComparison.Ordinal);
+            });
         }
     }
 

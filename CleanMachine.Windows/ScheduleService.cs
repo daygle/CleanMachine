@@ -92,6 +92,8 @@ public sealed class ScheduleService
 
         try
         {
+        try
+        {
             var categories = WindowsCleanupService.Catalog
                 .Where(c => schedule.WindowsCategoryIds.Contains(c.Id, StringComparer.OrdinalIgnoreCase))
                 .ToList();
@@ -131,6 +133,7 @@ public sealed class ScheduleService
                     skipModifiedWithin: QuickCleanService.BrowserCacheRecentWindow);
                 items += report.Result.ItemsRemoved;
                 bytes += report.Result.BytesRecovered;
+                issues.AddRange(report.Skipped.Select(s => $"{s.Path}: {s.Reason}"));
                 if (report.Result.ItemsRemoved > 0)
                     details.Add($"Browser caches - {report.Result.ItemsRemoved:N0} item(s), {AppNotifications.FormatBytes(report.Result.BytesRecovered)}");
             }
@@ -182,7 +185,9 @@ public sealed class ScheduleService
                         : $"Registry cleanup skipped: {review.BackupFailure}");
                 else if (review.Findings.Count > 0)
                 {
-                    var registryRemoved = (await service.CleanAsync(review, token)).Removed;
+                    var registryResult = await service.CleanAsync(review, token);
+                    issues.AddRange(registryResult.Skipped.Select(s => $"{s.Path}: {s.Reason}"));
+                    var registryRemoved = registryResult.Removed;
                     items += registryRemoved;
                     if (registryRemoved > 0)
                         details.Add($"Registry - {registryRemoved:N0} item(s)");
@@ -194,9 +199,9 @@ public sealed class ScheduleService
             }
         }
 
-        // Record (stats and activity) with a fresh, uncancellable token and await
-        // it, so a cancelled run still persists its partial results before the
-        // headless process exits.
+        // Persist completed area totals before the headless process exits.
+        // Cancellation inside a service can still interrupt before this point;
+        // these totals do not claim to capture an interrupted area's partial work.
         await new CleanupStatsStore().RecordAsync(items, bytes, CancellationToken.None);
         // Distinguish a manual "Run Now" from an automatic Task Scheduler run so the
         // Activity log makes the trigger clear.
@@ -210,9 +215,26 @@ public sealed class ScheduleService
         if (schedule.AfterClean == ScheduleAction.Notify && items > 0)
             AppNotifications.ShowSystemCleanupComplete(new CleanupResult(items, bytes));
 
-        ApplyPowerAction(schedule.AfterClean);
+        if (MayApplyPowerAction(schedule, issues, token)) ApplyPowerAction(schedule.AfterClean);
         return new ScheduleRunResult(items, bytes, issues);
+        }
+        catch (OperationCanceledException)
+        {
+            // The interrupted service records its own mutations. These totals
+            // belong only to earlier areas that already returned successfully.
+            await CleanupJournal.RecordInterruptedAsync("Scheduled Cleanup (completed areas)", items, bytes);
+            throw;
+        }
     }
+
+    internal static bool MayApplyPowerAction(CleanupSchedule schedule, IReadOnlyList<string> issues, CancellationToken token)
+        => !token.IsCancellationRequested && issues.Count == 0
+           && (WindowsCleanupService.Catalog.Any(c => schedule.WindowsCategoryIds.Contains(c.Id, StringComparer.OrdinalIgnoreCase))
+               || (schedule.CleanBrowserCache && (schedule.BrowserIds is null
+                   || schedule.BrowserIds.Any(id => BrowserCatalog.Find(id) is { Family: not BrowserFamily.InternetExplorer })))
+               || (schedule.CleanAppTempFiles && (schedule.AppIds is null
+                   || schedule.AppIds.Any(id => AppCatalog.Find(id) is not null)))
+               || schedule.RegistryCategories.Any(id => QuickCleanService.RegistryCategories.Contains(id, StringComparer.OrdinalIgnoreCase)));
 
     /// <summary>Shutdown/restart use shutdown.exe with a 60-second grace period so the
     /// user can abort with <c>shutdown /a</c>; Sleep suspends immediately.</summary>
@@ -231,7 +253,7 @@ public sealed class ScheduleService
     }
 
     private static void StartShutdown(string flag) => Process.Start(new ProcessStartInfo(
-        "shutdown.exe", $"{flag} /t 60 /c \"CleanMachine scheduled cleanup complete\"")
+        Path.Combine(Environment.SystemDirectory, "shutdown.exe"), $"{flag} /t 60 /c \"CleanMachine scheduled cleanup complete\"")
     {
         UseShellExecute = false,
         CreateNoWindow = true
@@ -261,6 +283,11 @@ public sealed class ScheduleService
     /// report *why* and inspect what the tool actually said.</summary>
     internal static async Task<ProcessOutcome> RunProcessAsync(string fileName, string arguments, CancellationToken token)
     {
+        if (OperatingSystem.IsWindows() && fileName is "schtasks.exe" or "shutdown.exe")
+            fileName = Path.Combine(Environment.SystemDirectory, fileName);
+        else if (OperatingSystem.IsWindows() && fileName == "powershell.exe")
+            fileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", fileName);
+        token.ThrowIfCancellationRequested();
         var psi = new ProcessStartInfo(fileName, arguments)
         {
             UseShellExecute = false,
@@ -273,8 +300,8 @@ public sealed class ScheduleService
         // Drain the redirected streams while waiting: an undrained pipe fills after
         // about 64 KB, the child then blocks writing to it, WaitForExitAsync never
         // completes, and whatever UI flow awaited registration freezes for good.
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
+        var stdout = ReadBoundedOutputAsync(process.StandardOutput);
+        var stderr = ReadBoundedOutputAsync(process.StandardError);
         try
         {
             await process.WaitForExitAsync(token);
@@ -292,13 +319,27 @@ public sealed class ScheduleService
         string outText = string.Empty, errText = string.Empty;
         try { await Task.WhenAll(stdout, stderr); outText = stdout.Result; errText = stderr.Result; }
         catch { /* a partially read stream still leaves a usable exit code */ }
-        if (outText.Length > ProcessOutcome.MaxOutputLength) outText = outText[..ProcessOutcome.MaxOutputLength];
         if (process.ExitCode == 0) return new ProcessOutcome(true, 0, null, outText);
         // schtasks writes its refusal to stderr, but not every tool does, so fall
         // back to stdout before giving up and reporting the bare exit code.
         var reason = FirstLine(errText) ?? FirstLine(outText)
             ?? $"{Path.GetFileName(fileName)} exited with code {process.ExitCode}.";
         return new ProcessOutcome(false, process.ExitCode, reason, outText);
+    }
+
+    internal static async Task<string> ReadBoundedOutputAsync(TextReader reader)
+    {
+        var captured = new System.Text.StringBuilder();
+        var buffer = new char[4096];
+        int read;
+        // Continue draining after the capture limit; otherwise the child blocks
+        // on a full pipe and never exits.
+        while ((read = await reader.ReadAsync(buffer.AsMemory())) > 0)
+        {
+            var take = Math.Min(read, ProcessOutcome.MaxOutputLength - captured.Length);
+            if (take > 0) captured.Append(buffer, 0, take);
+        }
+        return captured.ToString();
     }
 
     /// <summary>First non-blank line of captured tool output, trimmed of the trailing
@@ -315,6 +356,7 @@ public sealed class ScheduleService
     internal static bool TryGetPackageFamilyName(out string? familyName)
     {
         familyName = null;
+        if (!OperatingSystem.IsWindows()) return false;
         try
         {
             familyName = Package.Current.Id.FamilyName;

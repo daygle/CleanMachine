@@ -124,7 +124,7 @@ public sealed class RegistryCareService
     internal static bool IsRestorableScope(string? keyRoot)
     {
         if (string.IsNullOrWhiteSpace(keyRoot) || keyRoot.Length > 500) return false;
-        if (keyRoot.Contains('"')) return false;
+        if (keyRoot.Contains('"') || keyRoot.Contains("..", StringComparison.Ordinal)) return false;
 
         foreach (var root in AllowedCleanupRoots)
         {
@@ -142,8 +142,24 @@ public sealed class RegistryCareService
         if (keyRoot.StartsWith(ClassesRoot + @"\.", StringComparison.OrdinalIgnoreCase))
             return !keyRoot[(ClassesRoot.Length + 2)..].Contains('\\');
 
+        // Named-value findings on a ProgID are backed up as that exact key.
+        if (keyRoot.StartsWith(ClassesRoot + @"\", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = keyRoot[(ClassesRoot.Length + 1)..];
+            return suffix.Length > 0 && !suffix.Contains('\\')
+                && !suffix.Equals("CLSID", StringComparison.OrdinalIgnoreCase)
+                && !suffix.Equals("Wow6432Node", StringComparison.OrdinalIgnoreCase);
+        }
         return false;
     }
+
+    internal static bool CoversFinding(string scope, RegistryFinding finding)
+        => finding.Hive == "HKCU" && IsRestorableScope(scope)
+           && (finding.Path.Equals(scope, StringComparison.OrdinalIgnoreCase)
+               || finding.Path.StartsWith(scope.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase));
+
+    internal static string BackupFileName(DateTimeOffset createdAt)
+        => $"registry-{createdAt:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.reg";
 
     /// <summary>The verb name when <paramref name="path"/> is exactly a per-user
     /// context-menu verb key on one of <see cref="CleanupService.ContextMenuTypes"/>.</summary>
@@ -172,8 +188,11 @@ public sealed class RegistryCareService
     public static bool IsCleanable(RegistryFinding finding)
         => finding.LowRisk && finding.Confidence >= 70
            && finding.Hive == "HKCU"
-           // Fonts is one shared key: only a single named value may go, never the key.
-           && (!finding.Path.Equals(FontsRoot, StringComparison.OrdinalIgnoreCase)
+           // Shared registration keys only permit a single named value, never
+           // deletion of every startup entry or every user font in the key.
+           && (!(finding.Path.Equals(FontsRoot, StringComparison.OrdinalIgnoreCase)
+                 || finding.Path.Equals(StartupRunRoot, StringComparison.OrdinalIgnoreCase)
+                 || finding.Path.Equals(StartupRunOnceRoot, StringComparison.OrdinalIgnoreCase))
                || !string.IsNullOrWhiteSpace(finding.ValueName))
            && IsDeletablePath(
                finding.Path,
@@ -235,7 +254,8 @@ public sealed class RegistryCareService
         CancellationToken token = default)
     {
         var safe = selected
-            .Where(f => f.LowRisk && f.Confidence >= 70)
+            .Where(IsCleanable)
+            .DistinctBy(f => (f.Hive, f.Path.ToUpperInvariant(), f.ValueName?.ToUpperInvariant()))
             .Take(250)
             .ToArray();
         if (safe.Length == 0)
@@ -247,7 +267,7 @@ public sealed class RegistryCareService
         {
             backups = await CreateBackupsAsync(safe, token);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or OperationCanceledException)
+        catch (InvalidOperationException ex)
         {
             // Best-effort: if we cannot back up (fresh profile, no permissions,
             // reg.exe unavailable), surface an empty review so the caller can
@@ -278,15 +298,7 @@ public sealed class RegistryCareService
                 // Every restore point must still be intact, not just one: each
                 // backup covers a different key, so a valid Uninstall export says
                 // nothing about the Run key whose export has since gone missing.
-                var verifiedBackup = review.Backups.Count > 0;
-                foreach (var backup in review.Backups)
-                {
-                    if (!await ValidateBackupAsync(backup, token))
-                    {
-                        verifiedBackup = false;
-                        break;
-                    }
-                }
+                var verifiedBackup = await Task.Run(() => VerifyReviewBackupsAsync(review, BackupProvenance.Load(), token), token);
 
                 if (!verifiedBackup)
                 {
@@ -299,7 +311,7 @@ public sealed class RegistryCareService
             }
 
             // Registry edits are disk-bound work the page awaits on the UI thread.
-            return await Task.Run(() =>
+            return await CleanupJournal.RunAsync("Registry Cleanup", () => Task.Run(() =>
             {
                 var removed = 0;
                 for (var index = 0; index < review.Findings.Count; index++)
@@ -322,6 +334,7 @@ public sealed class RegistryCareService
                                 continue;
                             }
                             key.DeleteValue(finding.ValueName, throwOnMissingValue: false);
+                            CleanupJournal.Record(1, 0);
                             removed++;
                             cleaned.Add(finding);
                         }
@@ -337,6 +350,7 @@ public sealed class RegistryCareService
                                 if (existing is null) { skipped.Add(new(finding.Path, "Key not found (already clean)")); continue; }
                             }
                             parent.DeleteSubKeyTree(leaf, throwOnMissingSubKey: false);
+                            CleanupJournal.Record(1, 0);
                             removed++;
                             cleaned.Add(finding);
                         }
@@ -347,12 +361,37 @@ public sealed class RegistryCareService
                     }
                 }
                 return new RegistryCleanResult(removed, skipped, cleaned);
-            }, token);
+            }, token));
         }
         finally
         {
             CleanupCoordinator.Gate.Release();
         }
+    }
+
+    internal static async Task<bool> VerifyReviewBackupsAsync(
+        RegistryReview review, IReadOnlyList<BackupProvenanceEntry> provenance, CancellationToken token = default)
+    {
+        if (review.Backups.Count == 0) return false;
+        var verifiedScopes = new List<string>();
+        foreach (var backup in review.Backups)
+        {
+            token.ThrowIfCancellationRequested();
+            var match = BackupProvenance.Match(backup.FilePath, provenance);
+            if (match is null || !await ValidateBackupAsync(backup, token) || !IsRestorableScope(match.KeyRoot))
+                return false;
+            try
+            {
+                using var payload = File.OpenRead(backup.FilePath);
+                await RegistryPayload.ValidateAsync(payload, match.KeyRoot, token);
+            }
+            catch (InvalidDataException) { return false; }
+            catch (IOException) { return false; }
+            catch (UnauthorizedAccessException) { return false; }
+            verifiedScopes.Add(match.KeyRoot);
+        }
+        return review.Findings.Where(IsCleanable)
+            .All(f => verifiedScopes.Any(scope => CoversFinding(scope, f)));
     }
 
     // Split a key path into its parent and leaf. The scanner only ever produces
@@ -404,7 +443,7 @@ public sealed class RegistryCareService
             var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             if (!string.IsNullOrWhiteSpace(profile))
                 directories.Add(Path.Combine(profile, AppDataPaths.FolderName, "Backups"));
-            var temp = Path.GetTempPath();
+            var temp = TrustedTemp.Root;
             if (!string.IsNullOrWhiteSpace(temp))
                 directories.Add(Path.Combine(temp, AppDataPaths.FolderName, "Backups"));
             return directories.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -462,7 +501,7 @@ public sealed class RegistryCareService
         try
         {
             if (!Directory.Exists(directory)) return [];
-            return Directory.GetFiles(directory, "*.reg")
+            return Directory.EnumerateFiles(directory, "*.reg").Take(500)
                 .Select(p =>
                 {
                     var match = BackupProvenance.Match(p, provenance);
@@ -487,7 +526,9 @@ public sealed class RegistryCareService
     public static void DeleteBackup(RegistryBackup backup)
     {
         if (File.Exists(backup.FilePath))
-            File.Delete(backup.FilePath);
+            SafeDeletion.DeleteFile(backup.FilePath,
+                BackupDirectories.FirstOrDefault(root => NativeSafety.IsWithin(backup.FilePath, root))
+                ?? throw new IOException("Not in a backup folder."));
     }
 
     /// <summary>Exports the registry scopes the given findings will be deleted from:
@@ -497,45 +538,15 @@ public sealed class RegistryCareService
         IReadOnlyList<RegistryFinding> findings, CancellationToken token)
     {
         var backups = new List<RegistryBackup>();
-        // The preferred directory. Each candidate is created on demand inside
-        // TryExportAsync, because a directory the app can create is not
-        // necessarily one reg.exe can write to.
-        var directory = BackupsDirectory;
-        var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
-
-        if (findings.Any(f => f.Path.StartsWith(UninstallRoot + @"\", StringComparison.OrdinalIgnoreCase)))
-            backups.Add(await ExportKeyWithRetryAsync(UninstallRoot,
-                Path.Combine(directory, $"registry-uninstall-{stamp}.reg"), token));
-
-        foreach (var path in findings
-                     .Select(f => f.Path)
-                     .Where(p => p.StartsWith(ClassesRoot + @"\", StringComparison.OrdinalIgnoreCase))
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        var scopes = findings.Where(IsCleanable)
+            .Select(f => f.Path.StartsWith(UninstallRoot + @"\", StringComparison.OrdinalIgnoreCase)
+                ? UninstallRoot : f.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var scope in scopes)
         {
-            var name = new string(path[(ClassesRoot.Length + 1)..]
-                .Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
-            backups.Add(await ExportKeyWithRetryAsync(path,
-                Path.Combine(directory, $"registry-classes-{name}-{stamp}.reg"), token));
-        }
-
-        // Safe per-user categories: export the key that holds the finding (or the
-        // key itself for the MUI cache). These are small keys, so a whole-key export
-        // is cheap and gives a precise restore point.
-        foreach (var path in findings
-                     .Select(f => f.Path)
-                     .Where(p => p.StartsWith(MuiCacheRoot, StringComparison.OrdinalIgnoreCase)
-                         || p == StartupRunRoot || p == StartupRunOnceRoot
-                         || p.StartsWith(SoundAppsRoot + @"\", StringComparison.OrdinalIgnoreCase)
-                         || p.StartsWith(AppPathsRoot + @"\", StringComparison.OrdinalIgnoreCase)
-                         || p.StartsWith(FileExtsRoot + @"\", StringComparison.OrdinalIgnoreCase)
-                         || p.StartsWith(CompatAssistantRoot + @"\", StringComparison.OrdinalIgnoreCase)
-                         || p.Equals(FontsRoot, StringComparison.OrdinalIgnoreCase))
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var name = new string(path[(path.LastIndexOf('\\') + 1)..]
-                .Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
-            backups.Add(await ExportKeyWithRetryAsync(path,
-                Path.Combine(directory, $"registry-{name}-{stamp}.reg"), token));
+            token.ThrowIfCancellationRequested();
+            backups.Add(await ExportKeyWithRetryAsync(scope,
+                Path.Combine(BackupsDirectory, BackupFileName(DateTimeOffset.UtcNow)), token));
         }
         if (backups.Count == 0)
             throw new InvalidOperationException("None of the selected findings are in a registry scope this tool backs up.");
@@ -565,7 +576,10 @@ public sealed class RegistryCareService
         Func<string, string, Task<RegistryBackup>>? exportOnce = null,
         Func<Task>? delayAsync = null)
     {
-        exportOnce ??= (key, file) => ExportKeyAsync(key, file, token);
+        // A failed export may leave a partial file. Each native attempt gets a
+        // fresh name so a retry never truncates an earlier restore point.
+        exportOnce ??= (key, file) => ExportKeyAsync(key,
+            Path.Combine(Path.GetDirectoryName(file)!, BackupFileName(DateTimeOffset.UtcNow)), token);
         delayAsync ??= () => Task.Delay(ExportRetryDelay, token);
         for (var attempt = 1; ; attempt++)
         {
@@ -598,6 +612,8 @@ public sealed class RegistryCareService
             // to write it, before anything else can get at the bytes. Without this
             // the file is just a .reg in a folder, which is not evidence of anything.
             BackupProvenance.Record(target, keyPath, backup.CreatedAt);
+            if (BackupProvenance.Match(target, BackupProvenance.Load()) is null)
+                throw new InvalidOperationException("Registry export could not be recorded as a restorable backup.");
 
             // Prefer the app's own folder when it can also hold the file, so the
             // Backups page has one obvious place to look.
@@ -630,7 +646,12 @@ public sealed class RegistryCareService
         try
         {
             var directory = Path.GetDirectoryName(filePath);
-            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+                if (NativeSafety.IsReparsePoint(directory))
+                    return (null, "Registry backup directory is a reparse point.");
+            }
             EnsureExportTargetUsable(filePath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
@@ -640,7 +661,7 @@ public sealed class RegistryCareService
             return (null, ex.Message);
         }
 
-        var psi = new ProcessStartInfo("reg.exe")
+        var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "reg.exe"))
         {
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -654,8 +675,18 @@ public sealed class RegistryCareService
             ?? throw new InvalidOperationException("Could not start the Windows registry export tool.");
         // Read stderr fully before waiting: reg.exe writes its errors there, and a
         // detailed message (access denied, disk error, bad key) beats a generic one.
-        var stderr = await process.StandardError.ReadToEndAsync(token);
-        await process.WaitForExitAsync(token);
+        var errorTask = ScheduleService.ReadBoundedOutputAsync(process.StandardError);
+        try { await process.WaitForExitAsync(token); }
+        catch (OperationCanceledException)
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
+            // Observe the pipe reader before disposing its process handle.
+            try { await errorTask; } catch (IOException) { }
+            throw;
+        }
+        var stderr = await errorTask;
 
         if (process.ExitCode != 0 || !File.Exists(filePath) || new FileInfo(filePath).Length == 0)
             return (null, $"exit code {process.ExitCode}"
@@ -676,7 +707,7 @@ public sealed class RegistryCareService
     {
         try
         {
-            using (File.Create(filePath)) { }
+            using (new FileStream(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
             File.Delete(filePath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
@@ -691,31 +722,46 @@ public sealed class RegistryCareService
         RegistryBackup backup,
         CancellationToken token = default)
     {
-        if (!File.Exists(backup.FilePath))
-            return false;
-        if (backup.FilePath.EndsWith(".reg", StringComparison.OrdinalIgnoreCase))
+        token.ThrowIfCancellationRequested();
+        if (!backup.FilePath.EndsWith(".reg", StringComparison.OrdinalIgnoreCase)
+            || NativeSafety.IsReparsePoint(backup.FilePath)) return false;
+        try
         {
-            if (new FileInfo(backup.FilePath).Length == 0) return false;
-            // reg.exe writes UTF-16 (with BOM); older tools write ASCII "REGEDIT4".
-            // Detect the encoding from the BOM and confirm the standard header line.
-            using var reader = new StreamReader(backup.FilePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            var header = ((await reader.ReadLineAsync(token)) ?? string.Empty).Trim('\uFEFF', ' ', '\t');
-            return header.StartsWith("Windows Registry Editor Version 5.00", StringComparison.OrdinalIgnoreCase)
-                || header.StartsWith("REGEDIT4", StringComparison.OrdinalIgnoreCase);
+            using var stream = new FileStream(backup.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (stream.Length == 0) return false;
+            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            // Bound the header read; ReadLineAsync allocates an arbitrarily large
+            // string when an invalid file has no newline.
+            var buffer = new char[128];
+            var count = await reader.ReadBlockAsync(buffer.AsMemory(), token);
+            var text = new string(buffer, 0, count);
+            var newline = text.IndexOfAny(['\r', '\n']);
+            if (newline < 0 && count == buffer.Length) return false;
+            var header = (newline < 0 ? text : text[..newline]).Trim('\uFEFF', ' ', '\t');
+            return header.Equals("Windows Registry Editor Version 5.00", StringComparison.OrdinalIgnoreCase)
+                || header.Equals("REGEDIT4", StringComparison.OrdinalIgnoreCase);
         }
-        // .txt backups are also valid (text summary format)
-        return new FileInfo(backup.FilePath).Length > 0;
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     public static async Task RestoreBackupAsync(
         RegistryBackup backup,
         CancellationToken token = default)
     {
+        using var cleaning = CleaningActivity.Begin();
+        await CleanupCoordinator.Gate.WaitAsync(token);
+        try { await Task.Run(() => RestoreBackupCoreAsync(backup, token), token); }
+        finally { CleanupCoordinator.Gate.Release(); }
+    }
+
+    private static async Task RestoreBackupCoreAsync(RegistryBackup backup, CancellationToken token)
+    {
         if (!await ValidateBackupAsync(backup, token))
             throw new InvalidDataException("The registry backup is missing, empty, or invalid.");
-        if (!backup.FilePath.EndsWith(".reg", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Only .reg file backups can be restored through the registry importer.");
-
+        // Keep the exact file read-locked across hashing and import, preventing a
+        // rename/write between the provenance check and reg.exe opening it.
+        using var payloadLock = new FileStream(backup.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         // Provenance gate. A .reg file is a script, and the backup directories
         // include %TEMP%, so a file that merely looks like a restore point is
         // exactly the thing an attacker would plant. Only bytes this app exported,
@@ -735,7 +781,9 @@ public sealed class RegistryCareService
                 $"This restore point covers HKCU\\{match.KeyRoot}, which is outside the registry areas "
                 + "CleanMachine backs up. Nothing was imported.");
 
-        var psi = new ProcessStartInfo("reg.exe")
+        await RegistryPayload.ValidateAsync(payloadLock, match.KeyRoot, token);
+
+        var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "reg.exe"))
         {
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -747,8 +795,20 @@ public sealed class RegistryCareService
             ?? throw new InvalidOperationException("Could not start the Windows registry restore tool.");
         // Drain stderr before waiting, as the export does: a redirected pipe that is
         // never read can stall the child, and reg.exe says there why an import failed.
-        var stderr = await process.StandardError.ReadToEndAsync(token);
-        await process.WaitForExitAsync(token);
+        var errorTask = ScheduleService.ReadBoundedOutputAsync(process.StandardError);
+        try { await process.WaitForExitAsync(token); }
+        catch (OperationCanceledException)
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
+            // Observe the pipe reader before disposing its process handle.
+            try { await errorTask; } catch (IOException) { }
+            await new ActivityStore().AddAsync(new ActivityEntry(DateTimeOffset.UtcNow,
+                "Registry Restore Cancelled", "Import was interrupted; some values may already have been restored. No rollback was performed."), CancellationToken.None);
+            throw;
+        }
+        var stderr = await errorTask;
         if (process.ExitCode != 0)
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
                 ? "Registry backup restore failed."

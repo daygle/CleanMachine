@@ -91,12 +91,8 @@ public sealed class BrowserCleanupService
     /// confirms. Asks each requested browser to close politely (the same close the
     /// user gets by clicking the window's X, so sessions and recent-tabs lists stay
     /// intact) and waits up to five seconds.
-    /// <para>A browser that still has a window open after that is NEVER forced
-    /// closed: an open window means it is in use - typically it is asking "Leave
-    /// site? Changes you made may not be saved", or the user cancelled the close -
-    /// and killing it would lose their work. Only a browser whose windows are all
-    /// gone but whose processes linger (Chrome's "Continue running background apps",
-    /// Edge's Startup Boost) is ended, because nothing of it is on screen.</para>
+    /// <para>Windowless processes can still be uploading or holding unsaved data,
+    /// so even background leftovers are never killed.</para>
     /// Returns the process names that are STILL running afterwards; an empty result
     /// means every requested browser closed. Never touches other applications.</summary>
     public static async Task<IReadOnlyList<string>> CloseRunningBrowsersAsync(
@@ -130,52 +126,13 @@ public sealed class BrowserCleanupService
             await Task.Delay(250, token);
         }
 
-        // Background leftovers only: end a browser's processes when none of them
-        // has a window any more. Anything with a window stays open.
-        var ended = new List<string>();
-        foreach (var name in GetRunningBrowsers(names))
-        {
-            if (!MayEndWithoutLosingWork(HasOpenWindow(name))) continue;
-            foreach (var process in Process.GetProcessesByName(name))
-            {
-                try { process.Kill(entireProcessTree: true); }
-                catch { }
-                finally { process.Dispose(); }
-            }
-            ended.Add(name);
-        }
-
-        if (ended.Count > 0)
-        {
-            var postEndDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-            while (DateTime.UtcNow < postEndDeadline)
-            {
-                token.ThrowIfCancellationRequested();
-                if (GetRunningBrowsers(ended).Count == 0) break;
-                await Task.Delay(250, token);
-            }
-        }
+        // No force-kill, even for a process with no visible main window: it may
+        // be uploading data or have a hidden window/prompt. The user must close
+        // leftovers using the browser's own controls before destructive cleaning.
         return GetRunningBrowsers(names);
     }
 
-    /// <summary>The force-close rule, kept pure so it is unit-testable: a browser may
-    /// only be ended when it has no window open, i.e. nobody can be using it.</summary>
-    internal static bool MayEndWithoutLosingWork(bool hasOpenWindow) => !hasOpenWindow;
-
-    /// <summary>Whether any process of this browser still shows a window. Fails
-    /// closed: a process that cannot be inspected counts as having one, so it is
-    /// never ended on a guess.</summary>
-    private static bool HasOpenWindow(string processName)
-    {
-        var open = false;
-        foreach (var process in Process.GetProcessesByName(processName))
-        {
-            try { if (process.MainWindowHandle != IntPtr.Zero) open = true; }
-            catch { open = true; }
-            finally { process.Dispose(); }
-        }
-        return open;
-    }
+    internal static bool MayEndWithoutLosingWork(bool hasOpenWindow) => false;
 
     private static bool IsExcluded(string path, IReadOnlySet<string>? exclusions)
         => exclusions?.Any(root => NativeSafety.IsWithin(path, root)) == true;
@@ -214,10 +171,10 @@ public sealed class BrowserCleanupService
 
     /// <summary>Cleans the selected (browser, item) pairs using whole-file deletion.
     /// The browser must be closed unless <paramref name="requireBrowsersClosed"/> is
-    /// false - the browser-exit monitor uses that because it fires right after its
-    /// browser closed, while another browser may still be open (its files belong to
-    /// it and are not touched), and Quick Clean / scheduled runs use it because they
-    /// only clear caches. One item failing never aborts the rest.
+    /// false - Quick Clean / scheduled runs use that because they only clear
+    /// caches. The browser-exit monitor rechecks only its selected browser, since
+    /// the user may opt in to destructive items and the browser may have reopened.
+    /// One item failing never aborts the rest.
     /// <para>Anything under <paramref name="excludedPaths"/> (the user's Settings
     /// exclusions) is never deleted. <paramref name="skipModifiedWithin"/> leaves
     /// files written that recently alone: a run that does not require the browser
@@ -230,6 +187,7 @@ public sealed class BrowserCleanupService
         IReadOnlySet<string>? excludedPaths = null,
         TimeSpan? skipModifiedWithin = null)
     {
+        var selected = selection.Distinct().ToArray();
         using var cleaning = CleaningActivity.Begin();
         await CleanupCoordinator.Gate.WaitAsync(token);
         try
@@ -239,7 +197,7 @@ public sealed class BrowserCleanupService
                 // Only the browsers being cleaned have to be closed: each item's
                 // files belong to its own browser, so another browser can stay open
                 // (and in use) while this one is cleaned.
-                var selectedBrowsers = selection.Select(s => s.BrowserId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                var selectedBrowsers = selected.Select(s => s.BrowserId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
                 var running = GetRunningBrowsers(ProcessNamesFor(selectedBrowsers));
                 if (running.Count > 0)
                     throw new InvalidOperationException(
@@ -248,7 +206,7 @@ public sealed class BrowserCleanupService
 
             // Deleting the selected items is long-running disk work; keep it off
             // the caller's (UI) thread.
-            return await Task.Run(() =>
+            return await CleanupJournal.RunAsync("Browser Cleanup", () => Task.Run(() =>
             {
                 var removed = 0;
                 long bytes = 0;
@@ -256,19 +214,35 @@ public sealed class BrowserCleanupService
                 var cleanedItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var modifiedCutoff = skipModifiedWithin is { } window ? DateTime.UtcNow - window : (DateTime?)null;
 
-                foreach (var (browserId, itemId) in selection.Distinct())
+                foreach (var (browserId, requestedItemId) in selected)
                 {
                     token.ThrowIfCancellationRequested();
                     var browser = BrowserCatalog.Find(browserId);
                     if (browser is null || !BrowserCatalog.IsInstalled(browser)) continue;
 
+                    var definition = BrowserCatalog.ItemsFor(browser.Family)
+                        .FirstOrDefault(i => i.Id.Equals(requestedItemId, StringComparison.OrdinalIgnoreCase));
+                    if (definition is null) continue;
+                    var itemId = definition.Id;
+                    if (browser.Family == BrowserFamily.Firefox && itemId is "history" or "download-history")
+                    {
+                        skipped.Add(new(browserId + ":" + itemId, "Use Firefox to clear history without deleting bookmarks."));
+                        continue;
+                    }
+                    if (!requireBrowsersClosed && definition.Destructive
+                        && GetRunningBrowsers(browser.ProcessNames).Count > 0)
+                    {
+                        skipped.Add(new(browserId + ":" + itemId, "Browser reopened; saved data was not touched."));
+                        continue;
+                    }
                     var profiles = BrowserCatalog.Profiles(browser);
                     var userData = browser.UserDataRoots.Where(Directory.Exists).ToArray();
 
                     if (BrowserCatalog.IsPreferenceEdit(itemId))
                     {
-                        if (ApplyPreferenceEdit(browser, profiles, skipped))
+                        if (ApplyPreferenceEdit(browser, profiles, skipped, excludedPaths))
                         {
+                            CleanupJournal.Record(1, 0);
                             removed++;
                             cleanedItems.Add($"{browserId}:{itemId}");
                         }
@@ -278,7 +252,7 @@ public sealed class BrowserCleanupService
                     foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
                     {
                         token.ThrowIfCancellationRequested();
-                        var result = DeletePath(path, excludedPaths, modifiedCutoff);
+                        var result = DeletePath(path, excludedPaths, modifiedCutoff, token);
                         removed += result.Removed;
                         bytes += result.Bytes;
                         skipped.AddRange(result.Skipped);
@@ -287,7 +261,7 @@ public sealed class BrowserCleanupService
                     }
                 }
                 return new CleanupReport(new CleanupResult(removed, bytes), skipped, CleanedPaths: cleanedItems);
-            }, token);
+            }, token));
         }
         finally
         {
@@ -340,10 +314,8 @@ public sealed class BrowserCleanupService
         var files = new List<CleanupFileDetail>();
         foreach (var path in ResolvePaths(browser, itemId, profiles, userData))
         {
-            // This is called from UI click handlers; EnumerateFiles materialises the
-            // whole subtree for a directory, so a large cache (tens of thousands of
-            // files) is walked in full just to render a few hundred rows. Stop
-            // enumerating as soon as the cap is reached.
+            // EnumerateFiles is lazy: stop at the cap rather than walking an
+            // entire large cache just to show a few hundred rows.
             if (files.Count >= max) return files;
             foreach (var file in EnumerateFiles(path))
             {
@@ -356,9 +328,10 @@ public sealed class BrowserCleanupService
         return files;
     }
 
-    private static (int Removed, long Bytes, List<CleanupIssue> Skipped) DeletePath(
-        string path, IReadOnlySet<string>? excludedPaths, DateTime? modifiedCutoff)
+    internal static (int Removed, long Bytes, List<CleanupIssue> Skipped) DeletePath(
+        string path, IReadOnlySet<string>? excludedPaths, DateTime? modifiedCutoff, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         var removed = 0;
         long bytes = 0;
         var skipped = new List<CleanupIssue>();
@@ -382,8 +355,8 @@ public sealed class BrowserCleanupService
                     skipped.Add(new CleanupIssue(path, "Recently modified"));
                     return (0, 0, skipped);
                 }
-                var length = info.Length;
-                File.Delete(path);
+                var length = SafeDeletion.DeleteFile(path, path, modifiedCutoff);
+                CleanupJournal.Record(1, length);
                 return (1, length, skipped);
             }
             if (!Directory.Exists(path)) return (0, 0, skipped);
@@ -393,8 +366,9 @@ public sealed class BrowserCleanupService
                 return (0, 0, skipped);
             }
 
-            foreach (var file in FileEnumeration.Files(path))
+            foreach (var file in FileEnumeration.Files(path, token))
             {
+                token.ThrowIfCancellationRequested();
                 try
                 {
                     if (IsExcluded(file, excludedPaths)) continue;
@@ -409,15 +383,15 @@ public sealed class BrowserCleanupService
                         skipped.Add(new CleanupIssue(file, "Recently modified"));
                         continue;
                     }
-                    var length = info.Length;
-                    File.Delete(file);
+                    var length = SafeDeletion.DeleteFile(file, path, modifiedCutoff);
+                    CleanupJournal.Record(1, length);
                     removed++;
                     bytes += length;
                 }
                 catch (IOException) { skipped.Add(new CleanupIssue(file, "File is locked or unavailable")); }
                 catch (UnauthorizedAccessException) { skipped.Add(new CleanupIssue(file, "Access denied")); }
             }
-            RemoveEmptyDirectories(path);
+            RemoveEmptyDirectories(path, excludedPaths, token);
         }
         catch (IOException) { skipped.Add(new CleanupIssue(path, "Locked or unavailable")); }
         catch (UnauthorizedAccessException) { skipped.Add(new CleanupIssue(path, "Access denied")); }
@@ -429,17 +403,20 @@ public sealed class BrowserCleanupService
     /// its ancestor, so a child is always visited before the parent that would
     /// otherwise still look non-empty. A parent whose child was not removed (locked)
     /// simply is not empty yet and is left alone.</summary>
-    private static void RemoveEmptyDirectories(string root)
+    private static void RemoveEmptyDirectories(string root, IReadOnlySet<string>? excludedPaths, CancellationToken token)
     {
         try
         {
-            foreach (var directory in FileEnumeration.Directories(root).OrderByDescending(d => d.Length))
+            foreach (var directory in FileEnumeration.Directories(root, token).OrderByDescending(d => d.Length))
             {
-                try { if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory); }
+                token.ThrowIfCancellationRequested();
+                if (IsExcluded(directory, excludedPaths) || NativeSafety.IsReparsePoint(directory)) continue;
+                try { if (!Directory.EnumerateFileSystemEntries(directory).Any()) SafeDeletion.DeleteEmptyDirectory(directory, root); }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
             }
-            if (!Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root);
+            if (!IsExcluded(root, excludedPaths) && !NativeSafety.IsReparsePoint(root)
+                && !Directory.EnumerateFileSystemEntries(root).Any()) SafeDeletion.DeleteEmptyDirectory(root, root);
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
@@ -447,7 +424,7 @@ public sealed class BrowserCleanupService
 
     /// <summary>Last Download Location lives in a settings file, not a data file, so it
     /// is edited in place (with a backup) rather than deleted.</summary>
-    private static bool ApplyPreferenceEdit(BrowserDefinition browser, IReadOnlyList<string> profiles, List<CleanupIssue> skipped)
+    internal static bool ApplyPreferenceEdit(BrowserDefinition browser, IReadOnlyList<string> profiles, List<CleanupIssue> skipped, IReadOnlySet<string>? excludedPaths)
     {
         var changed = false;
         foreach (var profile in profiles)
@@ -455,31 +432,46 @@ public sealed class BrowserCleanupService
             if (browser.Family == BrowserFamily.Chromium)
             {
                 var preferences = Path.Combine(profile, "Preferences");
-                if (File.Exists(preferences))
+                if (File.Exists(preferences) && !IsExcluded(preferences, excludedPaths) && !NativeSafety.IsReparsePoint(preferences))
                     changed |= TryRemoveJsonKeys(preferences, "download", ["default_directory", "directory_upgrade"], skipped);
             }
             else if (browser.Family == BrowserFamily.Firefox)
             {
                 var prefs = Path.Combine(profile, "prefs.js");
-                if (File.Exists(prefs))
+                if (File.Exists(prefs) && !IsExcluded(prefs, excludedPaths) && !NativeSafety.IsReparsePoint(prefs))
                     changed |= TryRemovePrefsJsLines(prefs, skipped);
             }
         }
         return changed;
     }
 
+    internal const int MaxPreferenceBytes = 8 * 1024 * 1024;
+    internal static string ReadPreferenceText(string path)
+    {
+        using var lease = OperatingSystem.IsWindows() ? SafeDeletion.Pin(path) : null;
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length > MaxPreferenceBytes) throw new InvalidDataException("Preference file exceeds the size limit.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
     private static bool TryRemoveJsonKeys(string path, string section, string[] keys, List<CleanupIssue> skipped)
     {
-        var temp = path + ".cleanmachine.tmp";
+        var temp = path + $".{Guid.NewGuid():N}.cleanmachine.tmp";
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(path)) as JsonObject;
+            using var directoryLease = OperatingSystem.IsWindows() ? SafeDeletion.Pin(Path.GetDirectoryName(path)!) : null;
+            var root = JsonNode.Parse(ReadPreferenceText(path)) as JsonObject;
             if (root?[section] is not JsonObject sectionObject) return false;
 
             var changed = keys.Aggregate(false, (current, key) => sectionObject.Remove(key) || current);
             if (!changed) return false;
 
-            File.Copy(path, path + ".cleanmachine.bak", true);
+            var backup = path + ".cleanmachine.bak";
+            if (File.Exists(backup) && NativeSafety.IsReparsePoint(backup))
+                throw new IOException("Preference backup is a reparse point.");
+            if (File.Exists(backup)) SafeDeletion.DeleteFile(backup, Path.GetDirectoryName(path)!);
+            File.Copy(path, backup, overwrite: false);
             // Write the whole document to a temp file and swap it in atomically, so a
             // crash or power loss mid-write can never leave a half-written Preferences
             // that the browser would then discard (losing far more than we removed).
@@ -502,19 +494,30 @@ public sealed class BrowserCleanupService
         }
     }
 
+    internal static bool IsDownloadDirectoryPreference(string line)
+    {
+        var trimmed = line.TrimStart();
+        return trimmed.StartsWith("user_pref(\"browser.download.dir\",", StringComparison.Ordinal)
+            || trimmed.StartsWith("user_pref(\"browser.download.lastDir\",", StringComparison.Ordinal);
+    }
+
     private static bool TryRemovePrefsJsLines(string path, List<CleanupIssue> skipped)
     {
-        var temp = path + ".cleanmachine.tmp";
+        var temp = path + $".{Guid.NewGuid():N}.cleanmachine.tmp";
         try
         {
-            var lines = File.ReadAllLines(path);
+            using var directoryLease = OperatingSystem.IsWindows() ? SafeDeletion.Pin(Path.GetDirectoryName(path)!) : null;
+            var lines = ReadPreferenceText(path).Split('\n');
             var filtered = lines
-                .Where(line => !line.Contains("browser.download.dir", StringComparison.Ordinal)
-                    && !line.Contains("browser.download.lastDir", StringComparison.Ordinal))
+                .Where(line => !IsDownloadDirectoryPreference(line))
                 .ToArray();
             if (filtered.Length == lines.Length) return false;
 
-            File.Copy(path, path + ".cleanmachine.bak", true);
+            var backup = path + ".cleanmachine.bak";
+            if (File.Exists(backup) && NativeSafety.IsReparsePoint(backup))
+                throw new IOException("Preference backup is a reparse point.");
+            if (File.Exists(backup)) SafeDeletion.DeleteFile(backup, Path.GetDirectoryName(path)!);
+            File.Copy(path, backup, overwrite: false);
             // Temp-then-swap so a crash mid-write can never truncate prefs.js.
             File.WriteAllLines(temp, filtered);
             File.Move(temp, path, overwrite: true);

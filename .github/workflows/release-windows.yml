@@ -84,7 +84,9 @@ jobs:
         shell: pwsh
         run: |
           dotnet restore $env:PROJECT
+          if ($LASTEXITCODE -ne 0) { throw "App restore failed (exit $LASTEXITCODE)." }
           dotnet restore $env:TESTS
+          if ($LASTEXITCODE -ne 0) { throw "Test restore failed (exit $LASTEXITCODE)." }
 
       # Tests run before packaging so a broken build never produces a submission
       # artifact. The scheduled-task test is safe on an ephemeral runner.

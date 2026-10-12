@@ -72,7 +72,7 @@ public sealed class StartupAppsService
                     if (string.IsNullOrWhiteSpace(command)) continue;
                     var exePath = ResolveExecutable(command);
                     var enabled = IsRegistryEntryEnabled(root, approvalPath, valueName);
-                    var isOrphan = exePath is not null && !File.Exists(exePath);
+                    var isOrphan = exePath is not null && CleanupService.IsMissingFile(exePath);
                     entries.Add(new StartupEntry(
                         FriendlyName(valueName),
                         command,
@@ -232,7 +232,8 @@ public sealed class StartupAppsService
             }
             try
             {
-                File.Delete(path);
+                var startupRoot = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+                SafeDeletion.DeleteFile(path, startupRoot);
                 try
                 {
                     using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);

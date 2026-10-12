@@ -304,6 +304,10 @@ public sealed class InstalledAppsService
                 fileName = trimmed[1..end];
                 arguments = trimmed[(end + 1)..].Trim();
             }
+            else if (File.Exists(trimmed))
+            {
+                fileName = trimmed;
+            }
             else
             {
                 var space = trimmed.IndexOf(' ');
@@ -332,8 +336,8 @@ public sealed class InstalledAppsService
 
             if (string.IsNullOrWhiteSpace(fileName)) return false;
 
-            Process.Start(new ProcessStartInfo(fileName, arguments) { UseShellExecute = true });
-            return true;
+            using var process = Process.Start(new ProcessStartInfo(fileName, arguments) { UseShellExecute = true });
+            return process is not null;
         }
         catch { return false; }
     }

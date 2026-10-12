@@ -13,7 +13,7 @@ public sealed class ActivityStore
 
     // AddAsync is a read-modify-write and can be called concurrently (background
     // agent, scheduled runs, quick cleans); serialize it so entries are not lost.
-    private static readonly SemaphoreSlim AddGate = new(1, 1);
+    private static readonly ProcessGate AddGate = new("activity");
 
     public async Task<IReadOnlyList<ActivityEntry>> LoadAsync(CancellationToken token = default)
     {
@@ -21,7 +21,9 @@ public sealed class ActivityStore
         {
             if (!File.Exists(FilePath)) return [];
             await using var stream = File.OpenRead(FilePath);
-            return await JsonSerializer.DeserializeAsync<List<ActivityEntry>>(stream, cancellationToken: token) ?? [];
+            if (stream.Length > 4L * 1024 * 1024) return [];
+            var entries = await JsonSerializer.DeserializeAsync<List<ActivityEntry>>(stream, cancellationToken: token) ?? [];
+            return entries.Where(e => e is not null).Take(MaxEntries).ToArray();
         }
         catch (IOException) { return []; }
         catch (UnauthorizedAccessException) { return []; }
@@ -59,7 +61,7 @@ public sealed class ActivityStore
     private static async Task SaveCoreAsync(IReadOnlyList<ActivityEntry> items, CancellationToken token)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        // Unique per write: the gate above only serializes this process, and a
+        // Unique per write: the gate above serializes cooperating processes, and a
         // headless scheduled run can log at the same moment as the open app.
         var temp = $"{FilePath}.{Guid.NewGuid():N}.tmp";
         try

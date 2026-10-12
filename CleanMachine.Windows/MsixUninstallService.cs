@@ -27,18 +27,40 @@ internal static class MsixUninstallService
     /// shell on every launch and therefore survives every future update.</summary>
     internal static string BuildMsixShortcutTarget(string familyName) => $"shell:AppsFolder\\{familyName}!App";
 
-    /// <summary>Runs the uninstall. Returns false only when the deferred removal
-    /// helper could not be launched - in that case nothing has been touched, so
-    /// the caller can point the user at Windows Settings > Apps instead.
-    /// Every cleanup step is best-effort: a failed step only means that item is
-    /// restored (or swept) on the next use, never that the uninstall stops.</summary>
-    internal static bool Start(bool removeData)
+    /// <summary>Starts the uninstall. A keep-data request is refused before any
+    /// external cleanup or package-removal helper starts unless every eligible
+    /// legacy file has been copied to the durable root and verified. Best-effort
+    /// external cleanup failures are reported to the caller where they affect the
+    /// user's requested data outcome.</summary>
+    internal static bool Start(bool removeData, out string? error)
     {
-        if (!ScheduleService.IsMsix) return false;
+        error = null;
+        if (!ScheduleService.IsMsix)
+        {
+            error = "This uninstall flow is only available for the packaged app.";
+            return false;
+        }
+
+        // Keeping data is a hard precondition, not a best-effort side effect. The
+        // package folder is removed by Windows, so do not launch its remover until
+        // migration reports complete.
+        if (!removeData)
+        {
+            var migration = AppDataPaths.CopyToDurableRootResult();
+            if (!migration.Complete)
+            {
+                error = migration.Error ?? "CleanMachine could not verify that all data was copied. Nothing was removed; your original data remains in place.";
+                return false;
+            }
+        }
 
         // Helper first: it must survive this process, and if it cannot start we
-        // abort before changing anything on disk.
-        if (!StartRemovalHelper()) return false;
+        // abort before changing shortcuts, startup settings, or scheduled tasks.
+        if (!StartRemovalHelper())
+        {
+            error = "Could not start the Windows package-removal helper. Nothing else was changed.";
+            return false;
+        }
 
         // 1. The self-heal desktop shortcut (not package-owned, never cleaned up
         //    by Windows on package removal).
@@ -63,11 +85,14 @@ internal static class MsixUninstallService
         // 4. Scratch files under %TEMP%\CleanMachine. Older installs wrote there,
         //    and a registry backup that could not be written to the app's own
         //    folder falls back to it - see RegistryCareService.BackupDirectories.
-        //    %TEMP% outlives the app, so sweep it either way.
-        Try(() =>
+        //    These can be the only copies of restore points, so "Keep data"
+        //    must not sweep this fallback folder. Backups can still be discovered
+        //    there by a future reinstall.
+        if (removeData) Try(() =>
         {
-            var temp = Path.Combine(Path.GetTempPath(), FolderName);
-            if (Directory.Exists(temp)) Directory.Delete(temp, recursive: true);
+            var temp = Path.Combine(TrustedTemp.Root, FolderName);
+            if (Directory.Exists(temp) && !NativeSafety.IsReparsePoint(temp))
+                Directory.Delete(temp, recursive: true);
         });
 
         if (removeData)
@@ -81,15 +106,7 @@ internal static class MsixUninstallService
             Try(DeleteData(AppDataPaths.PackageLocalRoot));
             Try(DeleteData(AppDataPaths.RealRoot));
         }
-        else
-        {
-            // 5c. "Keep" must be honest: data still sitting package-local would be
-            //     destroyed by the package removal, so copy it out to the durable
-            //     folder first. This is a copy, never a move - the package removal
-            //     is not ours to interrupt, and the app may still be running when
-            //     the deferred helper gets to it.
-            Try(() => AppDataPaths.CopyToDurableRoot());
-        }
+        // Keep-data was copied and verified before any cleanup/helper launch.
 
         return true;
     }
@@ -116,8 +133,8 @@ internal static class MsixUninstallService
         try
         {
             var fullName = Package.Current.Id.FullName;
-            Process.Start(PowerShellInfo(BuildRemovalCommand(fullName)));
-            return true;
+            using var helper = Process.Start(PowerShellInfo(BuildRemovalCommand(fullName)));
+            return helper is not null;
         }
         catch
         {
@@ -137,7 +154,7 @@ internal static class MsixUninstallService
 
     private static Action DeleteData(string path) => () =>
     {
-        if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        if (Directory.Exists(path) && !NativeSafety.IsReparsePoint(path)) Directory.Delete(path, recursive: true);
     };
 
     private const string FolderName = AppDataPaths.FolderName;

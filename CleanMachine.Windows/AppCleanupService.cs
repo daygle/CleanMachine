@@ -1,5 +1,3 @@
-using Microsoft.Win32;
-
 namespace CleanMachine.Windows;
 
 public sealed class AppCleanupService
@@ -9,7 +7,7 @@ public sealed class AppCleanupService
     private static readonly string ProgramFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
     private static readonly string ProgramFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
     private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    private static readonly string WindowsTemp = Path.GetTempPath();
+    private static readonly string WindowsTemp = TrustedTemp.Root;
     private static readonly string LocalLowAppData = Path.Combine(UserProfile, "AppData", "LocalLow");
 
     /// <summary>Detects all catalog apps and scans their temp files.</summary>
@@ -62,12 +60,14 @@ public sealed class AppCleanupService
 
         // Group by app to avoid rescanning.
         var byApp = selection
-            .GroupBy(s => s.AppId)
+            .GroupBy(s => s.AppId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Select(s => s.ItemPath).ToHashSet(StringComparer.OrdinalIgnoreCase));
 
         // Deleting every temp file is long-running disk work; keep it off the
         // caller's (UI) thread. The page awaits this directly, so the deletion
         // loop must not run synchronously.
+        await CleanupJournal.RunAsync("Application Cleanup", async () =>
+        {
         await Task.Run(() =>
         {
         foreach (var (appId, paths) in byApp)
@@ -98,16 +98,17 @@ public sealed class AppCleanupService
                     }
                     if (isDirectory)
                     {
-                        foreach (var file in FileEnumeration.Files(item.FullPath))
+                        foreach (var file in FileEnumeration.Files(item.FullPath, token))
                         {
+                            token.ThrowIfCancellationRequested();
                             try
                             {
                                 if (IsExcluded(file, excludedPaths)) continue;
                                 if (NativeSafety.IsReparsePoint(file)) { skipped.Add(new(file, "Reparse point (junction/symlink) - skipped")); continue; }
                                 var info = new FileInfo(file);
                                 if (info.IsReadOnly) { skipped.Add(new(file, "Read-only")); continue; }
-                                var len = info.Length;
-                                File.Delete(file);
+                                var len = SafeDeletion.DeleteFile(file, item.FullPath);
+                                CleanupJournal.Record(1, len);
                                 removed++;
                                 bytes += len;
                                 cleanedPaths.Add(file);
@@ -121,14 +122,14 @@ public sealed class AppCleanupService
                             }
                         }
                         // Remove empty subdirectories bottom-up.
-                        RemoveEmptyDirs(item.FullPath);
+                        RemoveEmptyDirs(item.FullPath, excludedPaths, token);
                     }
                     else if (File.Exists(item.FullPath))
                     {
                         var info = new FileInfo(item.FullPath);
                         if (info.IsReadOnly) { skipped.Add(new(item.FullPath, "Read-only")); continue; }
-                        var len = info.Length;
-                        File.Delete(item.FullPath);
+                        var len = SafeDeletion.DeleteFile(item.FullPath, item.FullPath);
+                        CleanupJournal.Record(1, len);
                         removed++;
                         bytes += len;
                         cleanedPaths.Add(item.FullPath);
@@ -146,6 +147,8 @@ public sealed class AppCleanupService
                 }
             }
         }
+        }, token);
+        return true;
         });
 
         return new CleanupReport(new CleanupResult(removed, bytes), skipped, CleanedPaths: cleanedPaths);
@@ -177,12 +180,11 @@ public sealed class AppCleanupService
                 {
                     try
                     {
+                        if (NativeSafety.IsReparsePoint(fullPath)) continue;
                         if (Directory.Exists(fullPath))
                         {
-                            var files = FileEnumeration.Files(fullPath).ToArray();
-                            var totalBytes = files.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0; } });
-                            if (files.Length > 0)
-                                items.Add(new AppTempItem(entry.Description, totalBytes, files.Length, fullPath));
+                            var item = SizeDirectory(fullPath, entry.Description);
+                            if (item.FileCount > 0) items.Add(item);
                         }
                         else if (File.Exists(fullPath))
                         {
@@ -198,6 +200,31 @@ public sealed class AppCleanupService
         }
 
         return new AppScan(def.Id, def.Name, def.Group, def.IsStoreApp, true, items);
+    }
+
+    internal static IReadOnlyList<CleanupFileDetail> ListItemFiles(string path, int max = 200)
+    {
+        var details = new List<CleanupFileDetail>();
+        foreach (var file in FileEnumeration.Files(path).Take(Math.Clamp(max, 0, 500)))
+        {
+            try { details.Add(new CleanupFileDetail(file, new FileInfo(file).Length)); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        return details.OrderBy(d => d.Path, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    internal static AppTempItem SizeDirectory(string path, string description)
+    {
+        long totalBytes = 0;
+        var fileCount = 0;
+        foreach (var file in FileEnumeration.Files(path))
+        {
+            try { totalBytes += new FileInfo(file).Length; fileCount++; }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        return new AppTempItem(description, totalBytes, fileCount, path);
     }
 
     /// <summary>Expands a relative path that may contain wildcard segments into the set
@@ -221,7 +248,7 @@ public sealed class AppCleanupService
 
             foreach (var dir in current)
             {
-                if (!Directory.Exists(dir)) continue;
+                if (!Directory.Exists(dir) || NativeSafety.IsReparsePoint(dir)) continue;
                 try
                 {
                     if (hasWildcard)
@@ -247,7 +274,7 @@ public sealed class AppCleanupService
                 catch (UnauthorizedAccessException) { }
             }
 
-            current = next;
+            current = next.Where(p => !NativeSafety.IsReparsePoint(p)).ToArray();
             if (next.Count == 0) break;
         }
 
@@ -373,16 +400,18 @@ public sealed class AppCleanupService
     private static bool FileExists(string dir, string fileName)
         => File.Exists(Path.Combine(dir, fileName));
 
-    private static void RemoveEmptyDirs(string root)
+    private static void RemoveEmptyDirs(string root, IReadOnlySet<string>? excludedPaths, CancellationToken token)
     {
         try
         {
-            foreach (var dir in FileEnumeration.Directories(root).OrderByDescending(d => d.Length))
+            foreach (var dir in FileEnumeration.Directories(root, token).OrderByDescending(d => d.Length))
             {
+                token.ThrowIfCancellationRequested();
+                if (IsExcluded(dir, excludedPaths) || NativeSafety.IsReparsePoint(dir)) continue;
                 try
                 {
                     if (!Directory.EnumerateFileSystemEntries(dir).Any())
-                        Directory.Delete(dir);
+                        SafeDeletion.DeleteEmptyDirectory(dir, root);
                 }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }

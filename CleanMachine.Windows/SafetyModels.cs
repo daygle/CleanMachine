@@ -8,7 +8,7 @@ public sealed record CleanupIssue(string Path, string Reason);
 /// may mutate files, registry state, recycle-bin contents, or free space at a time.</summary>
 internal static class CleanupCoordinator
 {
-    internal static readonly SemaphoreSlim Gate = new(1, 1);
+    internal static readonly ProcessGate Gate = new("cleanup");
 }
 /// <summary>Per-category (or per-item) contribution to a clean, used to build the
 /// Activity page's drill-down breakdown. <see cref="Skipped"/> counts the files in
