@@ -116,110 +116,113 @@ public sealed partial class OverviewPage : Page
     private async void BrowsersSettings_Click(object sender, RoutedEventArgs e)
     {
         var settings = await AppSettings.LoadAsync();
-        // Only the browsers actually present on this PC. Listing all six supported
-        // ones on a machine that has two of them just adds rows that can never do
-        // anything, and invites ticking one. Internet Explorer is excluded for a
-        // separate reason: it has no profile cache of its own (its cache is the
-        // Windows Internet Cache, already a Windows Cleanup category).
-        // The check is a profile-directory probe, so it is cheap enough to run here.
-        var installed = BrowserCatalog.Browsers
-            .Where(b => b.Family != BrowserFamily.InternetExplorer && BrowserCatalog.IsInstalled(b))
-            .ToList();
-        var items = installed
-            .Select(b => (b.Id, b.Name, settings.QuickCleanBrowsers.Contains(b.Id)))
-            .ToList();
+        // Only the browsers actually present on this PC. Listing every supported one
+        // on a machine that has two of them just adds rows that can never do
+        // anything. Internet Explorer is excluded because its cache is the Windows
+        // Internet Cache, already a Windows Cleanup category.
+        var installed = await Task.Run(() => BrowserCatalog.InstalledCacheBrowsers());
+        var chosen = await ItemPicker.ShowAsync(XamlRoot, "Quick Clean - Browser Caches",
+            "Tick the browsers whose cache Quick Clean clears.",
+            [
+                new PickerSection("browsers", "Browser Cleaner - Internet Cache",
+                    "Cache only - history, cookies, passwords and other saved data are never touched, and the browser can stay open (files it is using are skipped).",
+                    [new PickerGroup(null, installed.Select(b => new PickerItem(b.Id, b.Name, settings.QuickCleanBrowsers.Contains(b.Id), "Internet Cache")).ToList())],
+                    EmptyNote: "No supported browsers were found on this PC.")
+            ]);
+        if (chosen is null) return;
 
-        // Hiding a row must not quietly delete a stored preference. A browser that
-        // is ticked but not installed keeps its tick, so installing it later brings
-        // the choice back rather than requiring it to be set again.
-        var keepHidden = settings.QuickCleanBrowsers
-            .Where(id => installed.All(b => !b.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
-
-        await ShowPickerAsync("Browser Quick Clean", items,
-            (s, selected) => s.QuickCleanBrowsers = selected, keepHidden);
+        // Hiding a row must not quietly delete a stored preference: a browser that is
+        // ticked but not installed keeps its tick, so installing it later brings the
+        // choice back.
+        var selected = chosen["browsers"];
+        selected.UnionWith(settings.QuickCleanBrowsers.Where(id => installed.All(b => !b.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
+        await SaveSelectionAsync(s => s.QuickCleanBrowsers = selected);
     }
 
     private async void WindowsSettings_Click(object sender, RoutedEventArgs e)
     {
         var settings = await AppSettings.LoadAsync();
-        var items = WindowsCleanupService.Catalog
-            .Where(c => c.Risk == CleanupRisk.Safe || c.Id == QuickCleanService.RecycleBinCategoryId)
-            .Select(c => (c.Id, c.Name, QuickCleanService.IsWindowsSelected(c, settings)))
-            .ToList();
-        await ShowPickerAsync("Windows Quick Clean", items,
-            (s, selected) => s.QuickCleanWindowsCategories = selected);
+        PickerItem Row(CleanupCategory c) => new(c.Id, c.Name, QuickCleanService.IsWindowsSelected(c, settings), c.Description);
+        var safe = WindowsCleanupService.Catalog.Where(c => c.Risk == CleanupRisk.Safe);
+        var recycleBin = WindowsCleanupService.Catalog.Where(c => c.Id == QuickCleanService.RecycleBinCategoryId);
+
+        var chosen = await ItemPicker.ShowAsync(XamlRoot, "Quick Clean - Windows Cleanup",
+            "Tick the Windows Cleanup categories Quick Clean removes.",
+            [
+                new PickerSection("windows", "Windows Cleanup",
+                    "Safe categories that Windows recreates on demand.",
+                    safe.GroupBy(c => c.Group).Select(g => new PickerGroup(g.Key, g.Select(Row).ToList())).ToList()),
+                // Its own card, outside Select All: ticking it is the confirmation its
+                // Review risk requires.
+                new PickerSection("review", "Recycle Bin",
+                    "Permanently deletes everything in the Recycle Bin each time Quick Clean runs. Never part of Select All.",
+                    [new PickerGroup(null, recycleBin.Select(Row).ToList())],
+                    InSelectAll: false,
+                    IsWarning: true)
+            ]);
+        if (chosen is null) return;
+
+        var selected = chosen["windows"];
+        selected.UnionWith(chosen["review"]);
+        await SaveSelectionAsync(s => s.QuickCleanWindowsCategories = selected);
     }
 
     private async void RegistrySettings_Click(object sender, RoutedEventArgs e)
     {
         var settings = await AppSettings.LoadAsync();
         var current = settings.QuickCleanRegistryCategories;
-        var items = QuickCleanService.RegistryCategories
-            .Select(cat => (cat, cat, current is null || current.Contains(cat)))
-            .ToList();
-        await ShowPickerAsync("Registry Quick Clean", items,
-            (s, selected) => s.QuickCleanRegistryCategories = selected);
+        var chosen = await ItemPicker.ShowAsync(XamlRoot, "Quick Clean - Registry Care",
+            "Tick the kinds of registry findings Quick Clean fixes.",
+            [
+                new PickerSection("registry", "Registry Care",
+                    "Only low-risk findings are removed, and a backup you can restore from is always taken first.",
+                    [new PickerGroup(null, QuickCleanService.RegistryCategories
+                        .Select(cat => new PickerItem(cat, cat, current is null || current.Contains(cat)))
+                        .ToList())])
+            ]);
+        if (chosen is null) return;
+
+        var selected = chosen["registry"];
+        await SaveSelectionAsync(s => s.QuickCleanRegistryCategories = selected);
     }
 
     private async void AppsSettings_Click(object sender, RoutedEventArgs e)
     {
         var settings = await AppSettings.LoadAsync();
-        var current = settings.QuickCleanApps;
-        var items = AppCatalog.Definitions
-            .Select(d => (d.Id, d.Name, current is null || current.Contains(d.Id)))
-            .ToList();
-        await ShowPickerAsync("Application Quick Clean", items,
-            (s, selected) => s.QuickCleanApps = selected);
+        var current = settings.QuickCleanApps; // null = every installed app
+        var installed = await Task.Run(() => AppCleanupService.InstalledApps());
+        var chosen = await ItemPicker.ShowAsync(XamlRoot, "Quick Clean - Application Temp Files",
+            "Tick the apps whose temp files Quick Clean removes.",
+            [
+                new PickerSection("apps", "Application Cleanup - Temp Files",
+                    "The temporary, cache and log files listed for each app on the Application Cleanup page.",
+                    installed.GroupBy(a => a.Group)
+                        .Select(g => new PickerGroup(g.Key, g.Select(a => new PickerItem(a.Id, a.Name, current is null || current.Contains(a.Id))).ToList()))
+                        .ToList(),
+                    EmptyNote: "No supported applications were found on this PC.")
+            ]);
+        if (chosen is null) return;
+
+        var selected = chosen["apps"];
+        if (current is null && selected.Count == installed.Count)
+        {
+            // Everything still ticked: keep "every app", so apps installed later are
+            // included too, as before.
+            await SaveSelectionAsync(s => s.QuickCleanApps = null);
+            return;
+        }
+        // Keep ticks for apps the dialog could not show (not installed now).
+        if (current is not null)
+            selected.UnionWith(current.Where(id => installed.All(a => !a.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
+        await SaveSelectionAsync(s => s.QuickCleanApps = selected);
     }
 
-    /// <summary>Shows a checkbox picker and, on Save, applies the chosen keys to
-    /// settings and persists them. The ticked keys are written verbatim (an empty
-    /// selection means "clean nothing for this area"). <paramref name="keepHidden"/>
-    /// carries keys the dialog could not show (e.g. a browser that is selected but not
-    /// installed): they are merged back in on save, so narrowing what is displayed
-    /// never silently drops a stored choice.</summary>
-    private async Task ShowPickerAsync(
-        string title,
-        List<(string Key, string Label, bool Checked)> items,
-        Action<AppSettings, HashSet<string>> apply,
-        IEnumerable<string>? keepHidden = null)
+    /// <summary>Applies a picker's result to freshly loaded settings and saves them,
+    /// so a change made elsewhere while the dialog was open is not overwritten.</summary>
+    private static async Task SaveSelectionAsync(Action<AppSettings> apply)
     {
-        var panel = new StackPanel { Spacing = 6 };
-        var boxes = new List<(string Key, CheckBox Box)>();
-        foreach (var (key, label, chk) in items)
-        {
-            var box = new CheckBox { Content = label, IsChecked = chk };
-            boxes.Add((key, box));
-            panel.Children.Add(box);
-        }
-
-        if (items.Count == 0)
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Nothing to choose from here - nothing was detected on this PC.",
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 0x89, 0x95, 0x8F))
-            });
-
-        var dialog = new ContentDialog
-        {
-            Title = title,
-            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 360 },
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = XamlRoot
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-        var selected = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (keepHidden is not null)
-            foreach (var key in keepHidden)
-                selected.Add(key);
         var settings = await AppSettings.LoadAsync();
-        apply(settings, selected);
+        apply(settings);
         await settings.SaveAsync();
     }
 }

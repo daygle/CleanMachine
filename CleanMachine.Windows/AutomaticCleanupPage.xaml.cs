@@ -185,47 +185,27 @@ public sealed partial class AutomaticCleanupPage : Page
         }
 
         var effective = _settings.EffectiveExitItems(browser);
-        var panel = new StackPanel { Spacing = 6 };
-        var boxes = new List<(string Id, CheckBox Box)>();
-        var hasDestructive = BrowserCatalog.ItemsFor(browserDefinition.Family).Any(i => i.Destructive);
-        if (hasDestructive)
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Ticking a Saved Data item (cookies, history, passwords) lets the automatic close-clean remove it without asking. These stay off by default.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xB0, 0x3A, 0x2E)),
-                Margin = new Thickness(0, 0, 0, 4)
-            });
-        foreach (var item in BrowserCatalog.ItemsFor(browserDefinition.Family))
-        {
-            var box = new CheckBox
-            {
-                Content = item.Destructive ? $"{item.Name}  (Saved Data)" : item.Name,
-                IsChecked = effective.Contains(item.Id),
-                MinHeight = 26
-            };
-            if (item.Destructive)
-            {
-                box.Foreground = new SolidColorBrush(global::Windows.UI.Color.FromArgb(255, 0xB0, 0x3A, 0x2E));
-                ToolTipService.SetToolTip(box, "Saved Data: when ticked, this is removed automatically every time the browser closes.");
-            }
-            boxes.Add((item.Id, box));
-            panel.Children.Add(box);
-        }
+        var items = BrowserCatalog.ItemsFor(browserDefinition.Family);
+        PickerItem Row(BrowserItemDefinition item) => new(item.Id, item.Name, effective.Contains(item.Id), item.Description);
 
-        var dialog = new ContentDialog
-        {
-            Title = $"{browserDefinition.Name} - items cleaned when it closes",
-            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 360 },
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = XamlRoot
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        var chosen = await ItemPicker.ShowAsync(XamlRoot,
+            $"{browserDefinition.Name} - items cleaned when it closes",
+            "Tick what is cleaned each time this browser closes. Select All covers the caches and temporary files only.",
+            [
+                new PickerSection("safe", "Caches and temporary files",
+                    "Caches and other temporary files the browser does not need to keep.",
+                    [new PickerGroup(null, items.Where(i => !i.Destructive).Select(Row).ToList())]),
+                new PickerSection("saved", "Saved Data",
+                    "Ticking one of these lets the close-clean remove it every time, without asking. They stay off by default and are never part of Select All.",
+                    [new PickerGroup(null, items.Where(i => i.Destructive).Select(Row).ToList())],
+                    EmptyNote: "This browser has no saved-data items.",
+                    InSelectAll: false,
+                    IsWarning: true)
+            ],
+            selectAllLabel: "Select All (caches and temporary files)");
+        if (chosen is null) return;
 
-        monitor.Items = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        monitor.Items = chosen["safe"].Union(chosen["saved"], StringComparer.OrdinalIgnoreCase).ToHashSet(StringComparer.OrdinalIgnoreCase);
         UpdateExitItemsButton((Button)sender, browser);
         await SaveAndApplyAsync();
     }
@@ -291,10 +271,6 @@ public sealed partial class AutomaticCleanupPage : Page
     /// Internet Cache and the applications whose temp files it also clears.</summary>
     private sealed record TriggerItems(HashSet<string>? Categories, HashSet<string> Browsers, HashSet<string> Apps);
 
-    private static readonly SolidColorBrush HeadingBrush = new(global::Windows.UI.Color.FromArgb(255, 0x27, 0x36, 0x30));
-    private static readonly SolidColorBrush GroupBrush = new(global::Windows.UI.Color.FromArgb(255, 0x7F, 0x91, 0x89));
-    private static readonly SolidColorBrush MutedBrush = new(global::Windows.UI.Color.FromArgb(255, 0x89, 0x95, 0x8F));
-    private static readonly SolidColorBrush CardBorderBrush = new(global::Windows.UI.Color.FromArgb(255, 0xE5, 0xEB, 0xE7));
 
     // Only Safe-risk Windows categories are offered: automatic runs never touch
     // Review/Advanced categories.
@@ -340,175 +316,36 @@ public sealed partial class AutomaticCleanupPage : Page
         var browsers = await Task.Run(() => BrowserCatalog.InstalledCacheBrowsers());
         var apps = await Task.Run(() => AppCleanupService.InstalledApps());
 
-        var panel = new StackPanel { Spacing = 12 };
-        panel.Children.Add(Note("Tick what this trigger should clean. Items are grouped by the CleanMachine page they come from; tick a page heading to select or clear its whole section. Only items that are safe to remove unattended are listed."));
+        var chosen = await ItemPicker.ShowAsync(XamlRoot, title,
+            "Tick what this trigger should clean. Items are grouped by the CleanMachine page they come from; tick a page heading to select or clear its whole section. Only items that are safe to remove unattended are listed.",
+            [
+                new PickerSection("windows", "Windows Cleanup",
+                    "Safe categories only. Review and Advanced categories (Recycle Bin, Downloads, User Assist History, ...) are never cleaned automatically.",
+                    SafeCategories.GroupBy(c => c.Group)
+                        .Select(g => new PickerGroup(g.Key, g.Select(c => new PickerItem(c.Id, c.Name, IsCategoryChecked(c, current.Categories), c.Description)).ToList()))
+                        .ToList()),
+                new PickerSection("browsers", "Browser Cleaner - Internet Cache",
+                    "Clears each ticked browser's cache. History, cookies, passwords and other saved data are never touched, and the browser can stay open (files it is using are skipped).",
+                    [new PickerGroup(null, browsers.Select(b => new PickerItem(b.Id, b.Name, current.Browsers.Contains(b.Id), "Internet Cache")).ToList())],
+                    EmptyNote: "No supported browsers were found on this PC."),
+                new PickerSection("apps", "Application Cleanup - Temp Files",
+                    "Clears the temporary, cache and log files listed for each ticked app on the Application Cleanup page.",
+                    apps.GroupBy(a => a.Group)
+                        .Select(g => new PickerGroup(g.Key, g.Select(a => new PickerItem(a.Id, a.Name, current.Apps.Contains(a.Id))).ToList()))
+                        .ToList(),
+                    EmptyNote: "No supported applications were found on this PC.")
+            ],
+            footer: "Registry Care is not available here: registry fixes need a review and a backup each time, so they only run from the Registry Care page or a schedule.");
+        if (chosen is null) return null;
 
-        // Windows Cleanup, sub-grouped the same way as its own page.
-        var categoryBoxes = new List<(string Id, CheckBox Box)>();
-        var windowsSection = AddSection(panel, "Windows Cleanup",
-            "Safe categories only. Review and Advanced categories (Recycle Bin, Downloads, User Assist History, ...) are never cleaned automatically.");
-        foreach (var group in SafeCategories.GroupBy(c => c.Group))
-        {
-            windowsSection.Children.Children.Add(GroupLabel(group.Key));
-            foreach (var category in group)
-            {
-                var box = ChildBox(category.Name, category.Description, IsCategoryChecked(category, current.Categories));
-                categoryBoxes.Add((category.Id, box));
-                windowsSection.Children.Children.Add(box);
-            }
-        }
-        WireSection(windowsSection.Header, categoryBoxes.Select(b => b.Box).ToList());
+        // Keep ticks for browsers/apps the dialog could not show (not installed now),
+        // so reinstalling one brings the choice back.
+        var chosenBrowsers = chosen["browsers"];
+        chosenBrowsers.UnionWith(current.Browsers.Where(id => browsers.All(b => !b.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
+        var chosenApps = chosen["apps"];
+        chosenApps.UnionWith(current.Apps.Where(id => apps.All(a => !a.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
 
-        var browserBoxes = new List<(string Id, CheckBox Box)>();
-        var appBoxes = new List<(string Id, CheckBox Box)>();
-        var browserSection = AddSection(panel, "Browser Cleaner - Internet Cache",
-            "Clears each ticked browser's cache. History, cookies, passwords and other saved data are never touched, and the browser can stay open (files it is using are skipped).");
-        foreach (var browser in browsers)
-        {
-            var box = ChildBox(browser.Name, "Internet Cache", current.Browsers.Contains(browser.Id));
-            browserBoxes.Add((browser.Id, box));
-            browserSection.Children.Children.Add(box);
-        }
-        if (browsers.Count == 0)
-            browserSection.Children.Children.Add(Note("No supported browsers were found on this PC."));
-        WireSection(browserSection.Header, browserBoxes.Select(b => b.Box).ToList());
-
-        var appSection = AddSection(panel, "Application Cleanup - Temp Files",
-            "Clears the temporary, cache and log files listed for each ticked app on the Application Cleanup page.");
-        foreach (var group in apps.GroupBy(a => a.Group))
-        {
-            appSection.Children.Children.Add(GroupLabel(group.Key));
-            foreach (var app in group)
-            {
-                var box = ChildBox(app.Name, null, current.Apps.Contains(app.Id));
-                appBoxes.Add((app.Id, box));
-                appSection.Children.Children.Add(box);
-            }
-        }
-        if (apps.Count == 0)
-            appSection.Children.Children.Add(Note("No supported applications were found on this PC."));
-        WireSection(appSection.Header, appBoxes.Select(b => b.Box).ToList());
-
-        panel.Children.Add(Note("Registry Care is not available here: registry fixes need a review and a backup each time, so they only run from the Registry Care page or a schedule."));
-
-        var dialog = new ContentDialog
-        {
-            Title = title,
-            Content = new ScrollViewer
-            {
-                Content = panel,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                MaxHeight = 460,
-                Padding = new Thickness(0, 0, 12, 0)
-            },
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = XamlRoot
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return null;
-
-        static HashSet<string> Ticked(IEnumerable<(string Id, CheckBox Box)> boxes)
-            => boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        // Keep ticks for browsers/apps the dialog could not show (not installed now).
-        var chosenBrowsers = Ticked(browserBoxes);
-        chosenBrowsers.UnionWith(current.Browsers.Where(id => browserBoxes.All(b => !b.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
-        var chosenApps = Ticked(appBoxes);
-        chosenApps.UnionWith(current.Apps.Where(id => appBoxes.All(b => !b.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
-
-        return new TriggerItems(Ticked(categoryBoxes), chosenBrowsers, chosenApps);
-    }
-
-    /// <summary>Adds one page's card: a bold tri-state heading checkbox, a one-line
-    /// explanation, and an indented panel for its items.</summary>
-    private static (CheckBox Header, StackPanel Children) AddSection(StackPanel parent, string heading, string explanation)
-    {
-        var header = new CheckBox
-        {
-            Content = new TextBlock
-            {
-                Text = heading,
-                FontSize = 14,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = HeadingBrush
-            }
-        };
-        var children = new StackPanel { Spacing = 2, Margin = new Thickness(28, 4, 0, 0) };
-        var body = new StackPanel { Spacing = 2 };
-        body.Children.Add(header);
-        body.Children.Add(new TextBlock
-        {
-            Text = explanation,
-            FontSize = 11,
-            Foreground = MutedBrush,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(28, 0, 0, 0)
-        });
-        body.Children.Add(children);
-        parent.Children.Add(new Border
-        {
-            BorderBrush = CardBorderBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 10, 12, 10),
-            Child = body
-        });
-        return (header, children);
-    }
-
-    private static TextBlock GroupLabel(string text) => new()
-    {
-        Text = text.ToUpperInvariant(),
-        FontSize = 10,
-        Foreground = GroupBrush,
-        Margin = new Thickness(0, 8, 0, 2)
-    };
-
-    private static TextBlock Note(string text) => new()
-    {
-        Text = text,
-        FontSize = 11,
-        Foreground = MutedBrush,
-        TextWrapping = TextWrapping.Wrap
-    };
-
-    private static CheckBox ChildBox(string label, string? tooltip, bool isChecked)
-    {
-        var box = new CheckBox { Content = label, IsChecked = isChecked, MinHeight = 28 };
-        if (!string.IsNullOrWhiteSpace(tooltip))
-            ToolTipService.SetToolTip(box, tooltip);
-        return box;
-    }
-
-    /// <summary>Keeps a section heading in step with its items: checked when all are,
-    /// cleared when none are, indeterminate in between; clicking the heading ticks or
-    /// clears every item.</summary>
-    private static void WireSection(CheckBox header, List<CheckBox> children)
-    {
-        var syncing = false;
-        void Refresh()
-        {
-            syncing = true;
-            var ticked = children.Count(c => c.IsChecked == true);
-            header.IsChecked = ticked == 0 ? false : ticked == children.Count ? true : null;
-            syncing = false;
-        }
-        header.IsEnabled = children.Count > 0;
-        header.Click += (_, _) =>
-        {
-            var value = header.IsChecked == true;
-            syncing = true;
-            foreach (var child in children) child.IsChecked = value;
-            syncing = false;
-            Refresh();
-        };
-        foreach (var child in children)
-        {
-            child.Checked += (_, _) => { if (!syncing) Refresh(); };
-            child.Unchecked += (_, _) => { if (!syncing) Refresh(); };
-        }
-        Refresh();
+        return new TriggerItems(chosen["windows"], chosenBrowsers, chosenApps);
     }
 
     private TriggerItems MonitorItems => new(_settings.SystemMonitorCategories, _settings.SystemMonitorBrowsers, _settings.SystemMonitorApps);
