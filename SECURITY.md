@@ -82,6 +82,7 @@ The project does not request vulnerability reports containing secrets. Remove AP
 See [AUDIT.md](AUDIT.md) for the October 2026 review, fixes and outstanding checks.
 Reparse checks include ancestors but are path-based, not a defense against a
 same-user process concurrently replacing directories. Cleanup coordination and
-store write gates are process-local; a headless schedule and the GUI can still
-race. Restore now holds the payload read-locked across verification/import and
+store write gates are per-user interprocess file locks (in
+`%LOCALAPPDATA%\CleanMachine.Locks`), so a headless schedule and the GUI are
+serialized; the OS releases a lock if its process crashes. Restore now holds the payload read-locked across verification/import and
 uses the cleanup gate, but interrupted imports are not transactional rollbacks.
