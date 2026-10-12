@@ -13,7 +13,7 @@ public service signatures, settings JSON fields, durable data locations, catalog
 IDs and Store packaging are preserved. Backups remain `.reg` files, but new names
 use a timestamp plus a unique ID. No new runtime dependencies or services were
 added. No real user caches, registry data, scheduled tasks or power actions were
-operated on in the Linux audit environment. No commit, push or deployment was made.
+operated on in the Linux audit environment.
 
 Safety corrections intentionally change destructive behavior: session/bookmark
 recovery is opt-in; Firefox history/download database deletion is refused;
