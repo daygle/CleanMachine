@@ -603,6 +603,8 @@ public sealed partial class MainWindow : Window
             _trayIcon = new TrayIcon(hIcon, _cleaningActive ? BusyTip : IdleTip);
             _trayIcon.Clicked += OnTrayIconClicked;
             _trayIcon.ExitRequested += OnTrayExitRequested;
+            _trayIcon.QuickCleanRequested += OnTrayQuickCleanRequested;
+            _trayIcon.CleanEverythingRequested += OnTrayCleanEverythingRequested;
         }
         _trayIcon.Show();
         return _trayIcon.IsVisible;
@@ -694,6 +696,126 @@ public sealed partial class MainWindow : Window
             if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.Restore();
             Activate(); // bring the restored window to the foreground
         });
+    }
+
+    /// <summary>A "Quick Clean" item chosen from the tray menu: run that area's
+    /// quick clean on a background thread, using the same saved selection and the
+    /// same <see cref="QuickCleanService"/> pipeline as the Overview cards' buttons
+    /// (stats, activity log, cleanup gate are all handled inside). The tray menu runs
+    /// on the UI thread, so the work is offloaded; the event handler must return
+    /// before the menu can be safely rebuilt. The <see cref="CleaningActivity"/>
+    /// scope drives the tray spinner and keeps the menu's Quick Clean items greyed
+    /// until the run ends. A failure is logged to the activity log (the same
+    /// best-effort policy as the automatic cleanup paths) rather than thrown.
+    /// </summary>
+    private static void OnTrayQuickCleanRequested(QuickCleanArea area)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using (CleaningActivity.Begin())
+                {
+                    var result = await QuickCleanService.RunAsync(area);
+                    AppNotifications.ShowQuickCleanComplete(area, result);
+                }
+            }
+            catch (Exception ex)
+            {
+                // The run was started from the tray and its only other trace is the
+                // activity log, which the user may never open - so surface the
+                // failure on the tray's own channel, a toast, as well.
+                AppNotifications.ShowQuickCleanFailed(area, ex.Message);
+                try
+                {
+                    await new ActivityStore().AddAsync(new ActivityEntry(
+                        DateTimeOffset.UtcNow,
+                        $"Quick Clean - {QuickCleanService.Title(area)}",
+                        $"Quick Clean failed: {ex.Message}"),
+                        CancellationToken.None);
+                }
+                catch { /* logging the failure is best-effort */ }
+            }
+        });
+    }
+
+    /// <summary>"Clean Everything" chosen from the tray menu: runs all four areas'
+    /// quick cleans in sequence on a background thread, each through the same
+    /// <see cref="QuickCleanService"/> pipeline as its Overview button - so stats,
+    /// activity entries and per-area detail appear exactly as if the four cards'
+    /// buttons had been pressed in turn. One area failing never stops the others:
+    /// the failure is logged and the rest still run. Ends with a single toast
+    /// reporting the combined total (see <see cref="CleanEverythingSummary"/>).
+    /// The <see cref="CleaningActivity"/> scope spans the whole sequence, driving
+    /// the tray spinner and keeping the menu's clean items greyed until it ends.
+    /// </summary>
+    private static void OnTrayCleanEverythingRequested()
+    {
+        _ = Task.Run(async () =>
+        {
+            var results = new List<(QuickCleanArea Area, QuickCleanResult Result)>();
+            var failures = new List<string>();
+            try
+            {
+                using (CleaningActivity.Begin())
+                {
+                    foreach (var area in new[] { QuickCleanArea.Browsers, QuickCleanArea.Windows, QuickCleanArea.Registry, QuickCleanArea.Apps })
+                    {
+                        try
+                        {
+                            results.Add((area, await QuickCleanService.RunAsync(area)));
+                        }
+                        catch (Exception ex)
+                        {
+                            failures.Add($"{QuickCleanService.Title(area)} failed: {ex.Message}");
+                            try
+                            {
+                                await new ActivityStore().AddAsync(new ActivityEntry(
+                                    DateTimeOffset.UtcNow,
+                                    $"Quick Clean - {QuickCleanService.Title(area)}",
+                                    $"Quick Clean failed: {ex.Message}"),
+                                    CancellationToken.None);
+                            }
+                            catch { /* logging the failure is best-effort */ }
+                        }
+                    }
+                }
+                AppNotifications.ShowCleanEverythingComplete(CleanEverythingSummary(results, failures), failures);
+            }
+            catch { /* the whole toast path is best-effort; totals were already recorded */ }
+        });
+    }
+
+    /// <summary>The combined toast line for a Clean Everything run: item and byte
+    /// totals across the areas that ran. When nothing was reclaimed anywhere, the
+    /// note carries each area's own explanation of why (no selection, nothing
+    /// eligible, a failed backup, ...) so a silent run still explains itself - the
+    /// same disclosure the single-area toasts get from their per-area note.
+    /// Internal so tests can pin the wording.</summary>
+    internal static string CleanEverythingSummary(IReadOnlyList<(QuickCleanArea Area, QuickCleanResult Result)> results, IReadOnlyList<string> failures)
+    {
+        var items = results.Sum(r => r.Result.Items);
+        var bytes = results.Sum(r => r.Result.Bytes);
+        string? note = null;
+        if (items == 0 && bytes == 0)
+        {
+            note = string.Join("; ", results
+                .Select(r => r.Result.Note)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!.Trim())
+                .Distinct(StringComparer.Ordinal));
+            if (note.Length == 0) note = null;
+        }
+        var combined = new QuickCleanResult(
+            items,
+            bytes,
+            results.SelectMany(r => r.Result.Issues).Distinct().Take(20).ToList(),
+            note,
+            Examined: results.Sum(r => r.Result.Examined));
+        var summary = $"Clean Everything: {QuickCleanService.SummaryText(combined)}";
+        if (failures.Count > 0)
+            summary += $", {failures.Count} area(s) failed";
+        return summary;
     }
 
     /// <summary>"Exit" chosen from the tray menu: really quit. The window is in the

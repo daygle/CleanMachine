@@ -38,6 +38,59 @@ public static class AppNotifications
         catch { /* notifications are best-effort */ }
     }
 
+    /// <summary>Toast confirming a Quick Clean triggered from the tray menu. Uses
+    /// <see cref="QuickCleanService.SummaryText"/> so the notification repeats exactly
+    /// what the Overview cards and the activity entry would say about the same run,
+    /// including why a run that removed nothing came back empty.</summary>
+    public static void ShowQuickCleanComplete(QuickCleanArea area, QuickCleanResult result)
+    {
+        try
+        {
+            var notification = new AppNotificationBuilder()
+                .AddText("CleanMachine")
+                .AddText($"Quick Clean - {QuickCleanService.Title(area)}: {QuickCleanService.SummaryText(result)}")
+                .BuildNotification();
+            AppNotificationManager.Default.Show(notification);
+        }
+        catch { /* notifications are best-effort */ }
+    }
+
+    /// <summary>Toast confirming the tray menu's "Clean Everything" run: one line
+    /// with the combined total across all four areas (worded by MainWindow's
+    /// <c>CleanEverythingSummary</c>, next to the pipeline that produced it), plus
+    /// one line per failed area underneath - so a run with one dead area is honest
+    /// about it without hiding what the other three reclaimed.</summary>
+    public static void ShowCleanEverythingComplete(string summary, IReadOnlyList<string> failures)
+    {
+        try
+        {
+            var builder = new AppNotificationBuilder()
+                .AddText("CleanMachine")
+                .AddText(summary);
+            foreach (var failure in failures)
+                builder.AddText(failure);
+            AppNotificationManager.Default.Show(builder.BuildNotification());
+        }
+        catch { /* notifications are best-effort */ }
+    }
+
+    /// <summary>Toast telling the user a Quick Clean run failed. A run started from
+    /// the tray is invisible while it works and its only failure record used to be
+    /// the activity log, which the user may never open - so the tray-triggered paths
+    /// show the failure right here as well as logging it.</summary>
+    public static void ShowQuickCleanFailed(QuickCleanArea area, string message)
+    {
+        try
+        {
+            var notification = new AppNotificationBuilder()
+                .AddText("CleanMachine")
+                .AddText($"Quick Clean - {QuickCleanService.Title(area)} failed: {message}")
+                .BuildNotification();
+            AppNotificationManager.Default.Show(notification);
+        }
+        catch { /* notifications are best-effort */ }
+    }
+
     public static string FormatBytes(long bytes)
     {
         if (bytes >= 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024 * 1024):0.0} GB";

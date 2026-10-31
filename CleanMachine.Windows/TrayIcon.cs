@@ -2,6 +2,19 @@ using System.Runtime.InteropServices;
 
 namespace CleanMachine.Windows;
 
+/// <summary>One row of the tray context menu, in exactly the shape
+/// <see cref="TrayIcon.BuildMenu"/> produces: what the real Win32 popup draws.
+/// Separators carry no command and are never enabled. Internal (rather than
+/// private) so tests can pin the menu's command ids, labels, ordering and the
+/// greyed-while-busy behaviour without driving Win32.</summary>
+internal sealed record TrayMenuItem(uint CommandId, string Label, bool IsSeparator, bool Enabled)
+{
+    internal static TrayMenuItem Item(uint commandId, string label, bool enabled)
+        => new(commandId, label, IsSeparator: false, Enabled: enabled);
+
+    internal static TrayMenuItem SeparatorItem { get; } = new(0, string.Empty, IsSeparator: true, Enabled: false);
+}
+
 /// <summary>
 /// Minimal system tray icon for WinUI 3 (no native support) implemented via the
 /// Win32 Shell_NotifyIcon API. A hidden top-level window receives the icon's callback
@@ -24,12 +37,15 @@ public sealed class TrayIcon : IDisposable
 
     // Right-click context menu.
     private const uint MF_STRING = 0x0000;
+    private const uint MF_GRAYED = 0x00000004;
     private const uint MF_SEPARATOR = 0x0800;
     private const uint TPM_RIGHTBUTTON = 0x0002;
     private const uint TPM_NONOTIFY = 0x0080;
     private const uint TPM_RETURNCMD = 0x0100;
     private const uint ID_OPEN = 1;
     private const uint ID_EXIT = 2;
+    private const uint ID_QUICKCLEAN_FIRST = 3; // four consecutive ids, one per QuickCleanArea
+    private const uint ID_CLEAN_EVERYTHING = 7; // runs all four areas in sequence
 
     private static readonly uint TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
 
@@ -48,6 +64,26 @@ public sealed class TrayIcon : IDisposable
     public event Action? Clicked;
     /// <summary>The "Exit" context-menu item: quit the application.</summary>
     public event Action? ExitRequested;
+    /// <summary>One of the "Quick Clean" context-menu items: run that area's quick
+    /// clean immediately. Raised on the tray window's thread (the one that created
+    /// this icon, the UI thread); subscribers should offload the run.</summary>
+    public event Action<QuickCleanArea>? QuickCleanRequested;
+    /// <summary>The "Clean Everything" context-menu item: run all four quick cleans
+    /// in sequence. Same thread contract as <see cref="QuickCleanRequested"/>; the
+    /// subscriber combines and reports the totals.</summary>
+    public event Action? CleanEverythingRequested;
+    /// <summary>Set while our own <see cref="CleaningActivity"/> scope is open, so the
+    /// menu can grey the Quick Clean items out while a run is in progress. Cleanups
+    /// started outside the tray still grey the menu through the same flag: it tracks
+    /// <see cref="CleaningActivity.IsActive"/>, which every path flips. The internal
+    /// test hook <see cref="QuickCleanInFlightForTest"/> exposes it.</summary>
+    private volatile bool _quickCleanInFlight;
+
+    /// <summary>The flag that decides whether the menu's five clean items are greyed
+    /// right now. Internal so tests can verify the constructor's initial read and the
+    /// <see cref="CleaningActivity.Changed"/> subscription end-to-end without having
+    /// to right-click a real tray icon.</summary>
+    internal bool QuickCleanInFlightForTest => _quickCleanInFlight;
 
     public TrayIcon(IntPtr icon, string tip, uint id = 1)
     {
@@ -56,6 +92,10 @@ public sealed class TrayIcon : IDisposable
         _id = id;
         _wndProc = WndProc;
         _hwnd = CreateMessageWindow();
+        // The four Quick Clean items stay greyed while any clean is running - ours
+        // or one started elsewhere (the Overview cards, a schedule, the agent).
+        _quickCleanInFlight = CleaningActivity.IsActive;
+        CleaningActivity.Changed += OnCleaningActivityChanged;
     }
 
     public void Show()
@@ -99,6 +139,7 @@ public sealed class TrayIcon : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        CleaningActivity.Changed -= OnCleaningActivityChanged;
         Hide();
         if (_hwnd != IntPtr.Zero)
         {
@@ -119,6 +160,46 @@ public sealed class TrayIcon : IDisposable
         szTip = _tip,
         Anonymous = new NOTIFYICONDATAW_UNION { uVersion = 5 }
     };
+
+    private void OnCleaningActivityChanged(bool active) => _quickCleanInFlight = active;
+
+    /// <summary>Every row of the right-click menu, in drawn order, with each item's
+    /// command id and enabled state - a pure model of exactly the menu
+    /// <see cref="ShowContextMenu"/> draws, kept separate from the Win32 calls so
+    /// tests can pin ids, labels, ordering and the greyed-while-busy behaviour.
+    /// All five clean items (Clean Everything plus one per Overview area) are greyed
+    /// while any clean is running: a queued clean would only pile up behind the
+    /// running one (every service shares the cleanup gate), and the spinner already
+    /// tells the user it is busy.</summary>
+    internal static IReadOnlyList<TrayMenuItem> BuildMenu(bool quickCleanInFlight)
+    {
+        List<TrayMenuItem> items =
+        [
+            TrayMenuItem.Item(ID_OPEN, "Open CleanMachine", enabled: true),
+            TrayMenuItem.SeparatorItem,
+        ];
+        var enabled = !quickCleanInFlight;
+        items.Add(TrayMenuItem.Item(ID_CLEAN_EVERYTHING, "Clean Everything", enabled));
+        foreach (var area in new[] { QuickCleanArea.Browsers, QuickCleanArea.Windows, QuickCleanArea.Registry, QuickCleanArea.Apps })
+            items.Add(TrayMenuItem.Item(QuickCleanCommand(area), $"Quick Clean - {QuickCleanService.Title(area)}", enabled));
+        items.Add(TrayMenuItem.SeparatorItem);
+        items.Add(TrayMenuItem.Item(ID_EXIT, "Exit CleanMachine", enabled: true));
+        return items;
+    }
+
+    /// <summary>The menu command a quick clean on <paramref name="area"/> carries.
+    /// The four ids are consecutive so a single range check maps them back.</summary>
+    internal static uint QuickCleanCommand(QuickCleanArea area) => ID_QUICKCLEAN_FIRST + (uint)area;
+
+    /// <summary>Reverse of <see cref="QuickCleanCommand"/>: the area the returned
+    /// menu command selected, or null for anything else (Open, Exit, Clean
+    /// Everything, a dismissed menu, or a stale id). Used by the dispatch ahead of
+    /// every <see cref="QuickCleanRequested"/> raise, so the id arithmetic lives in
+    /// one tested place.</summary>
+    internal static QuickCleanArea? QuickCleanAreaFromCommand(uint command)
+        => command >= ID_QUICKCLEAN_FIRST && command < ID_QUICKCLEAN_FIRST + 4
+            ? (QuickCleanArea)(command - ID_QUICKCLEAN_FIRST)
+            : null;
 
     private IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
@@ -141,7 +222,8 @@ public sealed class TrayIcon : IDisposable
         return DefWindowProc(hwnd, msg, wParam, lParam);
     }
 
-    /// <summary>Shows the right-click menu ("Open" / "Exit") at the cursor. Uses
+    /// <summary>Shows the right-click menu ("Open" / the five clean items / "Exit")
+    /// at the cursor. Uses
     /// TPM_RETURNCMD so the chosen command comes back here rather than as a
     /// WM_COMMAND, and the SetForegroundWindow + WM_NULL dance MSDN requires so the
     /// menu dismisses correctly when the user clicks away from it.</summary>
@@ -151,9 +233,15 @@ public sealed class TrayIcon : IDisposable
         if (menu == IntPtr.Zero) return;
         try
         {
-            AppendMenu(menu, MF_STRING, (UIntPtr)ID_OPEN, "Open CleanMachine");
-            AppendMenu(menu, MF_SEPARATOR, UIntPtr.Zero, null);
-            AppendMenu(menu, MF_STRING, (UIntPtr)ID_EXIT, "Exit CleanMachine");
+            // Draw exactly what BuildMenu describes, so the tested model and the
+            // real menu can never drift apart.
+            foreach (var item in BuildMenu(_quickCleanInFlight))
+            {
+                if (item.IsSeparator)
+                    AppendMenu(menu, MF_SEPARATOR, UIntPtr.Zero, null);
+                else
+                    AppendMenu(menu, MF_STRING | (item.Enabled ? 0u : MF_GRAYED), (UIntPtr)item.CommandId, item.Label);
+            }
 
             GetCursorPos(out var point);
             SetForegroundWindow(_hwnd);
@@ -163,6 +251,9 @@ public sealed class TrayIcon : IDisposable
 
             if (command == ID_OPEN) Clicked?.Invoke();
             else if (command == ID_EXIT) ExitRequested?.Invoke();
+            else if (command == ID_CLEAN_EVERYTHING) CleanEverythingRequested?.Invoke();
+            else if (QuickCleanAreaFromCommand(command) is { } area)
+                QuickCleanRequested?.Invoke(area);
         }
         finally
         {
