@@ -35,6 +35,10 @@ public sealed class StartupAppsService
     private const string RunOnceKey = @"Software\Microsoft\Windows\CurrentVersion\RunOnce";
     private const string ExplorerRunKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
     private const string ExplorerRunOnceKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\RunOnce";
+    // 32-bit programs' all-users Run entries live in the WOW64 view of HKLM, and
+    // Explorer/Task Manager keep their enabled state under a separate "Run32" key.
+    private const string Wow64RunKey = @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run";
+    private const string ExplorerRun32Key = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32";
     private const string ExplorerStartupFolderKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
 
     /// <summary>Binary value Explorer writes for a disabled entry (first byte odd).</summary>
@@ -45,6 +49,7 @@ public sealed class StartupAppsService
         var entries = new List<StartupEntry>();
         ScanRegistry(RegistryHive.CurrentUser, StartupSource.RegistryCurrentUser, "Current User", entries);
         ScanRegistry(RegistryHive.LocalMachine, StartupSource.RegistryLocalMachine, "All Users", entries);
+        ScanWow64Run(entries);
         ScanStartupFolder(StartupSource.StartupFolder, "Startup Folder", entries);
         return entries;
     }
@@ -88,6 +93,48 @@ public sealed class StartupAppsService
         }
         catch { /* inaccessible hive - skip silently */ }
     }
+
+    /// <summary>All-users Run entries registered by 32-bit programs (the WOW64
+    /// view of HKLM). Task Manager lists these; reading only the 64-bit Run key
+    /// hid them from this page entirely.</summary>
+    private static void ScanWow64Run(List<StartupEntry> entries)
+    {
+        try
+        {
+            using var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+            using var runKey = root.OpenSubKey(Wow64RunKey);
+            if (runKey is null) return;
+            foreach (var valueName in runKey.GetValueNames())
+            {
+                if (string.IsNullOrWhiteSpace(valueName)) continue;
+                try
+                {
+                    if (runKey.GetValueKind(valueName) is not (RegistryValueKind.String or RegistryValueKind.ExpandString)) continue;
+                }
+                catch { continue; }
+                var command = runKey.GetValue(valueName) as string ?? "";
+                if (string.IsNullOrWhiteSpace(command)) continue;
+                var exePath = ResolveExecutable(command);
+                entries.Add(new StartupEntry(
+                    FriendlyName(valueName),
+                    command,
+                    exePath,
+                    StartupSource.RegistryLocalMachine,
+                    IsRegistryEntryEnabled(root, ExplorerRun32Key, valueName),
+                    "All Users",
+                    exePath is not null && CleanupService.IsMissingFile(exePath),
+                    RegistryPath: $"HKLM\\{Wow64RunKey}",
+                    ValueName: valueName));
+            }
+        }
+        catch { /* inaccessible hive - skip silently */ }
+    }
+
+    /// <summary>The StartupApproved key that holds an entry's enabled state.</summary>
+    private static string ApprovalPathFor(StartupEntry entry)
+        => entry.RegistryPath.Contains("WOW6432Node", StringComparison.OrdinalIgnoreCase) ? ExplorerRun32Key
+            : entry.RegistryPath.EndsWith("RunOnce", StringComparison.Ordinal) ? ExplorerRunOnceKey
+            : ExplorerRunKey;
 
     private static bool IsRegistryEntryEnabled(RegistryKey root, string approvalPath, string valueName)
     {
@@ -159,15 +206,21 @@ public sealed class StartupAppsService
     /// entries therefore need administrator rights); for startup
     /// folder entries it toggles the StartupApproved\StartupFolder flag so the
     /// file itself is never modified.</summary>
-    public bool ToggleEnabled(StartupEntry entry, bool enable)
+    public bool ToggleEnabled(StartupEntry entry, bool enable, out string? error)
     {
+        error = null;
         if (entry.Source is StartupSource.StartupFolder)
-            return ToggleFolderEntry(entry, enable);
-        return ToggleRegistryEntry(entry, enable);
+        {
+            if (ToggleFolderEntry(entry, enable)) return true;
+            error = "The startup folder setting could not be changed.";
+            return false;
+        }
+        return ToggleRegistryEntry(entry, enable, out error);
     }
 
-    private static bool ToggleRegistryEntry(StartupEntry entry, bool enable)
+    private static bool ToggleRegistryEntry(StartupEntry entry, bool enable, out string? error)
     {
+        error = null;
         try
         {
             // The approval lives in the same hive as the Run value it governs:
@@ -178,15 +231,16 @@ public sealed class StartupAppsService
             // unelevated app that write is refused and the UI reverts the toggle.
             var hive = entry.Source == StartupSource.RegistryLocalMachine
                 ? RegistryHive.LocalMachine : RegistryHive.CurrentUser;
-            var approvalPath = entry.RegistryPath.EndsWith("RunOnce", StringComparison.Ordinal)
-                ? ExplorerRunOnceKey : ExplorerRunKey;
+            var approvalPath = ApprovalPathFor(entry);
             using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
             using var approved = root.OpenSubKey(approvalPath, writable: true)
                 ?? root.CreateSubKey(approvalPath, writable: true);
-            if (approved is null) return false;
-
             var valueName = entry.ValueName;
-            if (string.IsNullOrEmpty(valueName)) return false;
+            if (approved is null || string.IsNullOrEmpty(valueName))
+            {
+                error = "The startup setting could not be opened.";
+                return false;
+            }
 
             if (enable)
                 approved.DeleteValue(valueName, throwOnMissingValue: false);
@@ -194,10 +248,18 @@ public sealed class StartupAppsService
                 approved.SetValue(valueName, DisabledApproval, RegistryValueKind.Binary);
             return true;
         }
-        catch
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException
+                                       && entry.Source == StartupSource.RegistryLocalMachine)
         {
-            // Access denied for an all-users entry without elevation, or an
-            // unexpected registry failure: report it so the UI reverts the toggle.
+            // Same wording as Remove: an unelevated app cannot change an
+            // all-users entry, and "could not disable" alone did not say why.
+            error = "Administrator rights are required to change entries that apply to all users. Run CleanMachine as administrator, or use Task Manager > Startup apps.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // Unexpected registry failure: report it so the UI reverts the toggle.
+            error = ex.Message;
             return false;
         }
     }

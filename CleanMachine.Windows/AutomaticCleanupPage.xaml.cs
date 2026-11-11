@@ -359,7 +359,7 @@ public sealed partial class AutomaticCleanupPage : Page
         _settings.SystemMonitorCategories = chosen.Categories;
         _settings.SystemMonitorBrowsers = chosen.Browsers;
         _settings.SystemMonitorApps = chosen.Apps;
-        await _settings.SaveAsync();
+        if (!await TrySaveAsync()) return;
         UpdateItemsSummary(MonitorItemsSummary, MonitorItems);
         StatusText.Text = "Saved.";
     }
@@ -371,7 +371,7 @@ public sealed partial class AutomaticCleanupPage : Page
         _settings.StartupCleanCategories = chosen.Categories;
         _settings.StartupCleanBrowsers = chosen.Browsers;
         _settings.StartupCleanApps = chosen.Apps;
-        await _settings.SaveAsync();
+        if (!await TrySaveAsync()) return;
         UpdateItemsSummary(StartupItemsSummary, StartupItems);
         StatusText.Text = "Saved.";
     }
@@ -383,7 +383,7 @@ public sealed partial class AutomaticCleanupPage : Page
         _settings.IdleCleanCategories = chosen.Categories;
         _settings.IdleCleanBrowsers = chosen.Browsers;
         _settings.IdleCleanApps = chosen.Apps;
-        await _settings.SaveAsync();
+        if (!await TrySaveAsync()) return;
         UpdateItemsSummary(IdleItemsSummary, IdleItems);
         StatusText.Text = "Saved.";
     }
@@ -395,6 +395,24 @@ public sealed partial class AutomaticCleanupPage : Page
     private void FreeSpace_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs e) { if (_ready) _ = SaveAndApplyAsync(); }
     private void IdleMinutes_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs e) { if (_ready) _ = SaveAndApplyAsync(); }
     private void RecycleBinDays_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs e) { if (_ready) _ = SaveAndApplyAsync(); }
+
+    /// <summary>Saves, reporting a failure in the page's status line. Most callers
+    /// are fire-and-forget or async void, so a failed save used to be an
+    /// unobserved exception: the page said nothing and the change was quietly
+    /// lost.</summary>
+    private async Task<bool> TrySaveAsync()
+    {
+        try
+        {
+            await _settings.SaveAsync();
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            StatusText.Text = $"Settings could not be saved: {ex.Message}";
+            return false;
+        }
+    }
 
     /// <summary>Reads every control into settings, persists, and re-applies the
     /// background services (agent + Windows startup) so they match what is enabled.</summary>
@@ -418,15 +436,7 @@ public sealed partial class AutomaticCleanupPage : Page
         _settings.RecycleBinAutoEmptyDays = double.IsNaN(RecycleBinDaysBox.Value) ? 30 : (int)Math.Clamp(RecycleBinDaysBox.Value, 1, 365);
         _settings.RecycleBinAutoEmptyNotify = RecycleBinNotifyToggle.IsChecked == true;
 
-        // Most callers fire this without awaiting, so a failed save was an
-        // unobserved exception: the page kept saying nothing and the change was
-        // quietly lost. Report it where the user is looking instead.
-        try { await _settings.SaveAsync(); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
-        {
-            StatusText.Text = $"Settings could not be saved: {ex.Message}";
-            return;
-        }
+        if (!await TrySaveAsync()) return;
         if (App.Current is App app) _ = app.ApplyBackgroundServices(_settings);
         StatusText.Text = "Saved.";
     }

@@ -25,9 +25,9 @@ internal static class TrayBusyIcon
     private const double TailSpan = 1.35;    // comet tail length, radians
     private const double TrackAlpha = 0.22;  // faint full-circle track under the comet
     private const double EdgeSoftness = 1.5; // antialias width of the band edge, px
-    private static readonly byte AmberR = 243;
-    private static readonly byte AmberG = 183;
-    private static readonly byte AmberB = 78; // #F3B74E - the brush handle's amber
+    private const byte AmberR = 243;
+    private const byte AmberG = 183;
+    private const byte AmberB = 78; // #F3B74E - the brush handle's amber
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ICONINFO

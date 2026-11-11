@@ -370,11 +370,10 @@ public sealed class BrowserCleanupService
                 try
                 {
                     if (IsExcluded(file, excludedPaths)) continue;
-                    if (NativeSafety.IsReparsePoint(file))
-                    {
-                        skipped.Add(new CleanupIssue(file, "Reparse point (junction/symlink) - skipped"));
-                        continue;
-                    }
+                    // No per-file link check: the walker skips links and checks
+                    // every folder it enters, and SafeDeletion refuses a link by
+                    // handle. Re-walking each file's ancestors cost a syscall per
+                    // path component for every file in a cache.
                     var info = new FileInfo(file);
                     if (modifiedCutoff is { } cutoff && info.LastWriteTimeUtc > cutoff)
                     {
@@ -391,7 +390,9 @@ public sealed class BrowserCleanupService
             }
             RemoveEmptyDirectories(path, excludedPaths, token);
         }
-        catch (IOException) { skipped.Add(new CleanupIssue(path, "Locked or unavailable")); }
+        // Per-file failures are caught inside the loop, so for a folder this is the
+        // walk itself stopping (its work limit, or the folder vanishing).
+        catch (IOException ex) { skipped.Add(new CleanupIssue(path, Directory.Exists(path) ? $"Scan stopped early: {ex.Message}" : "Locked or unavailable")); }
         catch (UnauthorizedAccessException) { skipped.Add(new CleanupIssue(path, "Access denied")); }
         return (removed, bytes, skipped);
     }

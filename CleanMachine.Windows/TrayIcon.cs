@@ -146,7 +146,6 @@ public sealed class TrayIcon : IDisposable
             DestroyWindow(_hwnd);
             UnregisterClass(_className, GetModuleHandle(null));
         }
-        GC.SuppressFinalize(this);
     }
 
     private NOTIFYICONDATAW CreateData() => new()

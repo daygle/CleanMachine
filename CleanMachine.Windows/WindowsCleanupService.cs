@@ -130,7 +130,7 @@ public sealed class WindowsCleanupService
         {
             long bytes = category.Kind switch
             {
-                CleanupKind.Files => GetDirectorySize(category.Path!, category.Pattern, category.Extensions, excludedPaths),
+                CleanupKind.Files => GetDirectorySize(category, excludedPaths),
                 CleanupKind.RegistryValues => CountRegistryValues(category.Path!),
                 CleanupKind.RecycleBin => GetRecycleBinSize(),
                 CleanupKind.BrokenShortcuts => BrokenShortcuts.Find(excludedPaths).Sum(GetLength),
@@ -203,11 +203,20 @@ public sealed class WindowsCleanupService
             // trees. Report the phase before materializing the list so the UI does
             // not appear frozen at the generic "Cleaning..." message.
             progress?.Report(new CleanupProgress($"Preparing {category.Name}", 0, 0, recovered));
-            var files = category.Kind == CleanupKind.BrokenShortcuts
+            IReadOnlyList<string> files;
+            if (category.Kind == CleanupKind.BrokenShortcuts)
+            {
                 // Re-checked at clean time (a target may have come back since the
                 // scan) and confined to the shortcut folders.
-                ? BrokenShortcuts.Find(options.ExcludedPaths).Where(BrokenShortcuts.IsInLocations).ToArray()
-                : GetCleanableFiles(category, options.ExcludedPaths);
+                files = BrokenShortcuts.Find(options.ExcludedPaths).Where(BrokenShortcuts.IsInLocations).ToArray();
+            }
+            else
+            {
+                (files, var incomplete) = CollectCleanableFiles(category, options.ExcludedPaths);
+                // The files found before the walk stopped are still cleaned below;
+                // the rest must be reported, not passed off as a complete clean.
+                if (incomplete is not null) issues.Add(new(category.Path!, incomplete));
+            }
             var categoryRemoved = 0;
             var categorySkipped = 0;
             long categoryBytes = 0;
@@ -219,7 +228,10 @@ public sealed class WindowsCleanupService
                 {
                     // Discovery is not authorization: inspect again immediately
                     // before deleting, including every ancestor and exclusions.
-                    if (NativeSafety.IsProtectedPath(file) || NativeSafety.IsReparsePoint(file) || IsExcluded(file, options.ExcludedPaths)
+                    // Links are not re-checked here by path: SafeDeletion refuses a
+                    // reparse point in any component atomically, by handle, which a
+                    // path check made a moment earlier cannot do.
+                    if (NativeSafety.IsProtectedPath(file) || IsExcluded(file, options.ExcludedPaths)
                         || IsProtectedFile(file) || IsRecentlyModified(file))
                     {
                         issues.Add(new(file, "Safety check changed since discovery"));
@@ -360,7 +372,36 @@ public sealed class WindowsCleanupService
     }
 
     private static IReadOnlyList<string> GetCleanableFiles(CleanupCategory category, IReadOnlySet<string>? excludedPaths)
-        => EnumerateCleanableFiles(category.Path!, category.Pattern, category.Extensions, excludedPaths).ToArray();
+        => CollectCleanableFiles(category, excludedPaths).Files;
+
+    /// <summary>The category's cleanable files, plus why the list is incomplete
+    /// (null when it is not). The walk is fail-closed on its work budget and on
+    /// I/O errors; both used to be swallowed into an empty list, so a large Temp
+    /// folder read as "0 B, nothing to clean" and its clean silently did nothing.
+    /// Files found before the walk stopped are kept, so a clean still makes
+    /// progress, and the reason is surfaced to the caller. A walk that reaches
+    /// <see cref="MaxFiles"/> is reported the same way.</summary>
+    internal static (IReadOnlyList<string> Files, string? Incomplete) CollectCleanableFiles(
+        CleanupCategory category, IReadOnlySet<string>? excludedPaths)
+    {
+        var files = new List<string>();
+        string? incomplete = null;
+        try
+        {
+            foreach (var file in EnumerateCleanableFiles(category.Path!, category.Pattern, category.Extensions, excludedPaths))
+            {
+                if (files.Count == MaxFiles)
+                {
+                    incomplete = $"Only the first {MaxFiles:N0} files were handled; run the clean again for the rest.";
+                    break;
+                }
+                files.Add(file);
+            }
+        }
+        catch (IOException ex) { incomplete = $"Scan stopped early: {ex.Message}"; }
+        catch (UnauthorizedAccessException ex) { incomplete = $"Scan stopped early: {ex.Message}"; }
+        return (files, incomplete);
+    }
 
     /// <summary>True when the file was written in the last two hours, i.e. something
     /// is probably still using it. FAILS CLOSED: an unreadable timestamp counts as
@@ -376,16 +417,14 @@ public sealed class WindowsCleanupService
     private static IEnumerable<string> EnumerateCleanableFiles(string directory, string? pattern, string[]? extensions, IReadOnlySet<string>? exclusions)
     {
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory) || !IsTrustedRoot(directory) || NativeSafety.IsProtectedPath(directory) || NativeSafety.IsReparsePoint(directory) || IsExcluded(directory, exclusions)) return [];
-        try
-        {
-            return FileEnumeration.Files(directory)
+        // Lazy: callers decide how many they need and how to treat a walk that
+        // stops early (see CollectCleanableFiles). No per-file link check:
+        // FileEnumeration already skips links and checks every folder it enters,
+        // and the delete itself refuses links by handle - re-walking each file's
+        // ancestors here cost a syscall per path component for every file.
+        return FileEnumeration.Files(directory)
             .Where(f => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(pattern ?? "*", Path.GetFileName(f), ignoreCase: true))
-            .Where(f => !IsExcluded(f, exclusions) && !NativeSafety.IsReparsePoint(f) && MatchesExtensions(f, extensions) && !IsProtectedFile(f) && !IsRecentlyModified(f))
-            .Take(MaxFiles)
-            .ToArray();
-        }
-        catch (IOException) { return []; }
-        catch (UnauthorizedAccessException) { return []; }
+            .Where(f => !IsExcluded(f, exclusions) && MatchesExtensions(f, extensions) && !IsProtectedFile(f) && !IsRecentlyModified(f));
     }
 
     // The Quick Access pinned-links list is stored as one of the AutomaticDestinations
@@ -414,8 +453,8 @@ public sealed class WindowsCleanupService
 
     private static bool IsExcluded(string path, IReadOnlySet<string>? exclusions) => exclusions?.Any(root => NativeSafety.IsWithin(path, root)) == true;
 
-    private static long GetDirectorySize(string directory, string? pattern, string[]? extensions, IReadOnlySet<string>? exclusions)
-        => EnumerateCleanableFiles(directory, pattern, extensions, exclusions).Sum(GetLength);
+    private static long GetDirectorySize(CleanupCategory category, IReadOnlySet<string>? exclusions)
+        => GetCleanableFiles(category, exclusions).Sum(GetLength);
 
     private static long CountRegistryValues(string keyPath)
     {

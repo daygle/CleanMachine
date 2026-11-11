@@ -104,7 +104,13 @@ public static class StartupRegistration
 
     public static void SetEnabled(bool enabled, string executablePath)
     {
-        if (enabled) Write(executablePath, RunPath, ValueName);
+        // Without a real executable the Run value would be "\"\" --background",
+        // a dead entry that Registry Care would then flag. Enabling is skipped
+        // instead; the next launch's Sync writes it once the path is known.
+        if (enabled)
+        {
+            if (!string.IsNullOrWhiteSpace(executablePath)) Write(executablePath, RunPath, ValueName);
+        }
         else RemoveCore(RunPath, ValueName);
     }
 

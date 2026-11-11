@@ -84,6 +84,77 @@ public sealed class AuditRemediationTests
     }
 
     [Fact]
+    public void AWindowsCategoryPastTheFileCapIsReportedAndStillCleansWhatItFound()
+    {
+        // TrustedTemp.Root is a trusted cleanup root, so a scratch folder under it
+        // can stand in for a real category.
+        var root = Path.Combine(TrustedTemp.Root, "cm-cap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var old = DateTime.UtcNow.AddDays(-1);
+            for (var i = 0; i < 10_001; i++)
+            {
+                var file = Path.Combine(root, $"{i}.tmp");
+                File.WriteAllBytes(file, []);
+                File.SetLastWriteTimeUtc(file, old);
+            }
+            var category = new CleanupCategory("test", "Test", "Test", "", CleanupRisk.Safe, true,
+                CleanupKind.Files, Path: root, Pattern: "*");
+
+            var (files, incomplete) = WindowsCleanupService.CollectCleanableFiles(category, null);
+
+            // Used to be all-or-nothing and silent; now the found files are kept
+            // and the shortfall is said out loud.
+            Assert.Equal(10_000, files.Count);
+            Assert.NotNull(incomplete);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ACompleteWindowsCategoryWalkReportsNothingMissing()
+    {
+        var root = Path.Combine(TrustedTemp.Root, "cm-walk-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "sub"));
+        try
+        {
+            foreach (var name in new[] { "a.tmp", Path.Combine("sub", "b.tmp") })
+            {
+                var file = Path.Combine(root, name);
+                File.WriteAllText(file, "x");
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-1));
+            }
+            var category = new CleanupCategory("test", "Test", "Test", "", CleanupRisk.Safe, true,
+                CleanupKind.Files, Path: root, Pattern: "*");
+
+            var (files, incomplete) = WindowsCleanupService.CollectCleanableFiles(category, null);
+
+            Assert.Equal(2, files.Count);
+            Assert.Null(incomplete);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ProgramFilesIsOnlyCleanableThroughAProgramFilesCatalogRoot()
+    {
+        if (!OperatingSystem.IsWindows()) return; // protected roots are Windows folders
+        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+        Assert.True(AppCleanupService.IsAllowedLocation(AppDataRoot.ProgramFilesX86, Path.Combine(programFilesX86, "Steam", "appcache")));
+        // Never the Program Files root itself, never via another root, never Windows.
+        Assert.False(AppCleanupService.IsAllowedLocation(AppDataRoot.ProgramFilesX86, programFilesX86));
+        Assert.False(AppCleanupService.IsAllowedLocation(AppDataRoot.LocalAppData, Path.Combine(programFilesX86, "Steam", "appcache")));
+        Assert.False(AppCleanupService.IsAllowedLocation(AppDataRoot.ProgramFilesX86, Path.Combine(windows, "Temp")));
+        Assert.False(AppCleanupService.IsAllowedLocation(AppDataRoot.WindowsTemp, Path.Combine(windows, "Temp")));
+        // Ordinary per-user locations are unaffected.
+        Assert.True(AppCleanupService.IsAllowedLocation(AppDataRoot.LocalAppData,
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zoom", "logs")));
+    }
+
+    [Fact]
     public void AnOversizedPreferenceFileIsSkippedNotFatal()
     {
         using var scratch = new AuditFollowupTests.Scratch();

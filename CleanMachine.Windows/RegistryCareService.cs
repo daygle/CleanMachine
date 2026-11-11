@@ -265,7 +265,12 @@ public sealed class RegistryCareService
         string? backupFailure = null;
         try
         {
-            backups = await CreateBackupsAsync(safe, token);
+            // On the thread pool: the export ends in BackupProvenance.Record, which
+            // hashes the file and takes the cross-process provenance gate
+            // synchronously (up to two minutes while a scheduled run holds it).
+            // Awaited from the Registry Care page, that ran on - and froze - the UI
+            // thread.
+            backups = await Task.Run(() => CreateBackupsAsync(safe, token), token);
         }
         catch (InvalidOperationException ex)
         {

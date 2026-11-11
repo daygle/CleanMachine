@@ -104,7 +104,8 @@ public sealed class AppCleanupService
                             try
                             {
                                 if (IsExcluded(file, excludedPaths)) continue;
-                                if (NativeSafety.IsReparsePoint(file)) { skipped.Add(new(file, "Reparse point (junction/symlink) - skipped")); continue; }
+                                // No per-file link check: the walker skips links and
+                                // SafeDeletion refuses one by handle at delete time.
                                 var info = new FileInfo(file);
                                 if (info.IsReadOnly) { skipped.Add(new(file, "Read-only")); continue; }
                                 var len = SafeDeletion.DeleteFile(file, item.FullPath);
@@ -135,7 +136,10 @@ public sealed class AppCleanupService
                         cleanedPaths.Add(item.FullPath);
                     }
                 }
-                catch (IOException) { skipped.Add(new(item.FullPath, "Locked")); }
+                // For a folder, a failure reaching here came from the walk itself
+                // (its work limit, or the folder vanishing) - per-file failures are
+                // caught inside - so say so instead of calling the folder "Locked".
+                catch (IOException ex) { skipped.Add(new(item.FullPath, isDirectory ? $"Scan stopped early: {ex.Message}" : "Locked")); }
                 catch (UnauthorizedAccessException) { skipped.Add(new(item.FullPath, "Access denied")); }
                 finally
                 {
@@ -180,7 +184,7 @@ public sealed class AppCleanupService
                 {
                     try
                     {
-                        if (NativeSafety.IsReparsePoint(fullPath)) continue;
+                        if (NativeSafety.IsReparsePoint(fullPath) || !IsAllowedLocation(root, fullPath)) continue;
                         if (Directory.Exists(fullPath))
                         {
                             var item = SizeDirectory(fullPath, entry.Description);
@@ -279,6 +283,33 @@ public sealed class AppCleanupService
         }
 
         return current;
+    }
+
+    /// <summary>Whether an app temp location may be offered (and therefore cleaned:
+    /// CleanAsync only cleans what a fresh scan offers).
+    /// <para>
+    /// <see cref="NativeSafety.IsProtectedPath"/> covers Windows, Program Files and
+    /// ProgramData. Catalog entries declared under a Program Files root are the one
+    /// deliberate exception: some desktop apps (Steam) keep caches and logs inside
+    /// their own install folder, which they make user-writable, and those are only
+    /// reachable through that root. Everything else - including any catalog entry
+    /// whose path resolves into Windows or ProgramData - stays refused. Before this
+    /// check App Cleanup never consulted the protected-path rule at all, so the
+    /// exception was an accident rather than a decision.
+    /// </para></summary>
+    internal static bool IsAllowedLocation(AppDataRoot root, string fullPath)
+    {
+        if (!NativeSafety.IsProtectedPath(fullPath)) return true;
+        if (root is not (AppDataRoot.ProgramFiles or AppDataRoot.ProgramFilesX86)) return false;
+        var rootPath = ResolveRoot(root);
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        // Strictly inside the Program Files root (never the root itself), and not
+        // somewhere a Program Files root could overlap the OS folders.
+        return !string.IsNullOrEmpty(rootPath)
+               && NativeSafety.IsWithin(fullPath, rootPath)
+               && !Path.TrimEndingDirectorySeparator(Path.GetFullPath(fullPath))
+                   .Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath)), StringComparison.OrdinalIgnoreCase)
+               && (string.IsNullOrEmpty(windows) || !NativeSafety.IsWithin(fullPath, windows));
     }
 
     internal static bool IsInstalled(AppDefinition def)

@@ -260,19 +260,39 @@ public sealed partial class StartupAppsPage : Page
         if (sender is not ToggleSwitch toggle || toggle.Tag is not StartupEntry entry) return;
         var newEnabled = toggle.IsOn;
 
-        var success = await Task.Run(() => _service.ToggleEnabled(entry, newEnabled));
-        await new ActivityStore().AddAsync(new ActivityEntry(
-            DateTimeOffset.UtcNow,
-            "Startup Application",
-            success
-                ? $"{(newEnabled ? "Enabled" : "Disabled")} {entry.Name}."
-                : $"Could not {(newEnabled ? "enable" : "disable")} {entry.Name}."));
+        var (success, error) = await Task.Run(() =>
+        {
+            var ok = _service.ToggleEnabled(entry, newEnabled, out var reason);
+            return (ok, reason);
+        });
         if (!success)
         {
             // Revert the toggle on failure
             toggle.Toggled -= OnToggle;
             toggle.IsOn = !newEnabled;
             toggle.Toggled += OnToggle;
+        }
+        try
+        {
+            await new ActivityStore().AddAsync(new ActivityEntry(
+                DateTimeOffset.UtcNow,
+                "Startup Application",
+                success
+                    ? $"{(newEnabled ? "Enabled" : "Disabled")} {entry.Name}."
+                    : $"Could not {(newEnabled ? "enable" : "disable")} {entry.Name}: {error ?? "unknown error"}"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* logging is best-effort */ }
+        if (!success)
+        {
+            // Say why on the page, as Remove does: a toggle that just flips back
+            // gave no hint that administrator rights were the problem.
+            await new ContentDialog
+            {
+                Title = $"Could not {(newEnabled ? "enable" : "disable")} entry",
+                Content = error ?? "The startup setting could not be changed.",
+                CloseButtonText = "OK",
+                XamlRoot = XamlRoot
+            }.ShowAsync();
         }
     }
 

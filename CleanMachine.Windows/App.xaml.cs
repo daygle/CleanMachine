@@ -637,7 +637,8 @@ public partial class App : Application
             task = StopBackgroundAgentCore();
         }
         // Observe (don't block on) the loop's completion: it swallows cancellation,
-        // and blocking here would deadlock against its UI-context continuations.
+        // and this is called from the UI thread, which must not wait out an
+        // in-flight background clean.
         _ = task?.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
     }
 
