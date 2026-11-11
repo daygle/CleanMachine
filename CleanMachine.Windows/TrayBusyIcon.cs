@@ -3,7 +3,16 @@ using System.Runtime.InteropServices;
 namespace CleanMachine.Windows;
 
 /// <summary>Renders the tray "cleaning" spinner frames: an amber comet arc
-/// rotating around a faint track circle, blended over the base app icon.
+/// rotating around a faint track circle, plus a solid amber status dot in the
+/// bottom-right corner, blended over the base app icon.
+/// <para>
+/// The tray shows the 256px icon scaled down to 16-32px, so every mark is sized
+/// for that: the ring is ~1.5px wide at 16px (the original 10px band shrank to
+/// well under a pixel and was barely visible), it runs outside the laptop and
+/// brush artwork, and both the ring and the dot carry a dark halo so they hold
+/// their contrast against the green tile. The dot is the same in every frame:
+/// a steady "busy" signal that does not depend on catching the motion.
+/// </para>
 /// Frames are composed in managed code (GetIconInfo/GetDIBits -&gt; blend -&gt;
 /// CreateDIBSection -&gt; CreateIconIndirect) instead of being drawn with GDI,
 /// because GDI writes a zero alpha byte into 32bpp icon DIBs, which would punch
@@ -16,15 +25,26 @@ internal static class TrayBusyIcon
     /// i.e. roughly one turn per second.</summary>
     internal const int FrameCount = 8;
 
-    // Geometry in the 256px design space: the ring (radius 96) sits on clean
-    // green background, clear of the laptop, brush and the rounded corners.
+    // Geometry in the 256px design space. The ring (radius 110) runs between
+    // the laptop/brush artwork and the tile edge; ring plus halo reaches 126,
+    // inside the 128 half-width of the tile.
     private const double DesignSize = 256;
-    private const double DesignRadius = 96;
-    private const double DesignHalfWidth = 5;
-    private const double HeadSpan = 0.65;    // fully bright head, radians
-    private const double TailSpan = 1.35;    // comet tail length, radians
-    private const double TrackAlpha = 0.22;  // faint full-circle track under the comet
-    private const double EdgeSoftness = 1.5; // antialias width of the band edge, px
+    internal const double DesignRadius = 110;
+    private const double DesignHalfWidth = 10;
+    private const double DesignHaloWidth = 6;  // dark rim around the ring, each side
+    private const double HaloAlpha = 0.85;
+    private const double HeadSpan = 1.3;      // fully bright head, radians
+    private const double TailSpan = 2.8;      // comet tail length, radians
+    private const double TrackAlpha = 0.25;   // faint full-circle track under the comet
+    private const double EdgeSoftness = 1.5;  // antialias width of every edge, px
+    // Status dot: centred in the bottom-right quadrant, fully inside the tile's
+    // rounded corner (outer edge at 240 along the diagonal).
+    internal const double DesignDotCenter = 192;
+    internal const double DesignDotRadius = 38;
+    private const double DesignDotHalo = 10;
+    private const byte DarkR = 0x0F;
+    private const byte DarkG = 0x2B;
+    private const byte DarkB = 0x24;  // #0F2B24 - the tile's own darkest green
     private const byte AmberR = 243;
     private const byte AmberG = 183;
     private const byte AmberB = 78; // #F3B74E - the brush handle's amber
@@ -131,8 +151,9 @@ internal static class TrayBusyIcon
     }
 
     /// <summary>Blends the spinner for frame <paramref name="step"/> into a
-    /// bottom-up premultiplied-BGRA pixel buffer of the icon. Internal (rather
-    /// than private) so tests can verify the rotation math on a synthetic tile.
+    /// bottom-up BGRA pixel buffer of the icon (straight alpha, as icon bitmaps
+    /// store it). Internal (rather than private) so tests can verify the
+    /// rotation math and the status dot on a synthetic tile.
     /// </summary>
     internal static void BlendSpinner(byte[] pixels, int width, int height, int step)
     {
@@ -142,6 +163,7 @@ internal static class TrayBusyIcon
         var cy = height / 2.0;
         var radius = DesignRadius * scale;
         var half = Math.Max(1.2, DesignHalfWidth * scale);
+        var halo = DesignHaloWidth * scale;
         // Head starts at 12 o'clock and sweeps clockwise as the frames advance.
         var head = -Math.PI / 2 + step * (2 * Math.PI / FrameCount);
 
@@ -154,27 +176,72 @@ internal static class TrayBusyIcon
             {
                 var dx = (x + 0.5) - cx;
                 var band = Math.Abs(Math.Sqrt(dx * dx + dy * dy) - radius);
-                if (band > half + EdgeSoftness) continue;
-
-                var coverage = (half + EdgeSoftness / 2 - band) / EdgeSoftness;
-                if (coverage <= 0) continue;
-                if (coverage > 1) coverage = 1;
-
-                var ang = Math.Atan2(dy, dx);
-                var behind = head - ang;
-                behind -= Math.Floor(behind / (2 * Math.PI)) * (2 * Math.PI); // into [0, 2pi)
-                var alpha = Math.Max(TrackAlpha, CometAlpha(behind)) * coverage;
+                if (band > half + halo + EdgeSoftness) continue;
 
                 var i = row + x * 4;
                 if (pixels[i + 3] == 0) continue; // transparent pixel; nothing to blend onto
 
-                var inv = 1 - alpha;
-                pixels[i] = Saturate(AmberB * alpha + pixels[i] * inv);
-                pixels[i + 1] = Saturate(AmberG * alpha + pixels[i + 1] * inv);
-                pixels[i + 2] = Saturate(AmberR * alpha + pixels[i + 2] * inv);
-                pixels[i + 3] = Saturate(255 * alpha + pixels[i + 3] * inv);
+                var ang = Math.Atan2(dy, dx);
+                var behind = head - ang;
+                behind -= Math.Floor(behind / (2 * Math.PI)) * (2 * Math.PI); // into [0, 2pi)
+                var strength = Math.Max(TrackAlpha, CometAlpha(behind));
+
+                // Dark halo first, so the amber band reads against the green tile
+                // even once the icon is scaled down to a few pixels.
+                Over(pixels, i, DarkR, DarkG, DarkB, Coverage(half + halo, band) * strength * HaloAlpha);
+                Over(pixels, i, AmberR, AmberG, AmberB, Coverage(half, band) * strength);
             }
         }
+
+        BlendStatusDot(pixels, width, height, scale);
+    }
+
+    /// <summary>The solid amber status dot with its dark rim, in the
+    /// bottom-right quadrant. Identical in every frame.</summary>
+    private static void BlendStatusDot(byte[] pixels, int width, int height, double scale)
+    {
+        var dotX = DesignDotCenter * scale;
+        var dotY = DesignDotCenter * scale; // measured from the top, like the ring
+        var dotRadius = DesignDotRadius * scale;
+        var rim = DesignDotHalo * scale;
+        var reach = dotRadius + rim + EdgeSoftness;
+        var top = Math.Max(0, (int)(dotY - reach));
+        var bottom = Math.Min(height - 1, (int)Math.Ceiling(dotY + reach));
+        var left = Math.Max(0, (int)(dotX - reach));
+        var right = Math.Min(width - 1, (int)Math.Ceiling(dotX + reach));
+        for (var visualY = top; visualY <= bottom; visualY++)
+        {
+            var dy = visualY + 0.5 - dotY;
+            var row = (height - 1 - visualY) * width * 4; // buffer is bottom-up
+            for (var x = left; x <= right; x++)
+            {
+                var dx = x + 0.5 - dotX;
+                var distance = Math.Sqrt(dx * dx + dy * dy);
+                var i = row + x * 4;
+                if (pixels[i + 3] == 0) continue;
+                Over(pixels, i, DarkR, DarkG, DarkB, Coverage(dotRadius + rim, distance));
+                Over(pixels, i, AmberR, AmberG, AmberB, Coverage(dotRadius, distance));
+            }
+        }
+    }
+
+    /// <summary>Antialiased coverage of a shape extending <paramref name="extent"/>
+    /// from its centre line (or centre point) at <paramref name="distance"/>.</summary>
+    private static double Coverage(double extent, double distance)
+        => Math.Clamp((extent + EdgeSoftness / 2 - distance) / EdgeSoftness, 0, 1);
+
+    /// <summary>Source-over of a solid colour at <paramref name="alpha"/> onto one
+    /// straight-alpha BGRA pixel. Over an opaque pixel this is a plain lerp.</summary>
+    private static void Over(byte[] pixels, int i, byte r, byte g, byte b, double alpha)
+    {
+        if (alpha <= 0) return;
+        var dstAlpha = pixels[i + 3] / 255.0;
+        var outAlpha = alpha + dstAlpha * (1 - alpha);
+        var keep = dstAlpha * (1 - alpha);
+        pixels[i] = Saturate((b * alpha + pixels[i] * keep) / outAlpha);
+        pixels[i + 1] = Saturate((g * alpha + pixels[i + 1] * keep) / outAlpha);
+        pixels[i + 2] = Saturate((r * alpha + pixels[i + 2] * keep) / outAlpha);
+        pixels[i + 3] = Saturate(255 * outAlpha);
     }
 
     /// <summary>Brightness of the comet at <paramref name="behind"/> radians
@@ -189,7 +256,7 @@ internal static class TrayBusyIcon
     }
 
     private static byte Saturate(double value)
-        => (byte)(value >= 255 ? 255 : value <= 0 ? 0 : value);
+        => (byte)(value >= 255 ? 255 : value <= 0 ? 0 : Math.Round(value));
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
