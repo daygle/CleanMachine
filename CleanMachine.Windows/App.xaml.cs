@@ -359,11 +359,30 @@ public partial class App : Application
     private static async Task OnAgentTickAsync(CancellationToken token)
     {
         AppSettings settings;
-        try { settings = await AppSettings.LoadAsync(token); }
+        try { settings = await LoadTickSettingsAsync(token); }
         catch { return; }
         await SystemMonitorTickAsync(settings, token);
         await IdleCleanTickAsync(settings, token);
         await RecycleBinTickAsync(settings, token);
+    }
+
+    // The agent ticks every 5 seconds for the life of the app. Re-reading and
+    // re-parsing settings.json (and building its merge baseline) on every tick was
+    // constant background I/O for a file that changes only when the user edits a
+    // setting, so the last load is reused until the file's stamp moves. Ticks run
+    // one at a time on the agent loop, so these need no locking.
+    private static AppSettings? _tickSettings;
+    private static (DateTime LastWriteUtc, long Length)? _tickSettingsStamp;
+
+    private static async Task<AppSettings> LoadTickSettingsAsync(CancellationToken token)
+    {
+        var stamp = AppSettings.FileStamp();
+        if (_tickSettings is { } cached && stamp is not null && stamp == _tickSettingsStamp)
+            return cached;
+        var settings = await AppSettings.LoadAsync(token);
+        _tickSettings = settings;
+        _tickSettingsStamp = stamp;
+        return settings;
     }
 
     /// <summary>The Safe-risk categories an automatic clean removes: the given chosen
@@ -618,7 +637,8 @@ public partial class App : Application
             task = StopBackgroundAgentCore();
         }
         // Observe (don't block on) the loop's completion: it swallows cancellation,
-        // and blocking here would deadlock against its UI-context continuations.
+        // and this is called from the UI thread, which must not wait out an
+        // in-flight background clean.
         _ = task?.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
     }
 

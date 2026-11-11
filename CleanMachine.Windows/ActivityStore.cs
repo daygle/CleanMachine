@@ -67,7 +67,7 @@ public sealed class ActivityStore
         try
         {
             await using (var stream = File.Create(temp))
-                await JsonSerializer.SerializeAsync(stream, items, new JsonSerializerOptions { WriteIndented = true }, token);
+                await JsonSerializer.SerializeAsync(stream, items, AppSettings.IndentedJson, token);
             File.Move(temp, FilePath, true);
         }
         finally

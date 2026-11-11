@@ -134,11 +134,6 @@ internal static class AppDataPaths
     internal static MigrationResult CopyToDurableRootResult()
         => TryMigrateToDurableRoot(ProfileRoot, PackageLocalRoot, RealRoot);
 
-    /// <summary>Pushes package-local data out to the durable folder. Called before
-    /// the package is removed so that "keep my data" is actually true.</summary>
-    internal static string CopyToDurableRoot()
-        => CopyToDurableRootResult().Root;
-
     private static bool CopyTree(string source, string target, WorkBudget budget, int depth = 0)
     {
         try

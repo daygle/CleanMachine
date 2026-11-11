@@ -321,58 +321,21 @@ public sealed partial class MainWindow : Window
             // a replaced package. No working directory: the identity link resolves the
             // install folder itself, and a stale one would point into a deleted
             // WindowsApps path.
-            var shell = (IShellLinkW)new CShellLink();
-            shell.SetPath(MsixUninstallService.BuildMsixShortcutTarget(family));
-            shell.SetDescription("CleanMachine - Privacy cleanup utility");
-
-            var persistFile = (IPersistFile)shell;
-            persistFile.Save(shortcutPath, false);
+            object? link = null;
+            try
+            {
+                link = ShellLink.Create();
+                var shell = (ShellLink.IShellLinkW)link;
+                shell.SetPath(MsixUninstallService.BuildMsixShortcutTarget(family));
+                shell.SetDescription("CleanMachine - Privacy cleanup utility");
+                ((ShellLink.IPersistFile)link).Save(shortcutPath, false);
+            }
+            finally { ShellLink.Release(link); }
         }
         catch
         {
             // Shortcut creation is best-effort; a missing icon is acceptable.
         }
-    }
-
-    [ComImport]
-    [Guid("00021401-0000-0000-C000-000000000046")]
-    private class CShellLink { }
-
-    [ComImport]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    [Guid("000214F9-0000-0000-C000-000000000046")]
-    private interface IShellLinkW
-    {
-        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszFile, int cch, IntPtr pfd, int fFlags);
-        void GetIDList(out IntPtr ppidl);
-        void SetIDList(IntPtr pidl);
-        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszName, int cch);
-        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszDir, int cch);
-        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
-        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszArgs, int cch);
-        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
-        void GetHotkey(out short pwHotkey);
-        void SetHotkey(short wHotkey);
-        void GetShowCmd(out int piShowCmd);
-        void SetShowCmd(int iShowCmd);
-        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszIconPath, int cch, out int piIcon);
-        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
-        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, int dwReserved);
-        void Resolve(IntPtr hwnd, int fFlags);
-        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
-    }
-
-    [ComImport]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    [Guid("0000010b-0000-0000-C000-000000000046")]
-    private interface IPersistFile
-    {
-        void GetCurFile(out IntPtr ppszFileName);
-        void IsDirty();
-        void Load([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, int dwMode);
-        void Save([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, [MarshalAs(UnmanagedType.Bool)] bool fRemember);
-        void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string pszFileName);
     }
 
     public void ApplyShowInTaskbar(bool showInTaskbar)
@@ -432,15 +395,7 @@ public sealed partial class MainWindow : Window
         if (!_cleaningActive) return;
         if (trayCleaningAnimation)
         {
-            _cleaningStep = 0;
-            if (_cleaningTimer is null)
-            {
-                _cleaningTimer = DispatcherQueue.CreateTimer();
-                _cleaningTimer.Interval = TimeSpan.FromMilliseconds(120);
-                _cleaningTimer.Tick += (_, _) => ShowCleaningFrame();
-            }
-            _cleaningTimer.Start();
-            ShowCleaningFrame();
+            StartCleaningAnimation();
         }
         else
         {
@@ -635,16 +590,8 @@ public sealed partial class MainWindow : Window
                 _trayIcon?.SetTip(BusyTip);
                 return;
             }
-            _cleaningStep = 0;
-            if (_cleaningTimer is null)
-            {
-                _cleaningTimer = DispatcherQueue.CreateTimer();
-                _cleaningTimer.Interval = TimeSpan.FromMilliseconds(120);
-                _cleaningTimer.Tick += (_, _) => ShowCleaningFrame();
-            }
-            _cleaningTimer.Start();
             _trayIcon?.SetTip(BusyTip);
-            ShowCleaningFrame();
+            StartCleaningAnimation();
         }
         else
         {
@@ -652,6 +599,21 @@ public sealed partial class MainWindow : Window
             _trayIcon?.SetIcon(_appIcon);
             _trayIcon?.SetTip(IdleTip);
         }
+    }
+
+    /// <summary>Starts the spinner from its first frame, creating the ~120ms frame
+    /// timer on first use.</summary>
+    private void StartCleaningAnimation()
+    {
+        _cleaningStep = 0;
+        if (_cleaningTimer is null)
+        {
+            _cleaningTimer = DispatcherQueue.CreateTimer();
+            _cleaningTimer.Interval = TimeSpan.FromMilliseconds(120);
+            _cleaningTimer.Tick += (_, _) => ShowCleaningFrame();
+        }
+        _cleaningTimer.Start();
+        ShowCleaningFrame();
     }
 
     /// <summary>Advances the spinner: frames are rendered on first use and kept

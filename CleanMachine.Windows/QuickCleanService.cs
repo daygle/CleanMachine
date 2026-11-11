@@ -173,9 +173,11 @@ public static class QuickCleanService
             cancellationToken: token);
         return new QuickCleanResult(report.Result.ItemsRemoved, report.Result.BytesRecovered, Summarize(report.Skipped),
             Details: ActivityStore.BreakdownLines(report.Breakdown),
-            // Windows categories are cleaned wholesale and the service reports no
-            // candidate count, so there is no "examined" number to log here.
-            Examined: 0);
+            // The categories cleaned are the candidates here: the service cleans
+            // each wholesale and reports no per-file count. Counting them means a
+            // run that removed nothing still leaves an activity entry, as the
+            // other three areas do, instead of looking like it never ran.
+            Examined: categories.Count);
     }
 
     private static async Task<QuickCleanResult> RunRegistryAsync(AppSettings settings, CancellationToken token)

@@ -136,7 +136,7 @@ public sealed partial class OverviewPage : Page
         // choice back.
         var selected = chosen["browsers"];
         selected.UnionWith(settings.QuickCleanBrowsers.Where(id => installed.All(b => !b.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
-        await SaveSelectionAsync(s => s.QuickCleanBrowsers = selected);
+        await SaveSelectionAsync(BrowsersResult, s => s.QuickCleanBrowsers = selected);
     }
 
     private async void WindowsSettings_Click(object sender, RoutedEventArgs e)
@@ -164,7 +164,7 @@ public sealed partial class OverviewPage : Page
 
         var selected = chosen["windows"];
         selected.UnionWith(chosen["review"]);
-        await SaveSelectionAsync(s => s.QuickCleanWindowsCategories = selected);
+        await SaveSelectionAsync(WindowsResult, s => s.QuickCleanWindowsCategories = selected);
     }
 
     private async void RegistrySettings_Click(object sender, RoutedEventArgs e)
@@ -183,7 +183,7 @@ public sealed partial class OverviewPage : Page
         if (chosen is null) return;
 
         var selected = chosen["registry"];
-        await SaveSelectionAsync(s => s.QuickCleanRegistryCategories = selected);
+        await SaveSelectionAsync(RegistryResult, s => s.QuickCleanRegistryCategories = selected);
     }
 
     private async void AppsSettings_Click(object sender, RoutedEventArgs e)
@@ -208,21 +208,32 @@ public sealed partial class OverviewPage : Page
         {
             // Everything still ticked: keep "every app", so apps installed later are
             // included too, as before.
-            await SaveSelectionAsync(s => s.QuickCleanApps = null);
+            await SaveSelectionAsync(AppsResult, s => s.QuickCleanApps = null);
             return;
         }
         // Keep ticks for apps the dialog could not show (not installed now).
         if (current is not null)
             selected.UnionWith(current.Where(id => installed.All(a => !a.Id.Equals(id, StringComparison.OrdinalIgnoreCase))));
-        await SaveSelectionAsync(s => s.QuickCleanApps = selected);
+        await SaveSelectionAsync(AppsResult, s => s.QuickCleanApps = selected);
     }
 
     /// <summary>Applies a picker's result to freshly loaded settings and saves them,
-    /// so a change made elsewhere while the dialog was open is not overwritten.</summary>
-    private static async Task SaveSelectionAsync(Action<AppSettings> apply)
+    /// so a change made elsewhere while the dialog was open is not overwritten.
+    /// A failure is shown under the area's card: these run from async void
+    /// handlers, where it used to surface only as an "Unexpected Error" entry in
+    /// the activity log while the picker looked as if it had saved.</summary>
+    private static async Task SaveSelectionAsync(TextBlock result, Action<AppSettings> apply)
     {
-        var settings = await AppSettings.LoadAsync();
-        apply(settings);
-        await settings.SaveAsync();
+        try
+        {
+            var settings = await AppSettings.LoadAsync();
+            apply(settings);
+            await settings.SaveAsync();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            result.Text = $"Selection could not be saved: {ex.Message}";
+            result.Visibility = Visibility.Visible;
+        }
     }
 }

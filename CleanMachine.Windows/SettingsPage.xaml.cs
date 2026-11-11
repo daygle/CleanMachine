@@ -73,7 +73,10 @@ public sealed partial class SettingsPage : Page
     private async Task PersistAsync()
     {
         try { await PersistCoreAsync(); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        // InvalidDataException: an oversized settings.json is refused rather than
+        // overwritten. Without it here the failure escaped this fire-and-forget
+        // task unobserved and the page simply never said it had not saved.
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             StatusText.Text = $"Settings could not be saved: {ex.Message}";
         }
@@ -88,9 +91,7 @@ public sealed partial class SettingsPage : Page
         _settings.MinimizeToTray = MinimizeToTrayToggle.IsChecked == true;
         _settings.AlwaysShowTray = AlwaysShowTrayToggle.IsChecked == true;
         _settings.TrayCleaningAnimation = TrayCleaningAnimationToggle.IsChecked == true;
-        _settings.ExcludedPaths = ExclusionsBox.Text
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _settings.ExcludedPaths = AppSettings.ParseExcludedPaths(ExclusionsBox.Text);
         await _settings.SaveAsync();
 
         if (App.MainWindow is MainWindow mainWindow)
@@ -131,7 +132,7 @@ public sealed partial class SettingsPage : Page
     }
 
     /// <summary>MSIX uninstall flow: confirm, ask about the data folder (keeping
-    /// it is the default, matching the .exe installer), let
+    /// it is the default), let
     /// <see cref="MsixUninstallService"/> clean everything outside the package
     /// and start the deferred package removal, then exit so the helper can run.</summary>
     private async void Uninstall_Click(object sender, RoutedEventArgs e)
