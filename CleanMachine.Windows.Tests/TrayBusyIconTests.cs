@@ -13,14 +13,14 @@ public sealed class TrayBusyIconTests
     private const int Size = 256;
     private const byte BaseRed = 0x0F;   // #0F2B24 tile, bottom gradient colour
 
-    // Ring radius 96 around the (128,128) centre: 12 o'clock lands on visual
-    // row 32 = buffer row 223 (bottom-up), 6 o'clock on visual row 224 = buffer
-    // row 31. The comet's leading edge is sharp, so each head sample sits a hair
+    // Ring radius 110 around the (128,128) centre: 12 o'clock lands on visual
+    // row 18 = buffer row 237 (bottom-up), 6 o'clock on visual row 238 = buffer
+    // row 17. The comet's leading edge is sharp, so each head sample sits a hair
     // BEHIND the head along the clockwise sweep: toward -x at 12 (x=127) and
     // toward +x at 6 (x=128).
-    private const int TopBufferY = 223;
+    private const int TopBufferY = 237;
     private const int TopX = 127;
-    private const int BottomBufferY = 31;
+    private const int BottomBufferY = 17;
     private const int BottomX = 128;
     private const int CenterBufferY = 127;
 
@@ -58,6 +58,69 @@ public sealed class TrayBusyIconTests
         Assert.Equal(0x2B, pixels[i + 1]);   // G
         Assert.Equal(BaseRed, pixels[i + 2]); // R
         Assert.Equal(255, pixels[i + 3]);    // A
+    }
+
+    [Fact]
+    public void TheStatusDotIsSolidAmberAndTheSameInEveryFrame()
+    {
+        // Visual (192,192) is the dot's centre: buffer row 255 - 192 = 63.
+        const int dotBufferY = 63, dotX = 192;
+        byte[]? first = null;
+        for (var step = 0; step < TrayBusyIcon.FrameCount; step++)
+        {
+            var pixels = OpaqueTile();
+            TrayBusyIcon.BlendSpinner(pixels, Size, Size, step);
+            Assert.Equal(243, Red(pixels, dotBufferY, dotX));
+            Assert.Equal(255, Alpha(pixels, dotBufferY, dotX));
+
+            // The dot must not flicker: its whole square is identical in every
+            // frame (the rotating ring passes behind it, so compare only the
+            // dot's own interior).
+            var dot = DotInterior(pixels);
+            first ??= dot;
+            Assert.Equal(first, dot);
+        }
+    }
+
+    [Fact]
+    public void EverythingStaysInsideTheTile()
+    {
+        // Ring + halo must end inside the 128px half-width of the tile, and the
+        // dot inside its rounded bottom-right corner - so nothing is drawn onto
+        // the transparent margin around the icon.
+        var pixels = OpaqueTile();
+        TrayBusyIcon.BlendSpinner(pixels, Size, Size, 0);
+        for (var x = 0; x < Size; x++)
+        {
+            Assert.Equal(BaseRed, Red(pixels, 0, x));         // bottom edge row
+            Assert.Equal(BaseRed, Red(pixels, Size - 1, x));  // top edge row
+        }
+        Assert.True(TrayBusyIcon.DesignDotCenter + TrayBusyIcon.DesignDotRadius < 236);
+    }
+
+    [Fact]
+    public void ScalesDownWithoutThrowing()
+    {
+        // The real base icon may come back at the system's large-icon size.
+        foreach (var size in new[] { 16, 24, 32, 48 })
+        {
+            var pixels = new byte[size * size * 4];
+            for (var i = 3; i < pixels.Length; i += 4) pixels[i] = 255;
+            TrayBusyIcon.BlendSpinner(pixels, size, size, 3);
+        }
+    }
+
+    private static byte[] DotInterior(byte[] pixels)
+    {
+        // A square well inside the 38px-radius dot around visual (192,192).
+        var copy = new List<byte>();
+        for (var visualY = 172; visualY <= 212; visualY++)
+        for (var x = 172; x <= 212; x++)
+        {
+            var i = ((Size - 1 - visualY) * Size + x) * 4;
+            copy.AddRange(pixels[i..(i + 4)]);
+        }
+        return [.. copy];
     }
 
     private static byte[] OpaqueTile()
