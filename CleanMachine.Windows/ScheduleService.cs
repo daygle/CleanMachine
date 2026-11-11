@@ -35,6 +35,11 @@ public sealed class ScheduleService
     }
 
     public static async Task<bool> RegisterAsync(CleanupSchedule schedule, CancellationToken token = default)
+        => (await RegisterWithOutcomeAsync(schedule, token)).Success;
+
+    /// <summary><see cref="RegisterAsync"/> with schtasks' own outcome, so a caller
+    /// with no UI can still record why Windows refused the task.</summary>
+    private static async Task<ProcessOutcome> RegisterWithOutcomeAsync(CleanupSchedule schedule, CancellationToken token)
     {
         var created = await RunProcessAsync("schtasks.exe",
             ScheduledTask.BuildCreateArguments(schedule, GetLaunchCommand(schedule.Id)), token);
@@ -45,7 +50,7 @@ public sealed class ScheduleService
         // the PC is already awake.
         if (created.Success && schedule.WakeToRun)
             await RunProcessAsync("powershell.exe", ScheduledTask.BuildWakeToRunArguments(schedule.Id), token);
-        return created.Success;
+        return created;
     }
 
     public static async Task<bool> UnregisterAsync(string scheduleId, CancellationToken token = default)
@@ -58,24 +63,43 @@ public sealed class ScheduleService
         foreach (var schedule in settings.Schedules)
         {
             token.ThrowIfCancellationRequested();
+            string? failure;
             try
             {
                 if (schedule.Enabled && ScheduledTask.HasWork(schedule))
-                    await RegisterAsync(schedule, token);
+                {
+                    // schtasks reports a refusal through its exit code, not an
+                    // exception. Ignoring the result left exactly the "silently
+                    // missing schedule" this sync is meant to make traceable.
+                    var outcome = await RegisterWithOutcomeAsync(schedule, token);
+                    failure = outcome.Success ? null : outcome.Reason ?? "Task Scheduler refused the task";
+                }
                 else
+                {
+                    // Deleting a task that does not exist fails too, and that is the
+                    // normal state of a paused schedule - so an unregister result is
+                    // not worth logging on every launch.
                     await UnregisterAsync(schedule.Id, token);
+                    failure = null;
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Best-effort sync: one schedule that cannot be (un)registered must
                 // not abort the rest, and the caller fires this without awaiting.
-                // The reason is recorded so a silently missing schedule is traceable
-                // after the fact instead of looking like it was never configured.
-                _ = new ActivityStore().AddAsync(new ActivityEntry(
+                failure = ex.Message;
+            }
+            if (failure is null) continue;
+            // The reason is recorded so a silently missing schedule is traceable
+            // after the fact instead of looking like it was never configured.
+            try
+            {
+                await new ActivityStore().AddAsync(new ActivityEntry(
                     DateTimeOffset.UtcNow,
                     "Schedule Sync",
-                    $"Could not sync '{schedule.Id}': {ex.Message}"));
+                    $"Could not sync '{schedule.Name}': {failure}"), CancellationToken.None);
             }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* logging is best-effort */ }
         }
     }
 

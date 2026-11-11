@@ -3,7 +3,6 @@ using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
-using System.Threading;
 
 namespace CleanMachine.Windows;
 
@@ -17,7 +16,7 @@ namespace CleanMachine.Windows;
 /// </summary>
 public static class SingleInstance
 {
-    /// <summary>Mutex name; per-user because the app installs per-user (PrivilegesRequired=lowest).
+    /// <summary>Mutex base name; per-user because the app is installed per user (MSIX).
     /// The "Local\" prefix scopes it to the current logon session.</summary>
     public const string MutexName = @"Local\CleanMachine.SingleInstance";
 

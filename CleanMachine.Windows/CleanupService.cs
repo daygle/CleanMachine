@@ -146,7 +146,7 @@ public sealed class CleanupService
             if (progids is null) continue;
             foreach (var progId in progids.GetValueNames())
             {
-            ScanBudget.Value?.Check();
+                ScanBudget.Value?.Check();
                 if (string.IsNullOrEmpty(progId)) continue;
                 using var handler = Registry.ClassesRoot.OpenSubKey(progId);
                 if (handler is null)
@@ -175,7 +175,7 @@ public sealed class CleanupService
             if (list is null) continue;
             foreach (var valueName in list.GetValueNames())
             {
-            ScanBudget.Value?.Check();
+                ScanBudget.Value?.Check();
                 // MRUList just orders the letters; the a/b/c values hold the programs.
                 if (string.IsNullOrEmpty(valueName) || valueName.Equals("MRUList", StringComparison.OrdinalIgnoreCase)) continue;
                 if (list.GetValue(valueName) is not string target || string.IsNullOrWhiteSpace(target)) continue;
@@ -200,12 +200,11 @@ public sealed class CleanupService
         using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
         foreach (var keyPath in new[] { CompatAssistantStoreKey, CompatAssistantPersistedKey })
         {
-            ScanBudget.Value?.Check();
             using var key = root.OpenSubKey(keyPath);
             if (key is null) continue;
             foreach (var valueName in key.GetValueNames())
             {
-            ScanBudget.Value?.Check();
+                ScanBudget.Value?.Check();
                 // Value names are full executable paths; only act on absolute local
                 // paths we can positively verify are gone.
                 if (string.IsNullOrEmpty(valueName) || valueName.Contains('%') || !Path.IsPathFullyQualified(valueName)) continue;
@@ -243,7 +242,7 @@ public sealed class CleanupService
             if (key is null) continue;
             foreach (var valueName in key.GetValueNames())
             {
-            ScanBudget.Value?.Check();
+                ScanBudget.Value?.Check();
                 // Never offer to delete CleanMachine's own autostart entry. The app
                 // re-registers it (StartupRegistration.Sync), so removing it here
                 // just made it reappear and read as a failed cleanup. It is also
@@ -274,7 +273,7 @@ public sealed class CleanupService
             if (appKey is null) continue;
             foreach (var eventName in appKey.GetSubKeyNames())
             {
-            ScanBudget.Value?.Check();
+                ScanBudget.Value?.Check();
                 using var eventKey = appKey.OpenSubKey(eventName);
                 var wav = eventKey?.GetValue(".Default") as string;
                 if (string.IsNullOrWhiteSpace(wav) || wav.Contains('%') || !Path.IsPathFullyQualified(wav)) continue;
@@ -305,7 +304,6 @@ public sealed class CleanupService
             var exe = valueName;
             foreach (var suffix in new[] { ".FriendlyAppName", ".ApplicationCompany" })
             {
-            ScanBudget.Value?.Check();
                 if (exe.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                 {
                     exe = exe[..^suffix.Length];
@@ -381,7 +379,6 @@ public sealed class CleanupService
         using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
         foreach (var type in ContextMenuTypes)
         {
-            ScanBudget.Value?.Check();
             var shellPath = $@"Software\Classes\{type}\shell";
             using var shell = root.OpenSubKey(shellPath);
             if (shell is not null) ScanShellVerbs(shell, shellPath, findings);
@@ -432,7 +429,6 @@ public sealed class CleanupService
             var servers = new List<(bool IsLocal, string? Raw)>();
             foreach (var server in new[] { "InprocServer32", "LocalServer32" })
             {
-            ScanBudget.Value?.Check();
                 using var serverKey = cls.OpenSubKey(server);
                 if (serverKey is null) continue;
                 // Expanded on read (the default), so %LOCALAPPDATA%-style paths
@@ -458,7 +454,6 @@ public sealed class CleanupService
         string? missing = null;
         foreach (var (isLocal, raw) in servers)
         {
-            ScanBudget.Value?.Check();
             if (string.IsNullOrWhiteSpace(raw)) return null;
             var file = isLocal ? ResolveStartupExecutable(raw) : raw.Trim().Trim('"');
             if (file is null || file.Contains('%') || !Path.IsPathFullyQualified(file)) return null;

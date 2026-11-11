@@ -182,8 +182,7 @@ internal static class BackupProvenance
         var temporary = $"{manifestPath}.{Guid.NewGuid():N}.tmp";
         try
         {
-            File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(
-                entries, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(entries, AppSettings.IndentedJson));
             File.Move(temporary, manifestPath, overwrite: true);
         }
         finally

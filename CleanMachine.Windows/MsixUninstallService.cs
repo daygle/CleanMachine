@@ -79,8 +79,11 @@ internal static class MsixUninstallService
         // 3. Scheduled cleanup tasks live in the real Task Scheduler (folder
         //    \CleanMachine\), outside the package. PowerShell because schtasks
         //    cannot enumerate or delete by task folder.
-        Try(() => Process.Start(PowerShellInfo(
-            "-NoProfile -ExecutionPolicy Bypass -Command \"Get-ScheduledTask -TaskPath '\\CleanMachine\\' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false\"")));
+        Try(() =>
+        {
+            using var helper = Process.Start(PowerShellInfo(
+                "-NoProfile -ExecutionPolicy Bypass -Command \"Get-ScheduledTask -TaskPath '\\CleanMachine\\' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false\""));
+        });
 
         // 4. Scratch files under %TEMP%\CleanMachine. Older installs wrote there,
         //    and a registry backup that could not be written to the app's own

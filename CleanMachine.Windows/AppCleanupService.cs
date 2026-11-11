@@ -325,7 +325,12 @@ public sealed class AppCleanupService
             "thunderbird" => DirExists(RoamingAppData, "Thunderbird") || DirExists(LocalAppData, "Thunderbird"),
             "jetbrains" => DirExists(LocalAppData, "JetBrains") || DirExists(RoamingAppData, "JetBrains"),
             "activity-history" => DirExists(LocalAppData, "ConnectedDevicesPlatform"),
-            "defender" => FileExists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp"), "MpCmdRun.log"),
+            // The catalog cleans Defender's logs from the per-user Temp root
+            // (WindowsTemp resolves to TrustedTemp.Root). Detection used to probe
+            // C:\Windows\Temp instead - a folder the unelevated app never cleans -
+            // so Defender read as "not installed" unless an unrelated SYSTEM-owned
+            // log happened to exist. Its platform folder is the install signal.
+            "defender" => DirExists(ProgramFiles, "Windows Defender"),
             "mediaplayer" => DirExists(RoamingAppData, "Microsoft\\Media Player"),
             "autoplay" => DirExists(LocalAppData, "Microsoft\\Windows\\Autoplay"),
             "search" => DirExists(LocalAppData, "Microsoft\\Search"),
@@ -396,9 +401,6 @@ public sealed class AppCleanupService
 
     private static bool DirExists(string root, string relative)
         => Directory.Exists(Path.Combine(root, relative));
-
-    private static bool FileExists(string dir, string fileName)
-        => File.Exists(Path.Combine(dir, fileName));
 
     private static void RemoveEmptyDirs(string root, IReadOnlySet<string>? excludedPaths, CancellationToken token)
     {

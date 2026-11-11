@@ -530,7 +530,16 @@ public sealed class WindowsCleanupService
         // child would then block forever, hanging WaitForExit with it.
         _ = process.StandardOutput.ReadToEndAsync();
         _ = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
+        // Bounded: this runs while the cross-process cleanup gate is held, so an
+        // ipconfig that never returns would block every other clean - manual,
+        // scheduled and background - until the app was killed.
+        if (!process.WaitForExit(TimeSpan.FromSeconds(30)))
+        {
+            try { process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { /* exited in the meantime */ }
+            catch (System.ComponentModel.Win32Exception) { /* not killable */ }
+            throw new IOException("ipconfig /flushdns did not finish within 30 seconds.");
+        }
         if (process.ExitCode != 0) throw new IOException($"ipconfig /flushdns returned exit code {process.ExitCode}.");
     }
 

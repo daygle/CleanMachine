@@ -115,7 +115,7 @@ public sealed class CleanupStatsStore
         try
         {
             await using (var stream = File.Create(temp))
-                await JsonSerializer.SerializeAsync(stream, stats, new JsonSerializerOptions { WriteIndented = true }, token);
+                await JsonSerializer.SerializeAsync(stream, stats, AppSettings.IndentedJson, token);
             File.Move(temp, FilePath, true);
         }
         finally

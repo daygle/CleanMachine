@@ -155,7 +155,8 @@ public sealed class StartupAppsService
     }
 
     /// <summary>Disables or enables a startup entry. For registry entries this
-    /// toggles the StartupApproved value (per-user when possible); for startup
+    /// toggles the StartupApproved value in the entry's own hive (all-users
+    /// entries therefore need administrator rights); for startup
     /// folder entries it toggles the StartupApproved\StartupFolder flag so the
     /// file itself is never modified.</summary>
     public bool ToggleEnabled(StartupEntry entry, bool enable)
@@ -169,13 +170,19 @@ public sealed class StartupAppsService
     {
         try
         {
-            // Current-user entries (and HKLM entries flagged per-user via
-            // StartupApproved under HKCU) are toggled without elevation.
-            using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
-            using var approved = root.OpenSubKey(entry.RegistryPath.EndsWith("RunOnce", StringComparison.Ordinal)
-                ? ExplorerRunOnceKey : ExplorerRunKey, writable: true)
-                ?? root.CreateSubKey(entry.RegistryPath.EndsWith("RunOnce", StringComparison.Ordinal)
-                    ? ExplorerRunOnceKey : ExplorerRunKey, writable: true);
+            // The approval lives in the same hive as the Run value it governs:
+            // that is where Explorer (and Task Manager) read it, and where Scan
+            // reads it back. Writing an all-users entry's approval under HKCU was
+            // a no-op that reported success - the toggle snapped back on the next
+            // scan and the program kept starting. HKLM needs elevation, so for an
+            // unelevated app that write is refused and the UI reverts the toggle.
+            var hive = entry.Source == StartupSource.RegistryLocalMachine
+                ? RegistryHive.LocalMachine : RegistryHive.CurrentUser;
+            var approvalPath = entry.RegistryPath.EndsWith("RunOnce", StringComparison.Ordinal)
+                ? ExplorerRunOnceKey : ExplorerRunKey;
+            using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
+            using var approved = root.OpenSubKey(approvalPath, writable: true)
+                ?? root.CreateSubKey(approvalPath, writable: true);
             if (approved is null) return false;
 
             var valueName = entry.ValueName;
@@ -189,9 +196,8 @@ public sealed class StartupAppsService
         }
         catch
         {
-            // The approval key always lives under HKCU (even for HKLM entries), so
-            // this toggle needs no elevation; failures here are unexpected - report
-            // them so the UI can revert the toggle.
+            // Access denied for an all-users entry without elevation, or an
+            // unexpected registry failure: report it so the UI reverts the toggle.
             return false;
         }
     }

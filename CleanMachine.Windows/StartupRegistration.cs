@@ -140,8 +140,6 @@ public static class StartupRegistration
         return true;
     }
 
-    public static bool IsEnabled() => ReadCommand(RunPath, ValueName) is not null;
-
     /// <summary>Test seam over <see cref="Sync"/>: the production path is hardcoded
     /// to the app's own value name, so tests need to redirect it at a scratch key
     /// rather than mutating the live Run entry on the machine running the suite.

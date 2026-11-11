@@ -418,7 +418,15 @@ public sealed partial class AutomaticCleanupPage : Page
         _settings.RecycleBinAutoEmptyDays = double.IsNaN(RecycleBinDaysBox.Value) ? 30 : (int)Math.Clamp(RecycleBinDaysBox.Value, 1, 365);
         _settings.RecycleBinAutoEmptyNotify = RecycleBinNotifyToggle.IsChecked == true;
 
-        await _settings.SaveAsync();
+        // Most callers fire this without awaiting, so a failed save was an
+        // unobserved exception: the page kept saying nothing and the change was
+        // quietly lost. Report it where the user is looking instead.
+        try { await _settings.SaveAsync(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            StatusText.Text = $"Settings could not be saved: {ex.Message}";
+            return;
+        }
         if (App.Current is App app) _ = app.ApplyBackgroundServices(_settings);
         StatusText.Text = "Saved.";
     }

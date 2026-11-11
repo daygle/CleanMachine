@@ -408,12 +408,27 @@ public sealed partial class SchedulesPage : Page
 
     private async Task DeleteScheduleAsync(string id)
     {
-        var schedule = _settings.Schedules.FirstOrDefault(s => s.Id == id);
-        if (schedule is null) return;
+        var index = _settings.Schedules.FindIndex(s => s.Id == id);
+        if (index < 0) return;
+        var schedule = _settings.Schedules[index];
 
-        _settings.Schedules.RemoveAll(s => s.Id == id);
-        await _settings.SaveAsync();
-        await ScheduleService.UnregisterAsync(id);
+        _settings.Schedules.RemoveAt(index);
+        try
+        {
+            await _settings.SaveAsync();
+            await ScheduleService.UnregisterAsync(id);
+        }
+        catch (Exception ex)
+        {
+            // Put it back: the list on screen must match what is saved, and a
+            // schedule whose delete failed is still registered and still runs.
+            _settings.Schedules.Insert(Math.Min(index, _settings.Schedules.Count), schedule);
+            // The result bar sits in the editor; open the schedule there when the
+            // editor is empty so the failure is actually seen.
+            if (EditorFields.Visibility != Visibility.Visible) Select(schedule, isNew: false);
+            ShowResult(InfoBarSeverity.Error, "Not deleted", $"'{schedule.Name}' could not be deleted: {ex.Message}");
+            return;
+        }
 
         if (_currentId == id)
         {

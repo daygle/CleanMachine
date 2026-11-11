@@ -132,8 +132,6 @@ public sealed class BrowserCleanupService
         return GetRunningBrowsers(names);
     }
 
-    internal static bool MayEndWithoutLosingWork(bool hasOpenWindow) => false;
-
     private static bool IsExcluded(string path, IReadOnlySet<string>? exclusions)
         => exclusions?.Any(root => NativeSafety.IsWithin(path, root)) == true;
 
@@ -479,7 +477,11 @@ public sealed class BrowserCleanupService
             File.Move(temp, path, overwrite: true);
             return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        // InvalidDataException is ReadPreferenceText's size cap. It is not an
+        // IOException, so without it here one oversized Preferences file escaped
+        // and failed the whole browser clean instead of skipping this one file.
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                       or InvalidDataException or System.Text.Json.JsonException)
         {
             skipped.Add(new CleanupIssue(path, ex.Message));
             return false;
@@ -519,11 +521,16 @@ public sealed class BrowserCleanupService
             if (File.Exists(backup)) SafeDeletion.DeleteFile(backup, Path.GetDirectoryName(path)!);
             File.Copy(path, backup, overwrite: false);
             // Temp-then-swap so a crash mid-write can never truncate prefs.js.
-            File.WriteAllLines(temp, filtered);
+            // Rejoin on the same '\n' the text was split on: each line still
+            // carries its own '\r' when the file uses CRLF, so this reproduces
+            // the original bytes minus the removed lines. WriteAllLines appended
+            // a second line break to every line (CRLF became CR CR LF) and added a
+            // trailing blank line on every run.
+            File.WriteAllText(temp, string.Join('\n', filtered));
             File.Move(temp, path, overwrite: true);
             return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             skipped.Add(new CleanupIssue(path, ex.Message));
             return false;

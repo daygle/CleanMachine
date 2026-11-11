@@ -14,10 +14,12 @@ public sealed class BrowserCloseSafetyTests
     public void ABrowserWithAnOpenWindowIsNeverForceClosed()
     {
         // An open window after the polite close means the browser is in use - most
-        // often a "Leave site? Changes may not be saved" prompt.
-        Assert.False(BrowserCleanupService.MayEndWithoutLosingWork(hasOpenWindow: true));
-        // Windowless processes can still hold work or upload data.
-        Assert.False(BrowserCleanupService.MayEndWithoutLosingWork(hasOpenWindow: false));
+        // often a "Leave site? Changes may not be saved" prompt - and windowless
+        // processes can still hold work or upload data. So the close-assist only
+        // ever asks (CloseMainWindow) and never terminates a browser process.
+        var source = File.ReadAllText(SourceFiles().Single(f => Path.GetFileName(f) == "BrowserCleanupService.cs"));
+        Assert.Contains("CloseMainWindow()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Kill(", source, StringComparison.Ordinal);
     }
 
     [Fact]

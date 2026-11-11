@@ -198,6 +198,17 @@ public sealed class AppSettings
     // follow a successful run.
     public List<CleanupSchedule> Schedules { get; set; } = [];
 
+    /// <summary>The Settings page's exclusion box: one path per line. A multi-line
+    /// WinUI TextBox separates lines with a bare '\r' (not "\r\n" or "\n"), so
+    /// splitting on '\n' alone turned every list the user typed into ONE path
+    /// ("C:\a\rC:\b") that matched nothing - the exclusions were saved, shown
+    /// back, and silently never applied. Both separators are accepted so text
+    /// pasted in either form works too.</summary>
+    public static HashSet<string> ParseExcludedPaths(string text)
+        => text
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     public BrowserMonitorSetting? FindBrowserMonitor(string browser) =>
         BrowserMonitors.FirstOrDefault(m => m.Browser.Equals(browser, StringComparison.OrdinalIgnoreCase));
 
@@ -233,6 +244,22 @@ public sealed class AppSettings
 
     private static string FilePath => Path.Combine(
         AppDataPaths.Root, "settings.json");
+
+    /// <summary>Cheap change detector for settings.json: its last-write time and
+    /// length, or null when it is missing or unreadable. Lets a frequent poller
+    /// (the background agent's 5-second tick) skip re-reading and re-parsing a
+    /// file that has not changed. Every save replaces the file through a fresh
+    /// temp file, so a save always moves the stamp.</summary>
+    internal static (DateTime LastWriteUtc, long Length)? FileStamp()
+    {
+        try
+        {
+            var info = new FileInfo(FilePath);
+            return info.Exists ? (info.LastWriteTimeUtc, info.Length) : null;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
 
     // settings.json decides what this app is allowed to delete: which categories
     // run, which paths are excluded, which browsers are monitored, and whether a
@@ -430,20 +457,13 @@ public sealed class AppSettings
             await SaveGate.WaitAsync(token);
             try
             {
-                var latest = new JsonObject();
-                if (File.Exists(path))
-                {
-                    await using var input = File.OpenRead(path);
-                    if (input.Length > MaxSettingsBytes) throw new InvalidDataException("Settings file exceeds the size limit.");
-                    latest = (await JsonNode.ParseAsync(input, cancellationToken: token))?.AsObject() ?? new();
-                }
-                else latest = baseline.DeepClone().AsObject();
+                var latest = await ReadLatestAsync(path, token) ?? baseline.DeepClone().AsObject();
                 var merged = MergeChanges(baseline, snapshot, latest);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var temp = path + $".{Guid.NewGuid():N}.tmp";
                 try
                 {
-                    await File.WriteAllTextAsync(temp, merged.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), token);
+                    await File.WriteAllTextAsync(temp, merged.ToJsonString(IndentedJson), token);
                     token.ThrowIfCancellationRequested();
                     File.Move(temp, path, true);
                     // Retain the local snapshot baseline, NOT merged external values:
@@ -455,6 +475,26 @@ public sealed class AppSettings
             finally { SaveGate.Release(); }
         }
         finally { _instanceSaveGate.Release(); }
+    }
+
+    /// <summary>Shared by every JSON file the app writes (settings, stats, activity,
+    /// backup provenance): options instances cache serialization metadata, so one
+    /// per write was a needless allocation (CA1869).</summary>
+    internal static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
+    /// <summary>The settings currently on disk, as the base the merge writes over.
+    /// Null when there is no file, or when it is not a readable JSON object: that is
+    /// exactly the case <see cref="LoadAsync"/> already treated as "use defaults", so
+    /// the save replaces it. Throwing here instead left a corrupt file unsaveable
+    /// forever - every change the user made failed until they deleted it by hand.
+    /// An oversized file still throws: it is refused, not silently overwritten.</summary>
+    private static async Task<JsonObject?> ReadLatestAsync(string path, CancellationToken token)
+    {
+        if (!File.Exists(path)) return null;
+        await using var input = File.OpenRead(path);
+        if (input.Length > MaxSettingsBytes) throw new InvalidDataException("Settings file exceeds the size limit.");
+        try { return await JsonNode.ParseAsync(input, cancellationToken: token) as JsonObject; }
+        catch (JsonException) { return null; }
     }
 
     internal static JsonObject MergeChanges(JsonObject baseline, JsonObject edited, JsonObject latest)
@@ -475,9 +515,20 @@ public sealed class AppSettings
                 if (key is "Schedules" or "BrowserMonitors")
                 {
                     var identity = key == "Schedules" ? "Id" : "Browser";
-                    JsonObject Map(JsonArray array) => new(array.OfType<JsonObject>()
-                        .Where(n => n[identity] is not null)
-                        .Select(n => KeyValuePair.Create<string, JsonNode?>(n[identity]!.GetValue<string>().ToUpperInvariant(), n.DeepClone())));
+                    // Entries keyed by identity. The file on disk is untrusted input:
+                    // an entry without a string identity is dropped, and a duplicate
+                    // identity keeps its first entry (as Sanitize does on load). The
+                    // JsonObject constructor throws on either, which made the save fail.
+                    JsonObject Map(JsonArray array)
+                    {
+                        var map = new JsonObject();
+                        foreach (var node in array.OfType<JsonObject>())
+                        {
+                            if (node[identity] is not JsonValue id || !id.TryGetValue<string>(out var name)) continue;
+                            map.TryAdd(name.ToUpperInvariant(), node.DeepClone());
+                        }
+                        return map;
+                    }
                     var oldEntries = Map(oldArray);
                     var newEntries = Map(newArray);
                     var entries = MergeChanges(oldEntries, newEntries, Map(currentArray));

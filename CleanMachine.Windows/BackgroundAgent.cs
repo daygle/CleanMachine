@@ -26,7 +26,6 @@ public sealed class BackgroundAgent : IDisposable
     private readonly PeriodicTimer _timer;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Dictionary<string, HashSet<int>> _knownPids = new(StringComparer.OrdinalIgnoreCase);
-    public bool IsRunning { get; private set; }
 
     public BackgroundAgent(
         TimeSpan? pollInterval = null,
@@ -45,7 +44,6 @@ public sealed class BackgroundAgent : IDisposable
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
-        IsRunning = true;
         try
         {
             while (await _timer.WaitForNextTickAsync(linked.Token))
@@ -101,7 +99,6 @@ public sealed class BackgroundAgent : IDisposable
         }
         finally
         {
-            IsRunning = false;
             // Owned by the loop, not by Dispose: the thread that awaited the timer is
             // the only one guaranteed not to race a concurrent Dispose call.
             _timer.Dispose();
