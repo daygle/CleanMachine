@@ -128,6 +128,12 @@ jobs:
       # satisfies _EnsurePdbCmfExeFullPath's condition, which is what silences the
       # "mspdbcmf.exe could not be found" warning.
       #
+      # PdbCmfx64ExeFullPath/PdbCmfx86ExeFullPath are needed as well, not just for
+      # symmetry: _GenerateAppxUploadSymbolPackage recomputes MsPdbCmfExeFullpath
+      # from them before invoking the task, so supplying only MsPdbCmfExeFullpath
+      # leaves that task with an empty path and fails the build with MSB4044. Both
+      # point at the x64-hosted tool, which is what this runner always resolves.
+      #
       # AppxPackageDir is left alone: the project pins it under bin/AppPackages,
       # which is where the .msixupload lands.
       - name: Build the Store bundle
@@ -140,6 +146,8 @@ jobs:
             /p:AppxPackageSigningEnabled=false `
             /p:AppxSymbolPackageEnabled=true `
             "/p:MsPdbCmfExeFullpath=$env:MSPDBCMF" `
+            "/p:PdbCmfx64ExeFullPath=$env:MSPDBCMF" `
+            "/p:PdbCmfx86ExeFullPath=$env:MSPDBCMF" `
             /p:GenerateAppxPackageOnBuild=true `
             "/p:ApplicationDisplayVersion=0.0.1"
           if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }

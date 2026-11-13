@@ -160,6 +160,13 @@ jobs:
           # _EnsurePdbCmfExeFullPath's condition, silencing the "could not be
           # found" warning, and generation still needs AppxSymbolPackageEnabled
           # left on, which is its default.
+          #
+          # PdbCmfx64ExeFullPath/PdbCmfx86ExeFullPath are needed as well, not just
+          # for symmetry: _GenerateAppxUploadSymbolPackage recomputes
+          # MsPdbCmfExeFullpath from them before invoking the task, so supplying
+          # only MsPdbCmfExeFullpath leaves that task with an empty path and fails
+          # the build with MSB4044. Both point at the x64-hosted tool, which is
+          # what this runner always resolves.
           # AppxPackageSigningEnabled=false is explicit, not incidental: the Store
           # signs on ingestion, and an unsigned package is what it accepts.
           dotnet msbuild $env:PROJECT /t:Publish `
@@ -169,7 +176,9 @@ jobs:
             /p:GenerateAppxPackageOnBuild=true `
             /p:AppxPackageSigningEnabled=false `
             /p:AppxSymbolPackageEnabled=true `
-            "/p:MsPdbCmfExeFullpath=$env:MSPDBCMF"
+            "/p:MsPdbCmfExeFullpath=$env:MSPDBCMF" `
+            "/p:PdbCmfx64ExeFullPath=$env:MSPDBCMF" `
+            "/p:PdbCmfx86ExeFullPath=$env:MSPDBCMF"
           if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }
           # The Publish targets stage the .msixupload under bin/AppPackages/,
           # which is the AppxPackageDir the project pins, so search the bin tree.
