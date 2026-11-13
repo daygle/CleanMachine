@@ -90,18 +90,21 @@ submission needs a certificate at all.
 ## What the submission package is
 
 A single `.msixupload` containing one **multi-architecture bundle** (x64 +
-ARM64). No symbol (`.appxsym`) package is included: both workflows pass
-`AppxSymbolPackageEnabled=false`, because generating one needs `mspdbcmf.exe`
-from the Debugging Tools for Windows component, which GitHub's runners do not
-have. Symbols are optional for Store submission - they only make crash dumps
-readable in Partner Center health reports - so nothing here depends on them.
-The packaging log still shows a `mspdbcmf.exe` could-not-be-found warning, once
-per architecture: it is emitted by a target that runs before the symbol step and
-does not look at `AppxSymbolPackageEnabled`, so it is expected and harmless.
+ARM64) plus the matching crash **symbol package** (`.appxsym`).
+
+The symbols come from `mspdbcmf.exe`, part of the MSVC x64/x86 build tools on
+the runner. Both workflows locate it and pass it to MSBuild as
+`MsPdbCmfExeFullpath`, because the packaging targets cannot find it themselves:
+`dotnet msbuild` sets neither `VsInstallRoot` nor `VCToolsInstallDir`, and their
+legacy fallback path does not exist in a VS 2022 layout. Without that property
+they emit a `mspdbcmf.exe` could-not-be-found warning and quietly build a
+submission with no symbols. Both workflows fail loudly if the tool is missing
+and both assert the `.appxsym` is inside the `.msixupload`, so a release cannot
+silently lose its symbols.
 
 | Requirement | Value in this repo |
 | --- | --- |
-| Package artifact | `*.msixupload` (the multi-architecture bundle) |
+| Package artifact | `*.msixupload` (bundle + crash symbols) |
 | Build mode | `UapAppxPackageBuildMode=StoreUpload` |
 | Bundling | `AppxBundle=Always`, `AppxBundlePlatforms=x64\|arm64` |
 | Signing | unsigned, and verified unsigned - the Store signs on ingestion |

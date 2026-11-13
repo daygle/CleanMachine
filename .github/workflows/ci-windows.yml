@@ -89,25 +89,44 @@ jobs:
         shell: pwsh
         run: dotnet restore $env:PROJECT
 
+      # Crash symbols need mspdbcmf.exe, which ships with the MSVC x64/x86 build
+      # tools but which the packaging targets cannot find here: dotnet msbuild
+      # sets neither VsInstallRoot nor VCToolsInstallDir, and their legacy
+      # AppxMSBuildToolsPath fallback does not exist in a VS 2022 layout. Resolve
+      # the tool up front and pass it as MsPdbCmfExeFullpath, so the symbol
+      # package is produced instead of skipped. Failing here is deliberate: a
+      # release that silently ships without symbols is worse than a loud error.
+      - name: Resolve mspdbcmf.exe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidates = @()
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            $candidates += & $vswhere -all -products * -find 'VC\Tools\MSVC\**\bin\HostX64\x64\mspdbcmf.exe'
+          }
+          $candidates += Get-ChildItem "$env:ProgramFiles\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\HostX64\x64\mspdbcmf.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+          # Older SDK layouts carry their own copy; accepted as a fallback.
+          $candidates += Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\mspdbcmf.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+          $tool = @($candidates | Where-Object { $_ -and "$_".Trim() -and (Test-Path $_) }) | Select-Object -First 1
+          if (-not $tool) {
+            throw "mspdbcmf.exe was not found on this runner, so no crash-symbol package can be produced. It ships with the MSVC x64/x86 build tools (VC\Tools\MSVC\<version>\bin\HostX64\x64); check that the windows-latest image still installs that component."
+          }
+          Write-Host "mspdbcmf.exe: $tool"
+          "MSPDBCMF=$tool" | Out-File $env:GITHUB_ENV -Append
+
       # Unsigned on purpose: the Store signs submissions, so this is the exact
       # configuration a real submission uses and needs no certificate secret.
       # The publisher is left at the checked-in default - stamping the Partner
       # Center identity is the release workflow's job, and it does not affect
       # whether packaging succeeds.
       #
-      # AppxSymbolPackageEnabled is turned OFF explicitly. It DEFAULTS TO TRUE
-      # (Microsoft.Windows.SDK.BuildTools.MSIX.Packaging.targets), and when on the
-      # .appxsym file is bundled into the .msixupload. Producing one needs
-      # mspdbcmf.exe, which is not on a windows-latest runner, so it is not worth a
-      # toolchain dependency: symbols only improve crash-dump readability in
-      # Partner Center and are optional for submission.
-      #
-      # A "mspdbcmf.exe could not be found" warning still appears in this log. It
-      # comes from _EnsurePdbCmfExeFullPath, which is wired into
-      # GenerateMsixPackageDependsOn and whose condition tests only @(PDBPayload) -
-      # it never reads AppxSymbolPackageEnabled, so this property cannot silence
-      # it. Verified against MSIX build tools 1.7.251221100: it warns, it does not
-      # fail the build.
+      # Crash symbols are produced, not skipped: the .appxsym is bundled into the
+      # .msixupload and is what makes Partner Center's crash reports readable. It
+      # is built from the mspdbcmf.exe resolved above (see that step for why the
+      # targets cannot find it themselves). Passing MsPdbCmfExeFullpath also
+      # satisfies _EnsurePdbCmfExeFullPath's condition, which is what silences the
+      # "mspdbcmf.exe could not be found" warning.
       #
       # AppxPackageDir is left alone: the project pins it under bin/AppPackages,
       # which is where the .msixupload lands.
@@ -119,7 +138,8 @@ jobs:
             /p:Configuration=Release /p:Platform=x64 `
             /p:UapAppxPackageBuildMode=StoreUpload `
             /p:AppxPackageSigningEnabled=false `
-            /p:AppxSymbolPackageEnabled=false `
+            /p:AppxSymbolPackageEnabled=true `
+            "/p:MsPdbCmfExeFullpath=$env:MSPDBCMF" `
             /p:GenerateAppxPackageOnBuild=true `
             "/p:ApplicationDisplayVersion=0.0.1"
           if ($LASTEXITCODE -ne 0) { throw "msbuild failed (exit $LASTEXITCODE)." }
@@ -131,7 +151,9 @@ jobs:
           Write-Host "Built $($upload.FullName) ($($upload.Length) bytes)"
 
       # A bundle that silently drops an architecture still "succeeds", so assert
-      # the contents rather than trusting the exit code.
+      # the contents rather than trusting the exit code. The symbol package is
+      # asserted too: it is optional to the Store, which is exactly why its
+      # disappearance would otherwise go unnoticed until someone needed a dump.
       # Assert on the per-architecture .msix files INSIDE the bundle, not on the
       # bundle's own name: the bundle is called "..._x64_arm64.msixbundle", so a
       # substring match on it would pass even if only one architecture was in
@@ -167,4 +189,11 @@ jobs:
             }
           }
           Write-Host "Both x64 and arm64 packages are present in the bundle."
+
+          # The symbol package travels beside the bundle inside the .msixupload.
+          $symbols = @(Get-ChildItem $work -Recurse -File -Filter *.appxsym)
+          if ($symbols.Count -eq 0) {
+            throw "The submission bundle contains no .appxsym crash-symbol package."
+          }
+          Write-Host "Symbol package: $($symbols.Name -join ', ') ($($symbols[0].Length) bytes)"
 
