@@ -95,6 +95,9 @@ ARM64). No symbol (`.appxsym`) package is included: both workflows pass
 from the Debugging Tools for Windows component, which GitHub's runners do not
 have. Symbols are optional for Store submission - they only make crash dumps
 readable in Partner Center health reports - so nothing here depends on them.
+The packaging log still shows a `mspdbcmf.exe` could-not-be-found warning, once
+per architecture: it is emitted by a target that runs before the symbol step and
+does not look at `AppxSymbolPackageEnabled`, so it is expected and harmless.
 
 | Requirement | Value in this repo |
 | --- | --- |

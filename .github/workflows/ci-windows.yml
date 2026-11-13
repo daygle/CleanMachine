@@ -96,12 +96,18 @@ jobs:
       # whether packaging succeeds.
       #
       # AppxSymbolPackageEnabled is turned OFF explicitly. It DEFAULTS TO TRUE
-      # (Microsoft.Windows.SDK.BuildTools.MSIX.Packaging.targets), so omitting it
-      # leaves it on. When on it needs mspdbcmf.exe, a Visual Studio component
-      # that is not on a windows-latest runner, and fails the build with MSB6011
-      # in WinAppSdkCheckFastlinkPdb. A symbol package is optional for Store
-      # submission - it only affects de-minifying crash dumps - so it is not worth
-      # a toolchain dependency to produce.
+      # (Microsoft.Windows.SDK.BuildTools.MSIX.Packaging.targets), and when on the
+      # .appxsym file is bundled into the .msixupload. Producing one needs
+      # mspdbcmf.exe, which is not on a windows-latest runner, so it is not worth a
+      # toolchain dependency: symbols only improve crash-dump readability in
+      # Partner Center and are optional for submission.
+      #
+      # A "mspdbcmf.exe could not be found" warning still appears in this log. It
+      # comes from _EnsurePdbCmfExeFullPath, which is wired into
+      # GenerateMsixPackageDependsOn and whose condition tests only @(PDBPayload) -
+      # it never reads AppxSymbolPackageEnabled, so this property cannot silence
+      # it. Verified against MSIX build tools 1.7.251221100: it warns, it does not
+      # fail the build.
       #
       # AppxPackageDir is left alone: the project pins it under bin/AppPackages,
       # which is where the .msixupload lands.
