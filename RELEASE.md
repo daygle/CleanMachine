@@ -90,11 +90,15 @@ submission needs a certificate at all.
 ## What the submission package is
 
 A single `.msixupload` containing one **multi-architecture bundle** (x64 +
-ARM64) plus crash symbols.
+ARM64). No symbol (`.appxsym`) package is included: both workflows pass
+`AppxSymbolPackageEnabled=false`, because generating one needs `mspdbcmf.exe`
+from the Debugging Tools for Windows component, which GitHub's runners do not
+have. Symbols are optional for Store submission - they only make crash dumps
+readable in Partner Center health reports - so nothing here depends on them.
 
 | Requirement | Value in this repo |
 | --- | --- |
-| Package artifact | `*.msixupload` (package + crash symbols) |
+| Package artifact | `*.msixupload` (the multi-architecture bundle) |
 | Build mode | `UapAppxPackageBuildMode=StoreUpload` |
 | Bundling | `AppxBundle=Always`, `AppxBundlePlatforms=x64\|arm64` |
 | Signing | unsigned, and verified unsigned - the Store signs on ingestion |

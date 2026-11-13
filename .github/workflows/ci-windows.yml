@@ -6,10 +6,10 @@ name: Windows CI
 #
 # The distributable artifact itself is built exclusively by the release workflow
 # (release-windows.yml), which runs on v*.*.* tags (and manual workflow_dispatch)
-# - see RELEASE.md. The build-and-test job produces no package: the packaging
-# targets only run with GenerateAppxPackageOnBuild, which that job does not set.
-# The package-smoke job below does set it, on a placeholder version and the
-# checked-in publisher, purely to prove the packaging path is not broken.
+# - see RELEASE.md. Neither job publishes anything: build-and-test compiles and
+# runs the suite with MSIX packaging switched off, and package-smoke builds the
+# Store submission bundle on a placeholder version and the checked-in publisher,
+# purely to prove the packaging path is not broken.
 
 on:
   push:
@@ -44,9 +44,17 @@ jobs:
           dotnet restore $env:TESTS
           if ($LASTEXITCODE -ne 0) { throw "Test restore failed (exit $LASTEXITCODE)." }
 
+      # Packaging is package-smoke's job, and the project enables single-project
+      # MSIX (EnableMsixTooling), where GenerateAppxPackageOnBuild defaults to true.
+      # A plain build therefore also produced an x64+arm64 sideload bundle here -
+      # work this job throws away - and warned that it could not generate the
+      # optional symbol package because mspdbcmf.exe is not on a windows-latest
+      # runner. Both are switched off, so this step only compiles.
+      # The same two properties are passed to the test step: it builds the app
+      # again, and would otherwise re-enable the packaging and the warning.
       - name: Build app (x64)
         shell: pwsh
-        run: dotnet build $env:PROJECT -c Release -p:Platform=x64 --no-restore
+        run: dotnet build $env:PROJECT -c Release -p:Platform=x64 --no-restore /p:GenerateAppxPackageOnBuild=false /p:AppxSymbolPackageEnabled=false
 
       # CLEANMACHINE_RUN_SCHEDULED_TESTS=1 enables the one test that creates and runs
       # a real scheduled task. It is the only coverage that can catch a task Windows
@@ -57,7 +65,7 @@ jobs:
         shell: pwsh
         env:
           CLEANMACHINE_RUN_SCHEDULED_TESTS: "1"
-        run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore
+        run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore /p:GenerateAppxPackageOnBuild=false /p:AppxSymbolPackageEnabled=false
 
   # The Store submission is now the only artifact, and it is built by MSBuild
   # properties (UapAppxPackageBuildMode=StoreUpload, AppxBundle=Always,

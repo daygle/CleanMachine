@@ -94,7 +94,10 @@ jobs:
         shell: pwsh
         env:
           CLEANMACHINE_RUN_SCHEDULED_TESTS: "1"
-        run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore
+        # Packaging happens in the dedicated msbuild step below; without these two
+        # properties this build packages the app again (and warns about the absent
+        # mspdbcmf.exe symbol tool) before the real submission bundle is produced.
+        run: dotnet test $env:TESTS -c Release -p:Platform=x64 --no-restore /p:GenerateAppxPackageOnBuild=false /p:AppxSymbolPackageEnabled=false
 
       - name: Stamp the manifest with the reserved identity
         shell: pwsh
