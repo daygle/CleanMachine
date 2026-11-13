@@ -54,19 +54,34 @@ public sealed class BackgroundAgent : IDisposable
                 // of objects) on every 5-second tick just to throw almost all of them
                 // away. Targeted queries touch only the browsers we monitor.
                 var current = new Dictionary<string, HashSet<int>>(StringComparer.OrdinalIgnoreCase);
+                // Names whose query failed this tick. Their last known state is left
+                // untouched: a thrown query is "unknown", and recording it as "no
+                // processes" would read as an exit and fire a cleanup for a browser
+                // that may still be running.
+                var unknown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var name in BrowserProcessNames)
                 {
-                    foreach (var process in Process.GetProcessesByName(name))
+                    HashSet<int>? found = null;
+                    try
                     {
-                        try
+                        foreach (var process in Process.GetProcessesByName(name))
                         {
-                            if (!current.TryGetValue(name, out var set))
-                                current[name] = set = [];
-                            set.Add(process.Id);
+                            try
+                            {
+                                (found ??= new HashSet<int>()).Add(process.Id);
+                            }
+                            catch { }
+                            finally { process.Dispose(); }
                         }
-                        catch { }
-                        finally { process.Dispose(); }
                     }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // One failed query must not end monitoring for the rest of the
+                        // session, which is what letting it escape the loop did: the
+                        // only handlers here are for cancellation and disposal.
+                        unknown.Add(name);
+                    }
+                    if (found is not null) current[name] = found;
                 }
 
                 // A browser "exited" when it had processes last tick and none now.
@@ -75,6 +90,7 @@ public sealed class BackgroundAgent : IDisposable
                 var exited = new List<string>();
                 foreach (var name in BrowserProcessNames)
                 {
+                    if (unknown.Contains(name)) continue;
                     _knownPids.TryGetValue(name, out var known);
                     var wasRunning = known is { Count: > 0 };
                     var stillRunning = current.TryGetValue(name, out var nowSet) && nowSet.Count > 0;

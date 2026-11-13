@@ -293,7 +293,12 @@ public sealed class StartupAppsService
         if (entry.Source is StartupSource.StartupFolder)
         {
             var path = entry.FilePath ?? entry.Command;
-            if (path.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup), StringComparison.OrdinalIgnoreCase))
+            // An empty known-folder path is not a prefix of anything: StartsWith("") is
+            // true for every path, so the guard below would refuse every per-user
+            // startup-folder removal with a message about administrator rights.
+            var commonStartup = Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup);
+            if (!string.IsNullOrEmpty(commonStartup)
+                && path.StartsWith(commonStartup, StringComparison.OrdinalIgnoreCase))
             {
                 error = "Administrator rights are required to remove entries from the all-users startup folder. Disable it instead, or run CleanMachine as administrator.";
                 return false;
@@ -301,6 +306,11 @@ public sealed class StartupAppsService
             try
             {
                 var startupRoot = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+                if (string.IsNullOrEmpty(startupRoot))
+                {
+                    error = "The per-user startup folder could not be located.";
+                    return false;
+                }
                 SafeDeletion.DeleteFile(path, startupRoot);
                 try
                 {

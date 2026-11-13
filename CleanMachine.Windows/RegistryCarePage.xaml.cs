@@ -505,7 +505,7 @@ public sealed partial class RegistryCarePage : Page
                 StatusText.Text = $"Cleaning in progress: {p.Phase} ({p.Completed:N0}/{p.Total:N0})";
             });
             var clean = await _service.CleanAsync(result, progress: progress);
-            await RecordManualCleanupAsync(result, clean);
+            await RecordManualCleanupAsync(clean);
             var backupNote = $"{result.Backups.Count} backup file(s) saved under " +
                              RegistryCareService.BackupsDirectory;
             UpdateBackupsLink();
@@ -561,7 +561,7 @@ public sealed partial class RegistryCarePage : Page
         }
     }
 
-    private static async Task RecordManualCleanupAsync(RegistryReview review, RegistryCleanResult result)
+    private static async Task RecordManualCleanupAsync(RegistryCleanResult result)
     {
         await new CleanupStatsStore().RecordAsync(result.Removed, 0);
         try
