@@ -120,6 +120,21 @@ public sealed class AuditSafetyTests
             e => e.RelativePath.Split('\\', '/').Last().Equals(leaf, StringComparison.OrdinalIgnoreCase));
 
     [Fact]
+    public void DefenderEntryOnlyNamesThePerUserTempLogDefenderWrites()
+    {
+        // MpCmdRun writes its log to its working directory; started as the user (how
+        // Windows Security runs a scan) that is %LOCALAPPDATA%\Temp\MpCmdRun.log.
+        // Defender's other logs sit under ProgramData\Microsoft\Windows Defender and
+        // need administrator rights, so an unelevated app can never clean them.
+        // "MpScanResults-*.log" was offered here before but is not a Defender file.
+        var defender = AppCatalog.Definitions.Single(d => d.Id == "defender");
+
+        var location = Assert.Single(defender.TempLocations);
+        Assert.Equal(AppDataRoot.WindowsTemp, location.Root);
+        Assert.Equal(new[] { "MpCmdRun.log" }, location.Entries.Select(e => e.RelativePath));
+    }
+
+    [Fact]
     public async Task BackupVerificationRequiresProvenanceAndFullCoverage()
     {
         using var scratch = new Scratch();

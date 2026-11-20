@@ -134,8 +134,14 @@ public static class AppCatalog
         new("defender", "Windows Defender", "Desktop Application", false,
         [
             (AppDataRoot.WindowsTemp, [
-                new("MpCmdRun.log", "Defender Scan Log"),
-                new("MpScanResults-*.log", "Old Scan Results")
+                // MpCmdRun writes its log to its working directory. Started as the
+                // user - which is how Windows Security's scan runs it - that is
+                // %LOCALAPPDATA%\Temp\MpCmdRun.log. Defender's own logs live under
+                // ProgramData\Microsoft\Windows Defender (Support\MPLog-*,
+                // Scans\History) and need administrator rights, so they stay out of
+                // reach. "MpScanResults-*.log", listed here before, is not a file
+                // Defender creates at all; the wildcard silently matched nothing.
+                new("MpCmdRun.log", "Defender Scan Log")
             ])
         ]),
 
