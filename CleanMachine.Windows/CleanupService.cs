@@ -30,7 +30,6 @@ public sealed class CleanupService
         var findings = new List<RegistryFinding>();
         ScanUninstallEntries(RegistryHive.CurrentUser, findings);
         ScanFileAssociations(RegistryHive.CurrentUser, findings);
-        ScanMuiCache(findings);
         ScanStartupEntries(findings);
         ScanSoundAppEvents(findings);
         ScanShellMuiCache(findings);
@@ -213,17 +212,6 @@ public sealed class CleanupService
                     $"Compatibility record for a missing program ({Path.GetFileName(valueName)})", true, 75, "Compatibility Assistant", valueName));
             }
         }
-    }
-
-    // Localized UI resource cache (MUI). Windows regenerates it on demand, so the
-    // whole key is a safe, self-healing cache to clear.
-    private static void ScanMuiCache(ICollection<RegistryFinding> findings)
-    {
-        using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
-        using var mui = root.OpenSubKey(@"Control Panel\Desktop\MuiCached");
-        if (mui is null || mui.ValueCount == 0) return;
-        findings.Add(new RegistryFinding("HKCU", @"Control Panel\Desktop\MuiCached",
-            "Localized UI cache that Windows regenerates automatically", true, 80, "MUI Cache"));
     }
 
     // Current-user auto-start entries (Run / RunOnce) whose executable no longer

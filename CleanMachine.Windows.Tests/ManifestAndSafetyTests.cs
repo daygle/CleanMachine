@@ -719,9 +719,14 @@ public sealed class ManifestAndSafetyTests
     [Fact]
     public void RegistryCleanableGateAcceptsSafeUserScopedCategories()
     {
-        // MUI cache (key-level, allowed root).
+        // Shell app-name cache (value-level, allowed root).
         Assert.True(RegistryCareService.IsCleanable(new RegistryFinding("HKCU",
-            @"Control Panel\Desktop\MuiCached", "cache", true, 80, "MUI Cache")));
+            @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache",
+            "missing exe", true, 75, "Shell Cache", @"C:\Gone\app.exe.FriendlyAppName")));
+        // The shared cache key itself is never deletable, only its named values.
+        Assert.False(RegistryCareService.IsCleanable(new RegistryFinding("HKCU",
+            @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache",
+            "cache", true, 75, "Shell Cache")));
         // Startup value-level finding (allowed root).
         Assert.True(RegistryCareService.IsCleanable(new RegistryFinding("HKCU",
             @"Software\Microsoft\Windows\CurrentVersion\Run", "missing exe", true, 70, "Windows Startup", "FooApp")));
@@ -730,10 +735,11 @@ public sealed class ManifestAndSafetyTests
             @"AppEvents\Schemes\Apps\App\Event", "missing wav", true, 70, "Sound AppEvents", ".Default")));
         // Machine-wide equivalents are never deletable.
         Assert.False(RegistryCareService.IsCleanable(new RegistryFinding("HKLM",
-            @"Control Panel\Desktop\MuiCached", "cache", true, 80, "MUI Cache")));
+            @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache",
+            "missing exe", true, 75, "Shell Cache", @"C:\Gone\app.exe.FriendlyAppName")));
         // A sibling key outside the allow-list is never deletable.
         Assert.False(RegistryCareService.IsCleanable(new RegistryFinding("HKCU",
-            @"Control Panel\Desktop\SomeOtherKey", "cache", true, 80, "MUI Cache")));
+            @"Control Panel\Desktop\SomeOtherKey", "cache", true, 80, "Other")));
     }
 
     [Fact]
@@ -1085,7 +1091,7 @@ public sealed class ManifestAndSafetyTests
         Assert.True(ScheduledTask.HasWork(new CleanupSchedule { CleanBrowserCache = true }));
         Assert.True(ScheduledTask.HasWork(new CleanupSchedule { CleanAppTempFiles = true }));
         Assert.True(ScheduledTask.HasWork(new CleanupSchedule { WindowsCategoryIds = ["system-temp"] }));
-        Assert.True(ScheduledTask.HasWork(new CleanupSchedule { RegistryCategories = ["MUI Cache"] }));
+        Assert.True(ScheduledTask.HasWork(new CleanupSchedule { RegistryCategories = ["Shell Cache"] }));
     }
 
     [Fact]
@@ -1106,7 +1112,7 @@ public sealed class ManifestAndSafetyTests
                     CleanBrowserCache = true,
                     CleanAppTempFiles = true,
                     WindowsCategoryIds = ["system-temp", "system-dns-cache"],
-                    RegistryCategories = ["MUI Cache"]
+                    RegistryCategories = ["Shell Cache"]
                 }
             ]
         };
@@ -1124,7 +1130,7 @@ public sealed class ManifestAndSafetyTests
         Assert.True(schedule.CleanBrowserCache);
         Assert.True(schedule.CleanAppTempFiles);
         Assert.Equal(new[] { "system-temp", "system-dns-cache" }, schedule.WindowsCategoryIds);
-        Assert.Equal(new[] { "MUI Cache" }, schedule.RegistryCategories);
+        Assert.Equal(new[] { "Shell Cache" }, schedule.RegistryCategories);
     }
 
     [Fact]

@@ -19,7 +19,6 @@ public sealed class RegistryCareService
 {
     private const string UninstallRoot = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
     private const string ClassesRoot = @"Software\Classes";
-    private const string MuiCacheRoot = @"Control Panel\Desktop\MuiCached";
     private const string StartupRunRoot = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string StartupRunOnceRoot = @"Software\Microsoft\Windows\CurrentVersion\RunOnce";
     private const string SoundAppsRoot = @"AppEvents\Schemes\Apps";
@@ -39,14 +38,15 @@ public sealed class RegistryCareService
     private static readonly string[] AllowedCleanupRoots =
     [
         @"Software\Microsoft\Windows\CurrentVersion\Uninstall\",
-        @"Control Panel\Desktop\MuiCached",
         @"Software\Microsoft\Windows\CurrentVersion\Run",
         @"Software\Microsoft\Windows\CurrentVersion\RunOnce",
         @"AppEvents\Schemes\Apps\",
         @"Software\Microsoft\Windows\CurrentVersion\App Paths\",
         @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\",
         @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\",
-        ShellMuiCacheRoot + @"\",
+        // Value-level only: IsCleanable refuses a Shell cache finding without a
+        // value name, so the shared cache key itself can never be deleted.
+        ShellMuiCacheRoot,
         // Value-level only: IsCleanable refuses a Fonts finding without a value
         // name, so the key itself can never be deleted.
         FontsRoot
@@ -189,10 +189,11 @@ public sealed class RegistryCareService
         => finding.LowRisk && finding.Confidence >= 70
            && finding.Hive == "HKCU"
            // Shared registration keys only permit a single named value, never
-           // deletion of every startup entry or every user font in the key.
+           // deletion of every startup entry, font or shell cache entry in the key.
            && (!(finding.Path.Equals(FontsRoot, StringComparison.OrdinalIgnoreCase)
                  || finding.Path.Equals(StartupRunRoot, StringComparison.OrdinalIgnoreCase)
-                 || finding.Path.Equals(StartupRunOnceRoot, StringComparison.OrdinalIgnoreCase))
+                 || finding.Path.Equals(StartupRunOnceRoot, StringComparison.OrdinalIgnoreCase)
+                 || finding.Path.Equals(ShellMuiCacheRoot, StringComparison.OrdinalIgnoreCase))
                || !string.IsNullOrWhiteSpace(finding.ValueName))
            && IsDeletablePath(
                finding.Path,
@@ -234,8 +235,6 @@ public sealed class RegistryCareService
             var ext = finding.Path[ClassesRoot.Length..].TrimStart('\\');
             return string.IsNullOrEmpty(ext) ? "File association" : $"File association: {ext}";
         }
-        if (finding.Path.StartsWith(MuiCacheRoot, StringComparison.OrdinalIgnoreCase))
-            return "Localized UI cache (MUI)";
         if (finding.Path == StartupRunRoot || finding.Path == StartupRunOnceRoot)
             return finding.ValueName is null ? "Startup entry" : $"Startup entry: {finding.ValueName}";
         if (finding.Path.StartsWith(SoundAppsRoot + @"\", StringComparison.OrdinalIgnoreCase))

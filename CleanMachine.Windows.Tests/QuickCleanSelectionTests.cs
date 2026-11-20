@@ -206,8 +206,10 @@ public sealed class QuickCleanSelectionTests
     {
         var cleaned = new[]
         {
-            new RegistryFinding("HKCU", @"Control Panel\Desktop\MuiCached\a", "x", true, 90, "MUI Cache"),
-            new RegistryFinding("HKCU", @"Control Panel\Desktop\MuiCached\b", "x", true, 90, "MUI Cache"),
+            new RegistryFinding("HKCU", @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache",
+                "x", true, 90, "Shell Cache", @"C:\Gone\a.exe.FriendlyAppName"),
+            new RegistryFinding("HKCU", @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache",
+                "x", true, 90, "Shell Cache", @"C:\Gone\b.exe.FriendlyAppName"),
             new RegistryFinding("HKCU", @"AppEvents\Schemes\Apps\z", "x", true, 90, "Sound AppEvents")
         };
 
@@ -215,7 +217,7 @@ public sealed class QuickCleanSelectionTests
 
         Assert.NotNull(lines);
         Assert.Equal(2, lines!.Count);
-        Assert.Equal("MUI Cache - 2 item(s)", lines[0]);
+        Assert.Equal("Shell Cache - 2 item(s)", lines[0]);
         Assert.Equal("Sound AppEvents - 1 item(s)", lines[1]);
     }
 

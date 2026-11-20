@@ -10,10 +10,8 @@ public sealed partial class AppCleanupPage : Page
     private readonly List<(string AppId, int ItemIndex, CheckBox Box)> _itemBoxes = [];
     private AppSettings _settings = new();
     private IReadOnlyList<AppScan> _lastScans = [];
-    // Detail-card navigation: the app whose detail is shown, and the index of the
-    // item drilled into (null = the app-level view listing all of its items).
+    // Detail-card navigation: the app whose detail is currently shown.
     private AppScan? _detailContext;
-    private int? _detailItemIndex;
     // Set when rendering adopted a remembered tick stored under the old
     // position-based key, so the list render can persist the migration once.
     private bool _selectionMigrated;
@@ -92,7 +90,6 @@ public sealed partial class AppCleanupPage : Page
         AppListPanel.Children.Clear();
         _itemBoxes.Clear();
         _detailContext = null;
-        _detailItemIndex = null;
         DetailBackButton.Visibility = Visibility.Collapsed;
         ShowDetailPlaceholder();
         StatusText.Text = visible.Count == 0
@@ -295,7 +292,6 @@ public sealed partial class AppCleanupPage : Page
     {
         ++_detailGeneration;
         _detailContext = scan;
-        _detailItemIndex = null;
         DetailBackButton.Visibility = Visibility.Collapsed;
         DetailGroupBadge.Visibility = Visibility.Visible;
         DetailGroupBadgeText.Text = scan.Group;
@@ -422,7 +418,6 @@ public sealed partial class AppCleanupPage : Page
 
         var generation = ++_detailGeneration;
         _detailContext = scan;
-        _detailItemIndex = itemIndex;
         DetailBackButton.Visibility = Visibility.Visible;
         DetailGroupBadge.Visibility = Visibility.Collapsed;
         // Avoid a redundant "Activity History - Activity history" when the app has a
@@ -440,10 +435,6 @@ public sealed partial class AppCleanupPage : Page
             if (generation != _detailGeneration) return;
             if (files.Count > 0)
             {
-
-                if (files.Count == 0)
-                    DetailPanel.Children.Add(BuildDetailPlaceholder("No files in this location right now."));
-
                 foreach (var file in files)
                 {
                     var relPath = Path.GetRelativePath(item.FullPath, file.Path);

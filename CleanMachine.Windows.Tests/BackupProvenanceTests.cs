@@ -185,7 +185,7 @@ public sealed class BackupProvenanceTests
                  {
                      UninstallRoot,
                      @"Software\Classes\.txt",
-                     @"Control Panel\Desktop\MuiCached",
+                     @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache",
                      RunRoot,
                      @"Software\Microsoft\Windows\CurrentVersion\RunOnce",
                      @"AppEvents\Schemes\Apps\Notifications",

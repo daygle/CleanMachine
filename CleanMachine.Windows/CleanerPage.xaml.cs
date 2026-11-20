@@ -634,7 +634,17 @@ public sealed partial class CleanerPage : Page
             await new CleanupStatsStore().RecordAsync(report.Result.ItemsRemoved, report.Result.BytesRecovered);
             var details = selected
                 .Where(selection => report.CleanedPaths?.Contains($"{selection.BrowserId}:{selection.ItemId}") == true)
-                .Select(selection => $"{selection.BrowserId} - {selection.ItemId}")
+                .Select(selection =>
+                {
+                    // Activity drill-downs show display names everywhere else, so map
+                    // the internal ids here instead of exposing them to the user.
+                    var browser = BrowserCatalog.Find(selection.BrowserId);
+                    BrowserItemDefinition? item = browser is null
+                        ? null
+                        : BrowserCatalog.ItemsFor(browser.Family)
+                            .FirstOrDefault(i => i.Id.Equals(selection.ItemId, StringComparison.OrdinalIgnoreCase));
+                    return $"{browser?.Name ?? selection.BrowserId} - {item?.Name ?? selection.ItemId}";
+                })
                 .ToList();
             await new ActivityStore().AddAsync(new ActivityEntry(
                 DateTimeOffset.UtcNow,

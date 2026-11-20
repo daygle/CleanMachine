@@ -55,7 +55,7 @@ public sealed class CleanupSchedule
     /// old behaviour of cleaning every detected app.</summary>
     public List<string>? AppIds { get; set; }
 
-    /// <summary>Registry Care category names (e.g. "MUI Cache", "Windows Startup").</summary>
+    /// <summary>Registry Care category names (e.g. "Shell Cache", "Windows Startup").</summary>
     public List<string> RegistryCategories { get; set; } = [];
 
     public ScheduleAction AfterClean { get; set; } = ScheduleAction.Nothing;

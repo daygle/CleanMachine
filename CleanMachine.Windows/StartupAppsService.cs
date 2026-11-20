@@ -1,5 +1,4 @@
 using Microsoft.Win32;
-using System.Diagnostics;
 
 namespace CleanMachine.Windows;
 
@@ -248,8 +247,8 @@ public sealed class StartupAppsService
                 approved.SetValue(valueName, DisabledApproval, RegistryValueKind.Binary);
             return true;
         }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException
-                                       && entry.Source == StartupSource.RegistryLocalMachine)
+        catch (Exception ex) when ((ex is UnauthorizedAccessException or System.Security.SecurityException)
+                                   && entry.Source == StartupSource.RegistryLocalMachine)
         {
             // Same wording as Remove: an unelevated app cannot change an
             // all-users entry, and "could not disable" alone did not say why.

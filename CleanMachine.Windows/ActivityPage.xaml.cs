@@ -36,7 +36,6 @@ public sealed partial class ActivityPage : Page
         // Entries are stored as UTC instants; group/count them by the local calendar
         // day, otherwise early-morning runs land on the previous day's bucket.
         var today = _allEntries.Count(e => e.Time.ToLocalTime().Date == DateTimeOffset.Now.Date);
-        var yesterday = _allEntries.Count(e => e.Time.ToLocalTime().Date == DateTimeOffset.Now.Date.AddDays(-1));
 
         TotalCount.Text = $"{total} {(total == 1 ? "event" : "events")}";
         TodayCount.Text = $"{today} today";

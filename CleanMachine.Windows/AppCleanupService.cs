@@ -360,7 +360,7 @@ public sealed class AppCleanupService
             // (WindowsTemp resolves to TrustedTemp.Root). Detection used to probe
             // C:\Windows\Temp instead - a folder the unelevated app never cleans -
             // so Defender read as "not installed" unless an unrelated SYSTEM-owned
-            // log happened to exist. Its platform folder is the install signal.
+            // log happened to exist. Its own program folder is the install signal.
             "defender" => DirExists(ProgramFiles, "Windows Defender"),
             "mediaplayer" => DirExists(RoamingAppData, "Microsoft\\Media Player"),
             "autoplay" => DirExists(LocalAppData, "Microsoft\\Windows\\Autoplay"),
