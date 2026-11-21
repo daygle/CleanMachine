@@ -1,10 +1,10 @@
+namespace CleanMachine.Windows;
+
 // The catalog literals cast to concrete arrays: a collection expression
 // targeting IReadOnlyList<T> has no concrete type for the CsWinRT source
 // generator to name, which warns for trimming/AOT. The declared property and
 // parameter types stay IReadOnlyList<T>, so callers still see them read-only.
 using AppTempRoot = (AppDataRoot Root, IReadOnlyList<AppTempEntry> Entries);
-
-namespace CleanMachine.Windows;
 
 /// <summary>Where an app stores its data relative to a root.</summary>
 public enum AppDataRoot
