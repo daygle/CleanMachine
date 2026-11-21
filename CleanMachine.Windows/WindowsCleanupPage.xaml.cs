@@ -198,10 +198,12 @@ public sealed partial class WindowsCleanupPage : Page
         _cancel = new CancellationTokenSource();
         try
         {
-            // Run the (potentially slow) scan and preview enumeration off the UI
-            // thread; the task already honours the cancel token, so no WaitAsync
-            // wrapper is needed.
-            var items = await Task.Run(() => _service.Scan(_settings.ExcludedPaths), _cancel.Token);
+            // Measure every category and build the enabled categories' preview in
+            // one walk, off the UI thread; the task already honours the cancel token,
+            // so no WaitAsync wrapper is needed. These used to run as two passes over
+            // the same folders (Scan followed by BuildPreview).
+            var (items, preview) = await Task.Run(
+                () => _service.ScanAndPreview(enabled, _settings.ExcludedPaths), _cancel.Token);
 
             var enabledItems = items
                 .Where(i => enabled.Any(c => c.Id == i.Category.Id))
@@ -215,7 +217,7 @@ public sealed partial class WindowsCleanupPage : Page
                 .Where(i => i.Category.Kind == CleanupKind.RegistryValues)
                 .Sum(i => i.Bytes);
 
-            _lastPreview = await Task.Run(() => _service.BuildPreview(enabled, _settings.ExcludedPaths), _cancel.Token);
+            _lastPreview = preview;
             _lastScan = items;
             BuildCategoryList();
 

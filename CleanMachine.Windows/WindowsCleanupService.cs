@@ -119,26 +119,42 @@ public sealed class WindowsCleanupService
     /// still empty, and lets a category added by a future version be picked up
     /// without the user revisiting the page.</summary>
     public static bool IsEnabled(CleanupCategory category, AppSettings settings)
-        => settings.EnabledCleanupCategories.Contains(category.Id)
-           || (!settings.DisabledCleanupCategories.Contains(category.Id)
+        // Matched case-insensitively so an id that was hand-edited (or written by an
+        // older build) with different casing still counts. The sets are rebuilt with
+        // OrdinalIgnoreCase by Sanitize(), but a set can reach here before that, or
+        // with the default ordinal comparer, and an ordinal lookup would silently
+        // ignore the user's explicit tick or untick.
+        => settings.EnabledCleanupCategories.Contains(category.Id, StringComparer.OrdinalIgnoreCase)
+           || (!settings.DisabledCleanupCategories.Contains(category.Id, StringComparer.OrdinalIgnoreCase)
                && (category.EnabledByDefault || settings.AutoSelectAllCategories));
 
     public IReadOnlyList<CleanupItem> Scan(IReadOnlySet<string>? excludedPaths = null)
     {
         var items = new List<CleanupItem>(Catalog.Count);
         foreach (var category in Catalog)
-        {
-            long bytes = category.Kind switch
-            {
-                CleanupKind.Files => GetDirectorySize(category, excludedPaths),
-                CleanupKind.RegistryValues => CountRegistryValues(category.Path!),
-                CleanupKind.RecycleBin => GetRecycleBinSize(),
-                CleanupKind.BrokenShortcuts => BrokenShortcuts.Find(excludedPaths).Sum(GetLength),
-                _ => 0
-            };
-            items.Add(new CleanupItem(category, bytes));
-        }
+            items.Add(new CleanupItem(category, MeasureCategory(category, excludedPaths, preview: null, measureBytes: true)));
         return items;
+    }
+
+    /// <summary>Scans every catalog category and, in the same walk, builds the
+    /// preview for <paramref name="previewCategories"/>. The Windows Cleanup page
+    /// used to call <see cref="Scan"/> and then <see cref="BuildPreview"/>, walking
+    /// every enabled file category's tree twice; this folds the two passes into one.
+    /// Item sizes and preview rows are identical to those two calls.</summary>
+    public (IReadOnlyList<CleanupItem> Items, CleanupPreview Preview) ScanAndPreview(
+        IEnumerable<CleanupCategory> previewCategories,
+        IReadOnlySet<string>? excludedPaths = null,
+        int maxFileItems = 100)
+    {
+        var previewed = previewCategories.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var preview = new PreviewCollector(maxFileItems);
+        var items = new List<CleanupItem>(Catalog.Count);
+        foreach (var category in Catalog)
+        {
+            var collector = previewed.Contains(category.Id) ? preview : null;
+            items.Add(new CleanupItem(category, MeasureCategory(category, excludedPaths, collector, measureBytes: true)));
+        }
+        return (items, preview.Build());
     }
 
     /// <summary>Returns the individual cleanable files for a file-based category,
@@ -320,55 +336,95 @@ public sealed class WindowsCleanupService
 
     public CleanupPreview BuildPreview(IEnumerable<CleanupCategory> categories, IReadOnlySet<string>? excludedPaths = null, int maxFileItems = 100)
     {
-        var shown = new List<CleanupPreviewItem>();
-        var total = 0;
-        var fileShown = 0;
+        var preview = new PreviewCollector(maxFileItems);
         foreach (var category in categories)
+            MeasureCategory(category, excludedPaths, preview, measureBytes: false);
+        return preview.Build();
+    }
+
+    /// <summary>Measures one category in a single walk, optionally collecting its
+    /// preview rows as it goes. <paramref name="measureBytes"/> separates the two
+    /// callers: a scan needs every file's length for its size total, while a preview
+    /// on its own only stats the few rows it will show.</summary>
+    private static long MeasureCategory(CleanupCategory category, IReadOnlySet<string>? excludedPaths,
+        PreviewCollector? preview, bool measureBytes)
+    {
+        switch (category.Kind)
         {
-            switch (category.Kind)
+            case CleanupKind.Files:
             {
-                case CleanupKind.Files:
-                    foreach (var file in GetCleanableFiles(category, excludedPaths))
-                    {
-                        total++;
-                        if (fileShown < maxFileItems)
-                        {
-                            shown.Add(new CleanupPreviewItem(category.Name, file, GetLength(file)));
-                            fileShown++;
-                        }
-                    }
-                    break;
-                case CleanupKind.RegistryValues:
-                    var count = CountRegistryValues(category.Path!);
-                    total += (int)count;
-                    if (count > 0) shown.Add(new CleanupPreviewItem(category.Name, $"{count:N0} registry value(s) to clear", 0));
-                    break;
-                case CleanupKind.BrokenShortcuts:
-                    foreach (var shortcut in BrokenShortcuts.Find(excludedPaths))
-                    {
-                        total++;
-                        if (fileShown < maxFileItems)
-                        {
-                            shown.Add(new CleanupPreviewItem(category.Name, shortcut, GetLength(shortcut)));
-                            fileShown++;
-                        }
-                    }
-                    break;
-                case CleanupKind.RecycleBin:
-                    total++;
-                    shown.Add(new CleanupPreviewItem(category.Name, "Empty the Recycle Bin", 0));
-                    break;
-                case CleanupKind.DnsCache:
-                    total++;
-                    shown.Add(new CleanupPreviewItem(category.Name, "Flush the DNS cache", 0));
-                    break;
-                case CleanupKind.ClipboardHistory:
-                    total++;
-                    shown.Add(new CleanupPreviewItem(category.Name, "Clear the clipboard history", 0));
-                    break;
+                long bytes = 0;
+                foreach (var file in GetCleanableFiles(category, excludedPaths))
+                {
+                    var length = measureBytes || preview is { WantsRow: true } ? GetLength(file) : 0;
+                    bytes += length;
+                    preview?.AddFile(category.Name, file, length);
+                }
+                return bytes;
             }
+            case CleanupKind.RegistryValues:
+            {
+                var count = CountRegistryValues(category.Path!);
+                preview?.AddCount(category.Name, count);
+                return count;
+            }
+            case CleanupKind.BrokenShortcuts:
+            {
+                long bytes = 0;
+                foreach (var shortcut in BrokenShortcuts.Find(excludedPaths))
+                {
+                    var length = measureBytes || preview is { WantsRow: true } ? GetLength(shortcut) : 0;
+                    bytes += length;
+                    preview?.AddFile(category.Name, shortcut, length);
+                }
+                return bytes;
+            }
+            case CleanupKind.RecycleBin:
+                preview?.AddItem(category.Name, "Empty the Recycle Bin", 0);
+                // The shell query is only needed for a size total, not for a row.
+                return measureBytes ? GetRecycleBinSize() : 0;
+            case CleanupKind.DnsCache:
+                preview?.AddItem(category.Name, "Flush the DNS cache", 0);
+                return 0;
+            case CleanupKind.ClipboardHistory:
+                preview?.AddItem(category.Name, "Clear the clipboard history", 0);
+                return 0;
+            default:
+                return 0;
         }
-        return new CleanupPreview(shown, total);
+    }
+
+    /// <summary>Collects preview rows while a category is measured, so building a
+    /// preview does not require a second walk of files that were already counted.</summary>
+    private sealed class PreviewCollector(int maxFileItems)
+    {
+        private readonly List<CleanupPreviewItem> _shown = [];
+        private int _total;
+        private int _fileShown;
+
+        public bool WantsRow => _fileShown < maxFileItems;
+
+        public void AddFile(string categoryName, string path, long bytes)
+        {
+            _total++;
+            if (!WantsRow) return;
+            _shown.Add(new CleanupPreviewItem(categoryName, path, bytes));
+            _fileShown++;
+        }
+
+        public void AddCount(string categoryName, long count)
+        {
+            _total += (int)count;
+            if (count > 0) _shown.Add(new CleanupPreviewItem(categoryName, $"{count:N0} registry value(s) to clear", 0));
+        }
+
+        public void AddItem(string categoryName, string description, long bytes)
+        {
+            _total++;
+            _shown.Add(new CleanupPreviewItem(categoryName, description, bytes));
+        }
+
+        public CleanupPreview Build() => new(_shown, _total);
     }
 
     private static IReadOnlyList<string> GetCleanableFiles(CleanupCategory category, IReadOnlySet<string>? excludedPaths)
@@ -452,9 +508,6 @@ public sealed class WindowsCleanupService
     }
 
     private static bool IsExcluded(string path, IReadOnlySet<string>? exclusions) => exclusions?.Any(root => NativeSafety.IsWithin(path, root)) == true;
-
-    private static long GetDirectorySize(CleanupCategory category, IReadOnlySet<string>? exclusions)
-        => GetCleanableFiles(category, exclusions).Sum(GetLength);
 
     private static long CountRegistryValues(string keyPath)
     {

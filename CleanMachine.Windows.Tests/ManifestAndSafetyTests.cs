@@ -1092,6 +1092,16 @@ public sealed class ManifestAndSafetyTests
         Assert.True(ScheduledTask.HasWork(new CleanupSchedule { CleanAppTempFiles = true }));
         Assert.True(ScheduledTask.HasWork(new CleanupSchedule { WindowsCategoryIds = ["system-temp"] }));
         Assert.True(ScheduledTask.HasWork(new CleanupSchedule { RegistryCategories = ["Shell Cache"] }));
+
+        // Ids a later build no longer offers are not work: a schedule left holding
+        // only dead picks is removed instead of staying registered forever.
+        Assert.False(ScheduledTask.HasWork(new CleanupSchedule { WindowsCategoryIds = ["removed-windows-category"] }));
+        Assert.False(ScheduledTask.HasWork(new CleanupSchedule { RegistryCategories = ["MUI Cache"] }));
+        // One live pick alongside a dead id still counts.
+        Assert.True(ScheduledTask.HasWork(new CleanupSchedule
+        {
+            WindowsCategoryIds = ["removed-windows-category", "system-temp"]
+        }));
     }
 
     [Fact]

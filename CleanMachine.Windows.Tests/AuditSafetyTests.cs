@@ -255,6 +255,44 @@ public sealed class AuditSafetyTests
     }
 
     [Fact]
+    public void SanitizeDropsCategoriesTheCurrentCatalogsNoLongerOffer()
+    {
+        // A category removed in a later build (the phantom "MUI Cache" registry
+        // category, for example) is still named by an already-saved settings.json.
+        // Loading must drop it rather than show it in a picker or let it make a
+        // schedule look like it still has work.
+        var settings = new AppSettings
+        {
+            EnabledCleanupCategories = ["system-temp", "removed-windows-category"],
+            DisabledCleanupCategories = ["removed-windows-category"],
+            QuickCleanWindowsCategories = new HashSet<string> { "system-web-cache", "removed-windows-category" },
+            QuickCleanRegistryCategories = new HashSet<string> { "Shell Cache", "MUI Cache" },
+            StartupCleanCategories = new HashSet<string> { "removed-windows-category" },
+            Schedules =
+            [
+                new()
+                {
+                    Id = "keep-live",
+                    WindowsCategoryIds = ["system-temp", "removed-windows-category"],
+                    RegistryCategories = ["MUI Cache"]
+                }
+            ]
+        }.Sanitize();
+
+        Assert.Equal(new[] { "system-temp" }, settings.EnabledCleanupCategories);
+        Assert.Empty(settings.DisabledCleanupCategories);
+        Assert.NotNull(settings.QuickCleanWindowsCategories);
+        Assert.Equal(new[] { "system-web-cache" }, settings.QuickCleanWindowsCategories);
+        Assert.NotNull(settings.QuickCleanRegistryCategories);
+        Assert.Equal(new[] { "Shell Cache" }, settings.QuickCleanRegistryCategories);
+        Assert.NotNull(settings.StartupCleanCategories);
+        Assert.Empty(settings.StartupCleanCategories);
+        var schedule = Assert.Single(settings.Schedules);
+        Assert.Equal(new[] { "system-temp" }, schedule.WindowsCategoryIds);
+        Assert.Empty(schedule.RegistryCategories);
+    }
+
+    [Fact]
     public void ProvenanceIgnoresStructurallyInvalidRecords()
     {
         using var scratch = new Scratch();
