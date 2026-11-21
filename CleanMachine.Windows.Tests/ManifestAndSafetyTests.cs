@@ -358,7 +358,7 @@ public sealed class ManifestAndSafetyTests
         Assert.Null(ActivityStore.BreakdownLines([]));
 
         var lines = ActivityStore.BreakdownLines(
-        [
+        (CleanupCategoryResult[])[
             new CleanupCategoryResult("Registry Care", 3, 0),
             new CleanupCategoryResult("Temporary Files", 2, 2048)
         ]);
@@ -393,7 +393,7 @@ public sealed class ManifestAndSafetyTests
     public void DnsCachePreviewDescribesItsActionEvenWithoutMeasuredBytes()
     {
         var item = WindowsCleanupService.Catalog.Single(c => c.Id == "system-dns-cache");
-        var preview = new WindowsCleanupService().BuildPreview([item]);
+        var preview = new WindowsCleanupService().BuildPreview((CleanupCategory[])[item]);
 
         Assert.Equal(1, preview.TotalItems);
         Assert.Single(preview.Items);
@@ -439,7 +439,7 @@ public sealed class ManifestAndSafetyTests
             "not-a-catalog-category", "Test", "Unknown", "", CleanupRisk.Safe, true, CleanupKind.RegistryValues,
             Path: @"Software\Microsoft\Windows\CurrentVersion\Run");
 
-        var report = await new WindowsCleanupService().CleanSelectedAsync([unknown], new WindowsCleanupOptions());
+        var report = await new WindowsCleanupService().CleanSelectedAsync((CleanupCategory[])[unknown], new WindowsCleanupOptions());
 
         Assert.Equal(0, report.Result.ItemsRemoved);
         Assert.Contains(report.Skipped, issue => issue.Path == unknown.Id);
@@ -488,7 +488,7 @@ public sealed class ManifestAndSafetyTests
     public async Task CleaningReportsNonEligibleFindingsAsSkipped()
     {
         var review = new RegistryReview(
-        [
+        (RegistryFinding[])[
             new RegistryFinding("HKCU", @"Software\NotAnAllowedRoot", "unsafe target", true, 90)
         ], []);
         var result = await new RegistryCareService().CleanAsync(review);
@@ -500,7 +500,7 @@ public sealed class ManifestAndSafetyTests
     public async Task CleaningMissingKeyIsReportedNotThrown()
     {
         var review = new RegistryReview(
-        [
+        (RegistryFinding[])[
             new RegistryFinding("HKCU",
                 @"Software\Microsoft\Windows\CurrentVersion\Uninstall\CleanMachineTestKeyDoesNotExist",
                 "no removal command", true, 75)
@@ -808,7 +808,7 @@ public sealed class ManifestAndSafetyTests
 
         var service = new RegistryCareService();
         var review = await service.PrepareReviewAsync(
-            [new RegistryFinding("HKCU", path, "orphaned value", true, 75, "File Extensions", "RemoveMe")]);
+            (RegistryFinding[])[new RegistryFinding("HKCU", path, "orphaned value", true, 75, "File Extensions", "RemoveMe")]);
         Assert.NotEmpty(review.Backups);
         try
         {

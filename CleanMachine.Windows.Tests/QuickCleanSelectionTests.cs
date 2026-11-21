@@ -128,7 +128,7 @@ public sealed class QuickCleanSelectionTests
     [Fact]
     public void ANoOpRunThatExaminedCandidatesIsStillRecorded()
     {
-        var result = new QuickCleanResult(0, 0, ["Software\\Foo: Key not found (already clean)"],
+        var result = new QuickCleanResult(0, 0, (string[])["Software\\Foo: Key not found (already clean)"],
             Examined: 42);
 
         Assert.True(QuickCleanService.ShouldRecordActivity(result));
@@ -155,7 +155,7 @@ public sealed class QuickCleanSelectionTests
     [Fact]
     public void TheNoOpEntryNamesTheCandidateCountSkipsAndReason()
     {
-        var result = new QuickCleanResult(0, 0, ["a", "b", "c"],
+        var result = new QuickCleanResult(0, 0, (string[])["a", "b", "c"],
             "Registry cleanup was refused: no restore point.", Examined: 12);
 
         var detail = QuickCleanService.NothingRemovedDetail(result);
@@ -176,7 +176,7 @@ public sealed class QuickCleanSelectionTests
     public void TheOverviewCardAndTheActivityEntryUseTheSameWording()
     {
         // The card must not say "0 item(s) removed" while the log explains the run.
-        var result = new QuickCleanResult(0, 0, ["x", "y"], Examined: 9);
+        var result = new QuickCleanResult(0, 0, (string[])["x", "y"], Examined: 9);
 
         Assert.Equal(QuickCleanService.NothingRemovedDetail(result) + ".", QuickCleanService.SummaryText(result));
         Assert.Equal("Nothing removed from 9 candidate(s) - 2 skipped.", QuickCleanService.SummaryText(result));
@@ -198,7 +198,7 @@ public sealed class QuickCleanSelectionTests
     public void TheOverviewCardStillSummarizesASuccessfulClean()
     {
         Assert.Equal("5 item(s) removed, 1.0 KB recovered - 2 skipped.",
-            QuickCleanService.SummaryText(new QuickCleanResult(5, 1024, ["a", "b"])));
+            QuickCleanService.SummaryText(new QuickCleanResult(5, 1024, (string[])["a", "b"])));
     }
 
     [Fact]
