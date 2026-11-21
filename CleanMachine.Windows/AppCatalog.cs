@@ -1,3 +1,9 @@
+// The catalog literals cast to concrete arrays: a collection expression
+// targeting IReadOnlyList<T> has no concrete type for the CsWinRT source
+// generator to name, which warns for trimming/AOT. The declared property and
+// parameter types stay IReadOnlyList<T>, so callers still see them read-only.
+using AppTempRoot = (AppDataRoot Root, IReadOnlyList<AppTempEntry> Entries);
+
 namespace CleanMachine.Windows;
 
 /// <summary>Where an app stores its data relative to a root.</summary>
@@ -40,19 +46,19 @@ public sealed record AppTempItem(string Description, long Bytes, int FileCount, 
 public static class AppCatalog
 {
     public static IReadOnlyList<AppDefinition> Definitions { get; } =
-    [
+    (AppDefinition[])[
         // ---- Desktop Applications ----
         new("7zip", "7-Zip", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("7-Zip\\Temp", "Extraction Temp Files"),
                 new("7-Zip\\History", "File History")
             ])
         ]),
 
         new("github-desktop", "GitHub Desktop", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("GitHub Desktop\\Cache", "Application Cache"),
                 new("GitHub Desktop\\Code Cache", "Code Cache"),
                 new("GitHub Desktop\\GPUCache", "GPU Cache"),
@@ -62,8 +68,8 @@ public static class AppCatalog
         ]),
 
         new("notepadpp", "Notepad++", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 // Not "backup" or "session.xml": the backup folder holds the
                 // contents of unsaved tabs and the session file is the list of open
                 // tabs. Neither is a cache, and deleting either loses user work.
@@ -72,29 +78,29 @@ public static class AppCatalog
         ]),
 
         new("steam", "Steam", "Desktop Application", false,
-        [
-            (AppDataRoot.ProgramFilesX86, [
+        (AppTempRoot[])[
+            (AppDataRoot.ProgramFilesX86, (AppTempEntry[])[
                 new("Steam\\appcache", "Application Cache"),
                 new("Steam\\logs", "Log Files"),
                 new("Steam\\config\\htmlcache", "HTML Cache"),
                 new("Steam\\dumps", "Crash Dumps")
             ]),
-            (AppDataRoot.LocalAppData, [
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Steam\\htmlcache", "HTML Cache")
             ])
         ]),
 
         new("vlc", "VLC Media Player", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("vlc\\cache", "Cache Files"),
                 new("vlc\\logs", "Log Files")
             ])
         ]),
 
         new("zoom", "Zoom", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 // Not "data": it holds Zoom's local settings database, so clearing
                 // it signs the user out and resets their preferences.
                 new("Zoom\\logs", "Log Files"),
@@ -103,20 +109,20 @@ public static class AppCatalog
         ]),
 
         new("microsoft-office", "Microsoft Office", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 // OfficeFileCache may contain unsynced documents. Office owns its cleanup.
                 new("Microsoft\\Office\\16.0\\Wef\\Cache", "Workflow Cache"),
                 new("Microsoft\\Office\\16.0\\OfficeNotification", "Notification Cache")
             ]),
-            (AppDataRoot.RoamingAppData, [
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Microsoft\\Office\\Recent", "Recent Documents")
             ])
         ]),
 
         new("onedrive", "Microsoft OneDrive", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("OneDrive\\logs", "Log Files"),
                 new("OneDrive\\cache", "Cache Files"),
                 new("OneDrive\\Updates", "Old Update Files")
@@ -124,16 +130,16 @@ public static class AppCatalog
         ]),
 
         new("activity-history", "Activity History", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("ConnectedDevicesPlatform", "Activity History"),
                 new("Microsoft\\Windows\\ActivityCache", "Activity Cache")
             ])
         ]),
 
         new("defender", "Windows Defender", "Desktop Application", false,
-        [
-            (AppDataRoot.WindowsTemp, [
+        (AppTempRoot[])[
+            (AppDataRoot.WindowsTemp, (AppTempEntry[])[
                 // MpCmdRun writes its log to its working directory. Started as the
                 // user - which is how Windows Security's scan runs it - that is
                 // %LOCALAPPDATA%\Temp\MpCmdRun.log. Defender's own logs live under
@@ -146,31 +152,31 @@ public static class AppCatalog
         ]),
 
         new("mediaplayer", "Windows Media Player", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 // CurrentDatabase_*.wmdb is the user's media library, not temp data.
                 new("Microsoft\\Media Player\\Cache", "Cache Files")
             ])
         ]),
 
         new("autoplay", "Windows AutoPlay Devices", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Microsoft\\Windows\\Autoplay", "AutoPlay Cache")
             ])
         ]),
 
         new("search", "Microsoft Search", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Microsoft\\Search\\Data\\Applications\\Windows\\Windows.edb", "Search Index (Will Rebuild)"),
                 new("Microsoft\\Search\\Data\\Temp", "Search Temp Files")
             ])
         ]),
 
         new("discord", "Discord", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("discord\\Cache", "Application Cache"),
                 new("discord\\Code Cache", "Code Cache"),
                 new("discord\\GPUCache", "GPU Cache"),
@@ -179,8 +185,8 @@ public static class AppCatalog
         ]),
 
         new("slack", "Slack", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Slack\\Cache", "Application Cache"),
                 new("Slack\\Code Cache", "Code Cache"),
                 new("Slack\\GPUCache", "GPU Cache"),
@@ -190,16 +196,16 @@ public static class AppCatalog
         ]),
 
         new("spotify", "Spotify", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Spotify\\Storage", "Streaming Cache"),
                 new("Spotify\\Browser", "Browser Cache")
             ])
         ]),
 
         new("teams-classic", "Microsoft Teams (Classic)", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Microsoft\\Teams\\Cache", "Application Cache"),
                 new("Microsoft\\Teams\\Code Cache", "Code Cache"),
                 new("Microsoft\\Teams\\GPUCache", "GPU Cache"),
@@ -208,8 +214,8 @@ public static class AppCatalog
         ]),
 
         new("vscode", "Visual Studio Code", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Code\\Cache", "Application Cache"),
                 new("Code\\CachedData", "Cached Data"),
                 new("Code\\Code Cache", "Code Cache"),
@@ -220,24 +226,24 @@ public static class AppCatalog
         ]),
 
         new("adobe-acrobat", "Adobe Acrobat", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Adobe\\Acrobat\\DC\\Cache", "Document Cache"),
                 new("Adobe\\Acrobat\\DC\\Temp", "Temp Files")
             ])
         ]),
 
         new("adobe-media-cache", "Adobe Media Cache", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Adobe\\Common\\Media Cache Files", "Media Cache Files (Premiere/After Effects)"),
                 new("Adobe\\Common\\Media Cache", "Media Cache Database")
             ])
         ]),
 
         new("signal", "Signal", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Signal\\Cache", "Application Cache"),
                 new("Signal\\Code Cache", "Code Cache"),
                 new("Signal\\GPUCache", "GPU Cache"),
@@ -247,8 +253,8 @@ public static class AppCatalog
         ]),
 
         new("postman", "Postman", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Postman\\Cache", "Application Cache"),
                 new("Postman\\Code Cache", "Code Cache"),
                 new("Postman\\GPUCache", "GPU Cache"),
@@ -257,26 +263,26 @@ public static class AppCatalog
         ]),
 
         new("epic-games", "Epic Games Launcher", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("EpicGamesLauncher\\Saved\\webcache", "Web Cache"),
                 new("EpicGamesLauncher\\Saved\\Logs", "Log Files")
             ])
         ]),
 
         new("thunderbird", "Mozilla Thunderbird", "Desktop Application", false,
-        [
+        (AppTempRoot[])[
             // Each profile lives in a randomly-named folder, so the profile segment is a
             // wildcard. Only the disk cache is cleaned; mail and settings are untouched.
-            (AppDataRoot.LocalAppData, [
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Thunderbird\\Profiles\\*\\cache2", "Disk Cache")
             ])
         ]),
 
         new("jetbrains", "JetBrains IDEs", "Desktop Application", false,
-        [
+        (AppTempRoot[])[
             // One folder per product+version (e.g. IntelliJIdea2024.1), matched by wildcard.
-            (AppDataRoot.LocalAppData, [
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("JetBrains\\*\\caches", "IDE Caches"),
                 new("JetBrains\\*\\log", "Log Files"),
                 new("JetBrains\\*\\tmp", "Temp Files")
@@ -285,10 +291,10 @@ public static class AppCatalog
 
 
         new("battlenet", "Battle.net", "Desktop Application", false,
-        [
+        (AppTempRoot[])[
             // Blizzard's own troubleshooting deletes this whole folder; it holds
             // only launcher caches and logs, never game data or the sign-in.
-            (AppDataRoot.LocalAppData, [
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Battle.net\\BrowserCaches", "Browser Cache"),
                 new("Battle.net\\Cache", "Launcher Cache"),
                 new("Battle.net\\Logs", "Log Files")
@@ -296,10 +302,10 @@ public static class AppCatalog
         ]),
 
         new("ea-app", "EA app", "Desktop Application", false,
-        [
+        (AppTempRoot[])[
             // Only the embedded browser's disk caches and the logs - not the CEF
             // profile itself, which holds the sign-in.
-            (AppDataRoot.LocalAppData, [
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Electronic Arts\\EA Desktop\\Logs", "Log Files"),
                 new("Electronic Arts\\EA Desktop\\CEF\\BrowserCache\\Cache", "Browser Cache"),
                 new("Electronic Arts\\EA Desktop\\CEF\\BrowserCache\\Code Cache", "Code Cache"),
@@ -308,18 +314,18 @@ public static class AppCatalog
         ]),
 
         new("telegram", "Telegram Desktop", "Desktop Application", false,
-        [
+        (AppTempRoot[])[
             // Only the media caches inside tdata\user_data. Never tdata itself:
             // it holds the session, and deleting it signs the user out.
-            (AppDataRoot.RoamingAppData, [
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Telegram Desktop\\tdata\\user_data\\cache", "Media Cache"),
                 new("Telegram Desktop\\tdata\\user_data\\media_cache", "Streamed Media Cache")
             ])
         ]),
 
         new("notion", "Notion", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Notion\\Cache", "Application Cache"),
                 new("Notion\\Code Cache", "Code Cache"),
                 new("Notion\\GPUCache", "GPU Cache"),
@@ -329,10 +335,10 @@ public static class AppCatalog
         ]),
 
         new("figma", "Figma", "Desktop Application", false,
-        [
+        (AppTempRoot[])[
             // Older builds keep the Electron caches at the top level, newer ones
             // inside a versioned DesktopProfile folder; both are matched.
-            (AppDataRoot.RoamingAppData, [
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Figma\\Cache", "Application Cache"),
                 new("Figma\\Code Cache", "Code Cache"),
                 new("Figma\\GPUCache", "GPU Cache"),
@@ -343,10 +349,10 @@ public static class AppCatalog
         ]),
 
         new("obsidian", "Obsidian", "Desktop Application", false,
-        [
+        (AppTempRoot[])[
             // Caches only. Vaults live wherever the user put them, and
             // obsidian.json (the vault list) is left alone.
-            (AppDataRoot.RoamingAppData, [
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("obsidian\\Cache", "Application Cache"),
                 new("obsidian\\Code Cache", "Code Cache"),
                 new("obsidian\\GPUCache", "GPU Cache")
@@ -354,9 +360,9 @@ public static class AppCatalog
         ]),
 
         new("obs-studio", "OBS Studio", "Desktop Application", false,
-        [
+        (AppTempRoot[])[
             // Not "basic" (scenes and profiles) or "plugin_config".
-            (AppDataRoot.RoamingAppData, [
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("obs-studio\\logs", "Log Files"),
                 new("obs-studio\\crashes", "Crash Reports"),
                 new("obs-studio\\profiler_data", "Profiler Data")
@@ -364,19 +370,19 @@ public static class AppCatalog
         ]),
 
         new("java", "Java", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalLowAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalLowAppData, (AppTempEntry[])[
                 new("Sun\\Java\\Deployment\\cache", "Download Cache")
             ])
         ]),
 
         new("webview2", "Microsoft Edge WebView2 (App Caches)", "Desktop Application", false,
-        [
+        (AppTempRoot[])[
             // Desktop apps that embed WebView2 keep its profile in an "EBWebView"
             // folder inside their own data folder, one or two levels under
             // LocalAppData. Only the per-profile disk caches are matched, never
             // the profile itself (cookies, local storage, sign-ins).
-            (AppDataRoot.LocalAppData, [
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("*\\EBWebView\\Default\\Cache", "WebView2 Browser Cache"),
                 new("*\\EBWebView\\Default\\Code Cache", "WebView2 Code Cache"),
                 new("*\\EBWebView\\Default\\GPUCache", "WebView2 GPU Cache"),
@@ -387,8 +393,8 @@ public static class AppCatalog
         ]),
 
         new("canva", "Canva", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Canva\\Cache", "Application Cache"),
                 new("Canva\\Code Cache", "Code Cache"),
                 new("Canva\\GPUCache", "GPU Cache")
@@ -396,8 +402,8 @@ public static class AppCatalog
         ]),
 
         new("element", "Element", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Element\\Cache", "Application Cache"),
                 new("Element\\Code Cache", "Code Cache"),
                 new("Element\\GPUCache", "GPU Cache")
@@ -405,8 +411,8 @@ public static class AppCatalog
         ]),
 
         new("mattermost", "Mattermost", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Mattermost\\Cache", "Application Cache"),
                 new("Mattermost\\Code Cache", "Code Cache"),
                 new("Mattermost\\GPUCache", "GPU Cache")
@@ -414,8 +420,8 @@ public static class AppCatalog
         ]),
 
         new("insomnia", "Insomnia", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Insomnia\\Cache", "Application Cache"),
                 new("Insomnia\\Code Cache", "Code Cache"),
                 new("Insomnia\\GPUCache", "GPU Cache")
@@ -423,8 +429,8 @@ public static class AppCatalog
         ]),
 
         new("docker-desktop", "Docker Desktop", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("Docker Desktop\\Cache", "Application Cache"),
                 new("Docker Desktop\\Code Cache", "Code Cache"),
                 new("Docker Desktop\\GPUCache", "GPU Cache")
@@ -432,8 +438,8 @@ public static class AppCatalog
         ]),
 
         new("unity-hub", "Unity Hub", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new("UnityHub\\Cache", "Application Cache"),
                 new("UnityHub\\Code Cache", "Code Cache"),
                 new("UnityHub\\GPUCache", "GPU Cache")
@@ -441,8 +447,8 @@ public static class AppCatalog
         ]),
 
         new("riot-client", "Riot Client", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Riot Games\\Riot Client\\Logs", "Log Files")
             ])
         ]),
@@ -450,16 +456,16 @@ public static class AppCatalog
         // Logs only: DriveFS also keeps a content cache that can hold changes not
         // yet uploaded, so it is never offered.
         new("google-drive", "Google Drive", "Desktop Application", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Google\\DriveFS\\Logs", "Log Files")
             ])
         ]),
 
         // Logs only: worlds, screenshots and settings live beside them in .minecraft.
         new("minecraft-launcher", "Minecraft Launcher", "Desktop Application", false,
-        [
-            (AppDataRoot.RoamingAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.RoamingAppData, (AppTempEntry[])[
                 new(".minecraft\\logs", "Game Logs")
             ])
         ]),
@@ -469,8 +475,8 @@ public static class AppCatalog
         // build. The installed-package folders (~\.nuget\packages,
         // ~\.cargo\registry\src, Gradle's dependency cache) are never offered.
         new("nodejs", "Node.js", "Developer Tools", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("npm-cache", "NPM Cache"),
                 new("pnpm-store", "PNPM Store"),
                 new("yarn\\Cache", "Yarn Cache"),
@@ -480,85 +486,85 @@ public static class AppCatalog
         ]),
 
         new("python-pip", "Python (pip)", "Developer Tools", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("pip\\Cache", "Package Download Cache")
             ])
         ]),
 
         new("nuget", "NuGet", "Developer Tools", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("NuGet\\v3-cache", "HTTP Download Cache"),
                 new("NuGet\\plugins-cache", "Plugin Cache")
             ])
         ]),
 
         new("go", "Go", "Developer Tools", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("go-build", "Build Cache")
             ])
         ]),
 
         new("rust-cargo", "Rust (Cargo)", "Developer Tools", false,
-        [
-            (AppDataRoot.UserProfile, [
+        (AppTempRoot[])[
+            (AppDataRoot.UserProfile, (AppTempEntry[])[
                 new(".cargo\\registry\\cache", "Downloaded Crates")
             ])
         ]),
 
         new("gradle", "Gradle", "Developer Tools", false,
-        [
-            (AppDataRoot.UserProfile, [
+        (AppTempRoot[])[
+            (AppDataRoot.UserProfile, (AppTempEntry[])[
                 new(".gradle\\caches\\build-cache-1", "Build Cache"),
                 new(".gradle\\daemon\\*\\*.log", "Daemon Logs")
             ])
         ]),
 
         new("python-poetry", "Python (Poetry)", "Developer Tools", false,
-        [
+        (AppTempRoot[])[
             // Not pypoetry\Cache\virtualenvs: those are the project environments.
-            (AppDataRoot.LocalAppData, [
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("pypoetry\\Cache\\artifacts", "Package Download Cache"),
                 new("pypoetry\\Cache\\cache", "Repository Metadata Cache")
             ])
         ]),
 
         new("python-uv", "Python (uv)", "Developer Tools", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("uv\\cache", "Package Cache")
             ])
         ]),
 
         new("composer", "Composer (PHP)", "Developer Tools", false,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Composer\\files", "Package Download Cache"),
                 new("Composer\\repo", "Repository Metadata Cache")
             ])
         ]),
 
         new("bun", "Bun", "Developer Tools", false,
-        [
-            (AppDataRoot.UserProfile, [
+        (AppTempRoot[])[
+            (AppDataRoot.UserProfile, (AppTempEntry[])[
                 new(".bun\\install\\cache", "Package Cache")
             ])
         ]),
 
         new("visual-studio", "Visual Studio", "Developer Tools", false,
-        [
+        (AppTempRoot[])[
             // The component (MEF) cache Visual Studio rebuilds on its next start.
-            (AppDataRoot.LocalAppData, [
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Microsoft\\VisualStudio\\*\\ComponentModelCache", "Component Model Cache")
             ])
         ]),
 
         // ---- Microsoft Store Applications ----
         new("store-bing-news", "Bing News", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.BingNews_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.BingNews_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.BingNews_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -566,8 +572,8 @@ public static class AppCatalog
         ]),
 
         new("store-bing-weather", "Bing Weather", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.BingWeather_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.BingWeather_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.BingWeather_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -575,8 +581,8 @@ public static class AppCatalog
         ]),
 
         new("store-clipchamp", "Clipchamp - Video Editor", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Clipchamp.Clipchamp_yxz26nhyzhsrt\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Clipchamp.Clipchamp_yxz26nhyzhsrt\\AC\\Temp", "Temp Files"),
                 new("Packages\\Clipchamp.Clipchamp_yxz26nhyzhsrt\\TempState", "Temp State")
@@ -584,8 +590,8 @@ public static class AppCatalog
         ]),
 
         new("store-media-player", "Media Player", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.WindowsMediaPlayer_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.WindowsMediaPlayer_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.WindowsMediaPlayer_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -593,8 +599,8 @@ public static class AppCatalog
         ]),
 
         new("store-photos", "Microsoft Photos", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.Windows.Photos_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.Windows.Photos_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.Windows.Photos_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -602,8 +608,8 @@ public static class AppCatalog
         ]),
 
         new("store-sticky-notes", "Microsoft Sticky Notes", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -611,8 +617,8 @@ public static class AppCatalog
         ]),
 
         new("store-todo", "Microsoft To Do", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.Todo_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.Todo_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.Todo_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -620,8 +626,8 @@ public static class AppCatalog
         ]),
 
         new("store-snip-sketch", "Snip & Sketch", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.ScreenSketch_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.ScreenSketch_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.ScreenSketch_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -629,8 +635,8 @@ public static class AppCatalog
         ]),
 
         new("store-client-temp", "Windows Client Temp Files", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.Windows.ClientCBS_cw5n1h2txyewy\\TempState", "Temp State")
@@ -638,8 +644,8 @@ public static class AppCatalog
         ]),
 
         new("store-xbox", "Xbox", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.GamingApp_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -647,8 +653,8 @@ public static class AppCatalog
         ]),
 
         new("store-xbox-gamebar", "Xbox Game Bar", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -656,8 +662,8 @@ public static class AppCatalog
         ]),
 
         new("store-whatsapp", "WhatsApp", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\AC\\Temp", "Temp Files"),
                 new("Packages\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\TempState", "Temp State")
@@ -665,8 +671,8 @@ public static class AppCatalog
         ]),
 
         new("store-spotify", "Spotify (Store)", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\AC\\Temp", "Temp Files"),
                 new("Packages\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\\TempState", "Temp State")
@@ -674,8 +680,8 @@ public static class AppCatalog
         ]),
 
         new("store-netflix", "Netflix", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\AC\\Temp", "Temp Files"),
                 new("Packages\\4DF9E0F8.Netflix_mcm4njqhnhss8\\TempState", "Temp State")
@@ -683,8 +689,8 @@ public static class AppCatalog
         ]),
 
         new("store-paint", "Paint", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.Paint_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -692,8 +698,8 @@ public static class AppCatalog
         ]),
 
         new("store-notepad", "Windows Notepad", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.WindowsNotepad_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -701,8 +707,8 @@ public static class AppCatalog
         ]),
 
         new("store-terminal", "Windows Terminal", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -710,8 +716,8 @@ public static class AppCatalog
         ]),
 
         new("store-teams", "Microsoft Teams", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\MSTeams_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\MSTeams_8wekyb3d8bbwe\\TempState", "Temp State"),
@@ -724,8 +730,8 @@ public static class AppCatalog
         ]),
 
         new("store-outlook", "Outlook (New)", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.OutlookForWindows_8wekyb3d8bbwe\\TempState", "Temp State"),
@@ -736,8 +742,8 @@ public static class AppCatalog
         ]),
 
         new("store-phone-link", "Phone Link", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -745,8 +751,8 @@ public static class AppCatalog
         ]),
 
         new("store-mail-calendar", "Mail and Calendar", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\microsoft.windowscommunicationsapps_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -754,8 +760,8 @@ public static class AppCatalog
         ]),
 
         new("store-maps", "Windows Maps", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.WindowsMaps_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -763,8 +769,8 @@ public static class AppCatalog
         ]),
 
         new("store-camera", "Windows Camera", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.WindowsCamera_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -772,8 +778,8 @@ public static class AppCatalog
         ]),
 
         new("store-solitaire", "Microsoft Solitaire Collection", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -781,8 +787,8 @@ public static class AppCatalog
         ]),
 
         new("store-get-help", "Get Help", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.GetHelp_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -790,8 +796,8 @@ public static class AppCatalog
         ]),
 
         new("store-feedback-hub", "Feedback Hub", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe\\TempState", "Temp State")
@@ -799,8 +805,8 @@ public static class AppCatalog
         ]),
 
         new("store-widgets", "Windows Widgets", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy\\AC\\Temp", "Temp Files"),
                 new("Packages\\MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy\\TempState", "Temp State")
@@ -808,8 +814,8 @@ public static class AppCatalog
         ]),
 
         new("store-microsoft-store", "Microsoft Store", "Microsoft Store Application", true,
-        [
-            (AppDataRoot.LocalAppData, [
+        (AppTempRoot[])[
+            (AppDataRoot.LocalAppData, (AppTempEntry[])[
                 new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\AC\\INetCache", "Internet Cache"),
                 new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\AC\\Temp", "Temp Files"),
                 new("Packages\\Microsoft.WindowsStore_8wekyb3d8bbwe\\TempState", "Temp State")
