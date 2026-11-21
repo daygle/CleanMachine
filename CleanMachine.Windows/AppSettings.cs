@@ -416,7 +416,7 @@ public sealed class AppSettings
     // and out of ScheduledTask.HasWork, which would otherwise count a schedule that
     // can only clean nothing as live and keep its task registered.
     private static readonly Dictionary<string, string> WindowsCleanupCategoryIds =
-        WindowsCleanupService.Catalog.ToDictionary(c => c.Id, StringComparer.OrdinalIgnoreCase);
+        WindowsCleanupService.Catalog.ToDictionary(c => c.Id, c => c.Id, StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, string> RegistryCleanupCategoryIds =
         QuickCleanService.RegistryCategories.ToDictionary(id => id, StringComparer.OrdinalIgnoreCase);
 
