@@ -31,7 +31,7 @@ public sealed class CleanupCoverageTests
     public void ClipboardHistoryIsAnActionWithAPreview()
     {
         var category = WindowsCleanupService.Catalog.Single(c => c.Id == "system-clipboard-history");
-        var preview = new WindowsCleanupService().BuildPreview([category]);
+        var preview = new WindowsCleanupService().BuildPreview((CleanupCategory[])[category]);
 
         Assert.True(category.Kind.IsAction());
         Assert.Equal(1, preview.TotalItems);
@@ -192,14 +192,14 @@ public sealed class CleanupCoverageTests
         const string live = @"C:\Live\server.exe";
         Func<string, bool> exists = f => f.Equals(live, StringComparison.OrdinalIgnoreCase);
 
-        Assert.Equal(gone, CleanupService.MissingComServer([(false, gone)], exists));
-        Assert.Equal(gone, CleanupService.MissingComServer([(false, gone), (true, @"""C:\Gone\other.exe"" /automation")], exists));
-        Assert.Null(CleanupService.MissingComServer([(false, gone), (true, live)], exists));       // one live server
-        Assert.Null(CleanupService.MissingComServer([(false, gone), (true, "")], exists));         // deliberate empty override
-        Assert.Null(CleanupService.MissingComServer([(false, ""), (true, @"C:\Gone\x.exe")], exists));
-        Assert.Null(CleanupService.MissingComServer([(false, gone), (false, null)], exists));     // value absent
-        Assert.Null(CleanupService.MissingComServer([(false, gone), (false, "mscoree.dll")], exists)); // unresolvable
-        Assert.Null(CleanupService.MissingComServer([(false, @"%SystemRoot%\x.dll")], exists));
+        Assert.Equal(gone, CleanupService.MissingComServer(((bool IsLocal, string? Raw)[])[(false, gone)], exists));
+        Assert.Equal(gone, CleanupService.MissingComServer(((bool IsLocal, string? Raw)[])[(false, gone), (true, @"""C:\Gone\other.exe"" /automation")], exists));
+        Assert.Null(CleanupService.MissingComServer(((bool IsLocal, string? Raw)[])[(false, gone), (true, live)], exists));       // one live server
+        Assert.Null(CleanupService.MissingComServer(((bool IsLocal, string? Raw)[])[(false, gone), (true, "")], exists));         // deliberate empty override
+        Assert.Null(CleanupService.MissingComServer(((bool IsLocal, string? Raw)[])[(false, ""), (true, @"C:\Gone\x.exe")], exists));
+        Assert.Null(CleanupService.MissingComServer(((bool IsLocal, string? Raw)[])[(false, gone), (false, null)], exists));     // value absent
+        Assert.Null(CleanupService.MissingComServer(((bool IsLocal, string? Raw)[])[(false, gone), (false, "mscoree.dll")], exists)); // unresolvable
+        Assert.Null(CleanupService.MissingComServer(((bool IsLocal, string? Raw)[])[(false, @"%SystemRoot%\x.dll")], exists));
         Assert.Null(CleanupService.MissingComServer([], exists));                                  // no servers at all
     }
 

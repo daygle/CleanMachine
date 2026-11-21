@@ -53,8 +53,8 @@ public sealed class CoverageExpansionTests
     [Fact]
     public void ASharedExecutableIsNamedAfterTheBrowserBeingCleaned()
     {
-        Assert.Equal("Chromium", BrowserCleanupService.DisplayNameForProcess("chrome", ["chromium"]));
-        Assert.Equal("Opera GX", BrowserCleanupService.DisplayNameForProcess("opera", ["opera-gx"]));
+        Assert.Equal("Chromium", BrowserCleanupService.DisplayNameForProcess("chrome", (string[])["chromium"]));
+        Assert.Equal("Opera GX", BrowserCleanupService.DisplayNameForProcess("opera", (string[])["opera-gx"]));
         Assert.Equal("Google Chrome", BrowserCleanupService.DisplayNameForProcess("chrome"));
     }
 

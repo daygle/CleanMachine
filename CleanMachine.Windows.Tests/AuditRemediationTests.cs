@@ -105,12 +105,12 @@ public sealed class AuditRemediationTests
         File.WriteAllText(prefs, original);
         var firefox = new BrowserDefinition("test", "Test", BrowserFamily.Firefox, [], [], [], false);
 
-        Assert.True(BrowserCleanupService.ApplyPreferenceEdit(firefox, [scratch.Root], [], null));
+        Assert.True(BrowserCleanupService.ApplyPreferenceEdit(firefox, (string[])[scratch.Root], [], null));
 
         Assert.Equal(string.Join(newline, kept) + newline, File.ReadAllText(prefs));
         Assert.Equal(original, File.ReadAllText(prefs + ".cleanmachine.bak"));
         // A second pass has nothing left to remove and must not touch the file.
-        Assert.False(BrowserCleanupService.ApplyPreferenceEdit(firefox, [scratch.Root], [], null));
+        Assert.False(BrowserCleanupService.ApplyPreferenceEdit(firefox, (string[])[scratch.Root], [], null));
         Assert.Equal(string.Join(newline, kept) + newline, File.ReadAllText(prefs));
     }
 
@@ -196,7 +196,7 @@ public sealed class AuditRemediationTests
         var issues = new List<CleanupIssue>();
 
         // Used to throw InvalidDataException out of the whole browser clean.
-        Assert.False(BrowserCleanupService.ApplyPreferenceEdit(chromium, [scratch.Root], issues, null));
+        Assert.False(BrowserCleanupService.ApplyPreferenceEdit(chromium, (string[])[scratch.Root], issues, null));
         Assert.Contains(issues, i => i.Path == path);
     }
 }

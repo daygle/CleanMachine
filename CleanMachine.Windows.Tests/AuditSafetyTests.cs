@@ -79,9 +79,9 @@ public sealed class AuditSafetyTests
         File.WriteAllText(path, original);
         var browser = new BrowserDefinition("test", "Test", BrowserFamily.Chromium, [], [], [], false);
         var issues = new List<CleanupIssue>();
-        Assert.False(BrowserCleanupService.ApplyPreferenceEdit(browser, [scratch.Root], issues, new HashSet<string> { path }));
+        Assert.False(BrowserCleanupService.ApplyPreferenceEdit(browser, (string[])[scratch.Root], issues, new HashSet<string> { path }));
         Assert.Equal(original, File.ReadAllText(path));
-        Assert.True(BrowserCleanupService.ApplyPreferenceEdit(browser, [scratch.Root], issues, null));
+        Assert.True(BrowserCleanupService.ApplyPreferenceEdit(browser, (string[])[scratch.Root], issues, null));
         var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
         Assert.Null(json["download"]!["default_directory"]);
         Assert.True(json["download"]!["prompt_for_download"]!.GetValue<bool>());
@@ -141,7 +141,7 @@ public sealed class AuditSafetyTests
         var file = Path.Combine(scratch.Root, "backup.reg");
         await File.WriteAllTextAsync(file, "Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\" + RunRoot + "]\r\n\"App\"=\"old\"\r\n");
         var finding = new RegistryFinding("HKCU", RunRoot, "missing program", true, 75, "Windows Startup", "App");
-        var review = new RegistryReview([finding], [new RegistryBackup(file, DateTimeOffset.UtcNow)]);
+        var review = new RegistryReview((RegistryFinding[])[finding], (RegistryBackup[])[new RegistryBackup(file, DateTimeOffset.UtcNow)]);
         Assert.False(await RegistryCareService.VerifyReviewBackupsAsync(review, []));
         var manifest = Path.Combine(scratch.Root, "provenance.json");
         BackupProvenance.Record(manifest, file, RunRoot, DateTimeOffset.UtcNow);
@@ -149,11 +149,11 @@ public sealed class AuditSafetyTests
         Assert.True(await RegistryCareService.VerifyReviewBackupsAsync(review, entries));
         Assert.False(await RegistryCareService.VerifyReviewBackupsAsync(review with
         {
-            Backups = [review.Backups[0], new RegistryBackup(Path.Combine(scratch.Root, "missing.reg"), DateTimeOffset.UtcNow)]
+            Backups = (RegistryBackup[])[review.Backups[0], new RegistryBackup(Path.Combine(scratch.Root, "missing.reg"), DateTimeOffset.UtcNow)]
         }, entries));
         Assert.False(await RegistryCareService.VerifyReviewBackupsAsync(review with
         {
-            Findings = [finding, finding with { Path = RunRoot + "Once" }]
+            Findings = (RegistryFinding[])[finding, finding with { Path = RunRoot + "Once" }]
         }, entries));
         await File.AppendAllTextAsync(file, "tampered");
         Assert.False(await RegistryCareService.VerifyReviewBackupsAsync(review, entries));
@@ -217,7 +217,7 @@ public sealed class AuditSafetyTests
     {
         var schedule = new CleanupSchedule { WindowsCategoryIds = ["system-temp"], AfterClean = ScheduleAction.Shutdown };
         Assert.True(ScheduleService.MayApplyPowerAction(schedule, [], default));
-        Assert.False(ScheduleService.MayApplyPowerAction(schedule, ["Cleanup failed"], default));
+        Assert.False(ScheduleService.MayApplyPowerAction(schedule, (string[])["Cleanup failed"], default));
         Assert.False(ScheduleService.MayApplyPowerAction(new CleanupSchedule(), [], default));
         Assert.False(ScheduleService.MayApplyPowerAction(new CleanupSchedule
         {

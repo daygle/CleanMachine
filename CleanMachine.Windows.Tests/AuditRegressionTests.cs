@@ -29,7 +29,7 @@ public sealed class AuditRegressionTests
     public void BrowserCacheSelectionSkipsInternetExplorerAndDuplicates()
     {
         // IE's cache is the Windows Internet Cache, which Windows Cleanup owns.
-        var selection = QuickCleanService.BrowserCacheSelection(["ie", "IE", "chrome", "chrome"]);
+        var selection = QuickCleanService.BrowserCacheSelection((string[])["ie", "IE", "chrome", "chrome"]);
 
         Assert.DoesNotContain(selection, pair => pair.BrowserId == "ie");
         Assert.True(selection.Count(pair => pair.BrowserId == "chrome") <= 1);
@@ -41,11 +41,11 @@ public sealed class AuditRegressionTests
         var scans = new[]
         {
             new AppScan("a", "A", "G", false, true,
-            [
+            (AppTempItem[])[
                 new AppTempItem("one", 1, 1, @"C:\x\one"),
                 new AppTempItem("two", 2, 1, @"C:\x\two")
             ]),
-            new AppScan("b", "B", "G", false, false, [new AppTempItem("gone", 1, 1, @"C:\y")])
+            new AppScan("b", "B", "G", false, false, (AppTempItem[])[new AppTempItem("gone", 1, 1, @"C:\y")])
         };
 
         var items = AppCleanupService.AllItems(scans);

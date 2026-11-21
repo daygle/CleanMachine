@@ -241,7 +241,7 @@ public sealed class AppCleanupService
     private static IEnumerable<string> ExpandPaths(string root, string relativePath)
     {
         var segments = relativePath.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
-        IEnumerable<string> current = [root];
+        IEnumerable<string> current = (string[])[root];
 
         for (var i = 0; i < segments.Length; i++)
         {
