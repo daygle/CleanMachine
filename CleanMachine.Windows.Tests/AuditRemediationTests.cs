@@ -43,6 +43,37 @@ public sealed class AuditRemediationTests
     }
 
     [Fact]
+    public async Task SavingPrunesCategoryIdsTheCurrentCatalogsNoLongerOffer()
+    {
+        using var scratch = new AuditFollowupTests.Scratch();
+        var path = Path.Combine(scratch.Root, "settings.json");
+        // A file written by an older build: the removed registry category and an
+        // unknown Windows id sit next to live picks. Saving an unrelated change used
+        // to merge this file and write the stale ids straight back out.
+        var old = JsonSerializer.SerializeToNode(new AppSettings())!.AsObject();
+        old["EnabledCleanupCategories"] = JsonNode.Parse("[\"system-temp\", \"removed-windows-category\"]");
+        old["QuickCleanRegistryCategories"] = JsonNode.Parse("[\"Shell Cache\", \"MUI Cache\"]");
+        old["Schedules"] = JsonNode.Parse(
+            "[{\"Id\":\"s1\",\"WindowsCategoryIds\":[\"system-temp\",\"removed-windows-category\"],\"RegistryCategories\":[\"MUI Cache\"]}]");
+        await File.WriteAllTextAsync(path, old.ToJsonString());
+
+        var settings = new AppSettings { CloseToTray = true };
+        await settings.SaveToAsync(path);
+
+        var saved = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+        Assert.Equal(new[] { "system-temp" }, Ids(saved, "EnabledCleanupCategories"));
+        Assert.Equal(new[] { "Shell Cache" }, Ids(saved, "QuickCleanRegistryCategories"));
+        var schedule = Assert.Single(saved["Schedules"]!.AsArray())!.AsObject();
+        Assert.Equal(new[] { "system-temp" }, Ids(schedule, "WindowsCategoryIds"));
+        Assert.Empty(Ids(schedule, "RegistryCategories"));
+        // The unrelated change still made it into the same save.
+        Assert.True(saved["CloseToTray"]!.GetValue<bool>());
+    }
+
+    private static string[] Ids(JsonObject owner, string key)
+        => owner[key]!.AsArray().Select(node => node!.GetValue<string>()).ToArray();
+
+    [Fact]
     public void MergeToleratesDuplicateAndMalformedIdentitiesOnDisk()
     {
         var baseline = JsonSerializer.SerializeToNode(new AppSettings())!.AsObject();

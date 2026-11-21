@@ -41,6 +41,25 @@ public sealed class QuickCleanSelectionTests
     }
 
     [Fact]
+    public void ADifferentlyCasedEnabledIdStillEnablesTheCategory()
+    {
+        // settings.json is user-editable, and a set deserialized from it starts out
+        // with the default ordinal comparer (Sanitize() rebuilds it, but not every
+        // path runs Sanitize). Windows Cleanup and Quick Clean's unconfigured
+        // fallback read the same enabled set, so both must match the id however it
+        // was cased instead of silently treating the category as not enabled.
+        var settings = new AppSettings
+        {
+            EnabledCleanupCategories = new HashSet<string> { "SYSTEM-SHELL-CACHES" }
+        };
+        var category = WindowsCleanupService.Catalog.Single(c => c.Id == "system-shell-caches");
+        Assert.False(category.EnabledByDefault);
+
+        Assert.True(WindowsCleanupService.IsEnabled(category, settings));
+        Assert.True(QuickCleanService.IsWindowsSelected(category, settings));
+    }
+
+    [Fact]
     public void ExplicitSelectionOptInTheRecycleBin()
     {
         // Ticking the Recycle Bin in the Quick Clean picker is the opt-in; the run
