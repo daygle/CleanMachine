@@ -25,10 +25,10 @@ public sealed class BrowserCloseSafetyTests
     [Fact]
     public void OnlyTheBrowsersBeingCleanedAreConsidered()
     {
-        var edgeOnly = BrowserCleanupService.ProcessNamesFor(["edge"]);
+        var edgeOnly = BrowserCleanupService.ProcessNamesFor((string[])["edge"]);
         Assert.Equal(new[] { "msedge" }, edgeOnly);
 
-        var chromeAndFirefox = BrowserCleanupService.ProcessNamesFor(["chrome", "firefox", "not-a-browser"]);
+        var chromeAndFirefox = BrowserCleanupService.ProcessNamesFor((string[])["chrome", "firefox", "not-a-browser"]);
         Assert.Contains("chrome", chromeAndFirefox);
         Assert.Contains("firefox", chromeAndFirefox);
         Assert.DoesNotContain("msedge", chromeAndFirefox);
