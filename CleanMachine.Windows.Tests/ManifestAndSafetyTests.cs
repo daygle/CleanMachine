@@ -843,10 +843,10 @@ public sealed class ManifestAndSafetyTests
         try
         {
             var review = new RegistryReview(
-            [
+            (RegistryFinding[])[
                 new RegistryFinding("HKCU", path, "orphaned value", true, 75, "File Extensions", "RemoveMe")
             ],
-            [
+            (RegistryBackup[])[
                 new RegistryBackup(validBackup, DateTimeOffset.UtcNow),
                 new RegistryBackup(missingBackup, DateTimeOffset.UtcNow)
             ]);

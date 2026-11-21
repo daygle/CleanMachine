@@ -199,7 +199,7 @@ public static class QuickCleanService
         // Same rule as the Registry Care page: never clean the registry without a backup.
         if (review.Findings.Count > 0 && review.Backups.Count == 0)
             return new QuickCleanResult(0, 0,
-                [string.IsNullOrWhiteSpace(review.BackupFailure)
+                (string[])[string.IsNullOrWhiteSpace(review.BackupFailure)
                     ? "Skipped: no registry backup could be created."
                     : $"Skipped: {review.BackupFailure}"],
                 "Registry cleanup was refused: no restore point.",
