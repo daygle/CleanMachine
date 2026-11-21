@@ -191,13 +191,13 @@ public sealed partial class AutomaticCleanupPage : Page
         var chosen = await ItemPicker.ShowAsync(XamlRoot,
             $"{browserDefinition.Name} - items cleaned when it closes",
             "Tick what is cleaned each time this browser closes. Select All covers the caches and temporary files only.",
-            [
+            (PickerSection[])[
                 new PickerSection("safe", "Caches and temporary files",
                     "Caches and other temporary files the browser does not need to keep.",
-                    [new PickerGroup(null, items.Where(i => !i.Destructive).Select(Row).ToList())]),
+                    (PickerGroup[])[new PickerGroup(null, items.Where(i => !i.Destructive).Select(Row).ToList())]),
                 new PickerSection("saved", "Saved Data",
                     "Ticking one of these lets the close-clean remove it every time, without asking. They stay off by default and are never part of Select All.",
-                    [new PickerGroup(null, items.Where(i => i.Destructive).Select(Row).ToList())],
+                    (PickerGroup[])[new PickerGroup(null, items.Where(i => i.Destructive).Select(Row).ToList())],
                     EmptyNote: "This browser has no saved-data items.",
                     InSelectAll: false,
                     IsWarning: true)
@@ -318,7 +318,7 @@ public sealed partial class AutomaticCleanupPage : Page
 
         var chosen = await ItemPicker.ShowAsync(XamlRoot, title,
             "Tick what this trigger should clean. Items are grouped by the CleanMachine page they come from; tick a page heading to select or clear its whole section. Only items that are safe to remove unattended are listed.",
-            [
+            (PickerSection[])[
                 new PickerSection("windows", "Windows Cleanup",
                     "Safe categories only. Review and Advanced categories (Recycle Bin, Downloads, User Assist History, ...) are never cleaned automatically.",
                     SafeCategories.GroupBy(c => c.Group)
@@ -326,7 +326,7 @@ public sealed partial class AutomaticCleanupPage : Page
                         .ToList()),
                 new PickerSection("browsers", "Browser Cleaner - Internet Cache",
                     "Clears each ticked browser's cache. History, cookies, passwords and other saved data are never touched, and the browser can stay open (files it is using are skipped).",
-                    [new PickerGroup(null, browsers.Select(b => new PickerItem(b.Id, b.Name, current.Browsers.Contains(b.Id), "Internet Cache")).ToList())],
+                    (PickerGroup[])[new PickerGroup(null, browsers.Select(b => new PickerItem(b.Id, b.Name, current.Browsers.Contains(b.Id), "Internet Cache")).ToList())],
                     EmptyNote: "No supported browsers were found on this PC."),
                 new PickerSection("apps", "Application Cleanup - Temp Files",
                     "Clears the temporary, cache and log files listed for each ticked app on the Application Cleanup page.",

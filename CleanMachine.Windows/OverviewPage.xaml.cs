@@ -123,10 +123,10 @@ public sealed partial class OverviewPage : Page
         var installed = await Task.Run(() => BrowserCatalog.InstalledCacheBrowsers());
         var chosen = await ItemPicker.ShowAsync(XamlRoot, "Quick Clean - Browser Caches",
             "Tick the browsers whose cache Quick Clean clears.",
-            [
+            (PickerSection[])[
                 new PickerSection("browsers", "Browser Cleaner - Internet Cache",
                     "Cache only - history, cookies, passwords and other saved data are never touched, and the browser can stay open (files it is using are skipped).",
-                    [new PickerGroup(null, installed.Select(b => new PickerItem(b.Id, b.Name, settings.QuickCleanBrowsers.Contains(b.Id), "Internet Cache")).ToList())],
+                    (PickerGroup[])[new PickerGroup(null, installed.Select(b => new PickerItem(b.Id, b.Name, settings.QuickCleanBrowsers.Contains(b.Id), "Internet Cache")).ToList())],
                     EmptyNote: "No supported browsers were found on this PC.")
             ]);
         if (chosen is null) return;
@@ -148,7 +148,7 @@ public sealed partial class OverviewPage : Page
 
         var chosen = await ItemPicker.ShowAsync(XamlRoot, "Quick Clean - Windows Cleanup",
             "Tick the Windows Cleanup categories Quick Clean removes.",
-            [
+            (PickerSection[])[
                 new PickerSection("windows", "Windows Cleanup",
                     "Safe categories that Windows recreates on demand.",
                     safe.GroupBy(c => c.Group).Select(g => new PickerGroup(g.Key, g.Select(Row).ToList())).ToList()),
@@ -156,7 +156,7 @@ public sealed partial class OverviewPage : Page
                 // Review risk requires.
                 new PickerSection("review", "Recycle Bin",
                     "Permanently deletes everything in the Recycle Bin each time Quick Clean runs. Never part of Select All.",
-                    [new PickerGroup(null, recycleBin.Select(Row).ToList())],
+                    (PickerGroup[])[new PickerGroup(null, recycleBin.Select(Row).ToList())],
                     InSelectAll: false,
                     IsWarning: true)
             ]);
@@ -173,10 +173,10 @@ public sealed partial class OverviewPage : Page
         var current = settings.QuickCleanRegistryCategories;
         var chosen = await ItemPicker.ShowAsync(XamlRoot, "Quick Clean - Registry Care",
             "Tick the kinds of registry findings Quick Clean fixes.",
-            [
+            (PickerSection[])[
                 new PickerSection("registry", "Registry Care",
                     "Only low-risk findings are removed, and a backup you can restore from is always taken first.",
-                    [new PickerGroup(null, QuickCleanService.RegistryCategories
+                    (PickerGroup[])[new PickerGroup(null, QuickCleanService.RegistryCategories
                         .Select(cat => new PickerItem(cat, cat, current is null || current.Contains(cat)))
                         .ToList())])
             ]);
@@ -193,7 +193,7 @@ public sealed partial class OverviewPage : Page
         var installed = await Task.Run(() => AppCleanupService.InstalledApps());
         var chosen = await ItemPicker.ShowAsync(XamlRoot, "Quick Clean - Application Temp Files",
             "Tick the apps whose temp files Quick Clean removes.",
-            [
+            (PickerSection[])[
                 new PickerSection("apps", "Application Cleanup - Temp Files",
                     "The temporary, cache and log files listed for each app on the Application Cleanup page.",
                     installed.GroupBy(a => a.Group)

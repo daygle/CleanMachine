@@ -287,7 +287,7 @@ public sealed class BrowserCleanupService
     {
         try
         {
-            if (File.Exists(path)) return [path];
+            if (File.Exists(path)) return (string[])[path];
             // Deliberately lazy: callers size everything (ScanBrowser) or stop early
             // at a UI cap (ListItemFiles), so materialising the whole tree here would
             // walk tens of thousands of cache files even when only the first few

@@ -452,7 +452,7 @@ public partial class App : Application
             try
             {
                 var report = await new BrowserCleanupService().CleanItemsAsync(
-                    [browser], token, requireBrowsersClosed: false,
+                    ((string BrowserId, string ItemId)[])[browser], token, requireBrowsersClosed: false,
                     excludedPaths: settings.ExcludedPaths,
                     skipModifiedWithin: QuickCleanService.BrowserCacheRecentWindow);
                 removed += report.Result.ItemsRemoved;
@@ -471,7 +471,7 @@ public partial class App : Application
                 try
                 {
                     var scan = await appService.ScanAsync(app.Id, token);
-                    var selection = scan is null ? [] : AppCleanupService.AllItems([scan]);
+                    var selection = scan is null ? [] : AppCleanupService.AllItems((AppScan[])[scan]);
                     if (selection.Count == 0) continue;
                     var report = await appService.CleanAsync(selection, token, excludedPaths: settings.ExcludedPaths);
                     removed += report.Result.ItemsRemoved;

@@ -55,7 +55,7 @@ public sealed class WindowsCleanupService
     ];
 
     public static IReadOnlyList<CleanupCategory> Catalog { get; } =
-    [
+    (CleanupCategory[])[
         // ---- Windows Explorer ----
         new("explorer-recent", "Windows Explorer", "Recent Items", "Recently opened documents and files", CleanupRisk.Safe, true, CleanupKind.Files, Path: Path.Combine(AppData, "Microsoft", "Windows", "Recent"), Pattern: "*.lnk"),
         new("explorer-run-history", "Windows Explorer", "Start Menu Run History", "Commands typed into the Run dialog", CleanupRisk.Safe, true, CleanupKind.RegistryValues, Path: @"Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU"),
