@@ -317,19 +317,19 @@ public sealed class AppSettings
     {
         ProtectedBrowsers = CapSet(ProtectedBrowsers, ["chrome", "edge", "firefox"]);
         ExcludedPaths = CapSet(ExcludedPaths, []);
-        DisabledCleanupCategories = CapSet(DisabledCleanupCategories, []);
-        EnabledCleanupCategories = CapSet(EnabledCleanupCategories, []);
+        DisabledCleanupCategories = KnownCategories(CapSet(DisabledCleanupCategories, []), WindowsCleanupCategoryIds);
+        EnabledCleanupCategories = KnownCategories(CapSet(EnabledCleanupCategories, []), WindowsCleanupCategoryIds);
         QuickCleanBrowsers = CapSet(QuickCleanBrowsers, ["chrome", "edge", "firefox"]);
-        QuickCleanWindowsCategories = CapSetOrNull(QuickCleanWindowsCategories);
-        QuickCleanRegistryCategories = CapSetOrNull(QuickCleanRegistryCategories);
+        QuickCleanWindowsCategories = KnownCategoriesOrNull(CapSetOrNull(QuickCleanWindowsCategories), WindowsCleanupCategoryIds);
+        QuickCleanRegistryCategories = KnownCategoriesOrNull(CapSetOrNull(QuickCleanRegistryCategories), RegistryCleanupCategoryIds);
         QuickCleanApps = CapSetOrNull(QuickCleanApps);
-        StartupCleanCategories = CapSetOrNull(StartupCleanCategories);
-        IdleCleanCategories = CapSetOrNull(IdleCleanCategories);
+        StartupCleanCategories = KnownCategoriesOrNull(CapSetOrNull(StartupCleanCategories), WindowsCleanupCategoryIds);
+        IdleCleanCategories = KnownCategoriesOrNull(CapSetOrNull(IdleCleanCategories), WindowsCleanupCategoryIds);
         StartupCleanBrowsers = CapSet(StartupCleanBrowsers, []);
         StartupCleanApps = CapSet(StartupCleanApps, []);
         IdleCleanBrowsers = CapSet(IdleCleanBrowsers, []);
         IdleCleanApps = CapSet(IdleCleanApps, []);
-        SystemMonitorCategories = CapSetOrNull(SystemMonitorCategories);
+        SystemMonitorCategories = KnownCategoriesOrNull(CapSetOrNull(SystemMonitorCategories), WindowsCleanupCategoryIds);
         SystemMonitorBrowsers = CapSet(SystemMonitorBrowsers, []);
         SystemMonitorApps = CapSet(SystemMonitorApps, []);
 
@@ -395,8 +395,8 @@ public sealed class AppSettings
                     if (!Enum.IsDefined(s.Trigger)) s.Trigger = ScheduleTrigger.Weekly;
                     if (!Enum.IsDefined(s.DayOfWeek)) s.DayOfWeek = DayOfWeek.Sunday;
                     if (!Enum.IsDefined(s.AfterClean)) s.AfterClean = ScheduleAction.Nothing;
-                    s.WindowsCategoryIds = CapList(s.WindowsCategoryIds);
-                    s.RegistryCategories = CapList(s.RegistryCategories);
+                    s.WindowsCategoryIds = KnownCategories(CapList(s.WindowsCategoryIds), WindowsCleanupCategoryIds);
+                    s.RegistryCategories = KnownCategories(CapList(s.RegistryCategories), RegistryCleanupCategoryIds);
                     // Null stays null: it marks a schedule saved before browsers and
                     // apps could be chosen, which keeps its old "all" behaviour.
                     if (s.BrowserIds is not null) s.BrowserIds = CapList(s.BrowserIds);
@@ -409,6 +409,33 @@ public sealed class AppSettings
 
         return this;
     }
+
+    // Categories a later build removed stay behind in an already-saved file (the
+    // phantom "MUI Cache" registry category is one). Pruning every stored category
+    // list against the current catalogs on load keeps those ids out of the pickers
+    // and out of ScheduledTask.HasWork, which would otherwise count a schedule that
+    // can only clean nothing as live and keep its task registered.
+    private static readonly Dictionary<string, string> WindowsCleanupCategoryIds =
+        WindowsCleanupService.Catalog.ToDictionary(c => c.Id, StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> RegistryCleanupCategoryIds =
+        QuickCleanService.RegistryCategories.ToDictionary(id => id, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Keeps only entries the current catalog still offers, projected back
+    /// to the catalog's canonical spelling so a stored id that differs only in case
+    /// cannot survive into an ordinal comparison elsewhere.</summary>
+    private static HashSet<string> KnownCategories(HashSet<string> stored, Dictionary<string, string> known)
+        => stored.Where(known.ContainsKey)
+            .Select(id => known[id])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static HashSet<string>? KnownCategoriesOrNull(HashSet<string>? stored, Dictionary<string, string> known)
+        => stored is null ? null : KnownCategories(stored, known);
+
+    private static List<string> KnownCategories(List<string> stored, Dictionary<string, string> known)
+        => stored.Where(known.ContainsKey)
+            .Select(id => known[id])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     /// <summary>Bounds a set of ids, falling back to the default when the stored
     /// one is absent or implausibly large. Entries are capped in length because
@@ -459,6 +486,7 @@ public sealed class AppSettings
             {
                 var latest = await ReadLatestAsync(path, token) ?? baseline.DeepClone().AsObject();
                 var merged = MergeChanges(baseline, snapshot, latest);
+                PruneMergedCategories(merged);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var temp = path + $".{Guid.NewGuid():N}.tmp";
                 try
@@ -549,6 +577,45 @@ public sealed class AppSettings
             else result[key] = value?.DeepClone();
         }
         return result;
+    }
+
+    /// <summary>Drops category ids the current catalogs no longer offer from the
+    /// merged settings before they are written. Sanitize() prunes what this process
+    /// loads, but the merge deliberately keeps values other windows wrote, so a
+    /// category removed by a later build (the phantom "MUI Cache", for example)
+    /// would otherwise stay in settings.json forever.</summary>
+    internal static void PruneMergedCategories(JsonObject settings)
+    {
+        PruneCategoryArray(settings, "EnabledCleanupCategories", WindowsCleanupCategoryIds);
+        PruneCategoryArray(settings, "DisabledCleanupCategories", WindowsCleanupCategoryIds);
+        PruneCategoryArray(settings, "QuickCleanWindowsCategories", WindowsCleanupCategoryIds);
+        PruneCategoryArray(settings, "QuickCleanRegistryCategories", RegistryCleanupCategoryIds);
+        PruneCategoryArray(settings, "StartupCleanCategories", WindowsCleanupCategoryIds);
+        PruneCategoryArray(settings, "IdleCleanCategories", WindowsCleanupCategoryIds);
+        PruneCategoryArray(settings, "SystemMonitorCategories", WindowsCleanupCategoryIds);
+        if (settings["Schedules"] is not JsonArray schedules) return;
+        foreach (var schedule in schedules.OfType<JsonObject>())
+        {
+            PruneCategoryArray(schedule, "WindowsCategoryIds", WindowsCleanupCategoryIds);
+            PruneCategoryArray(schedule, "RegistryCategories", RegistryCleanupCategoryIds);
+        }
+    }
+
+    /// <summary>Rewrites one stored id array to its known entries in catalog
+    /// spelling, keeping the stored order and dropping anything a catalog no longer
+    /// offers. A missing or null value is left alone: null stores "not configured".</summary>
+    private static void PruneCategoryArray(JsonObject owner, string key, Dictionary<string, string> known)
+    {
+        if (owner[key] is not JsonArray stored) return;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var kept = new List<JsonNode?>();
+        foreach (var node in stored)
+        {
+            if (node is not JsonValue value || !value.TryGetValue<string>(out var id)) continue;
+            if (!known.TryGetValue(id, out var canonical) || !seen.Add(canonical)) continue;
+            kept.Add(JsonValue.Create(canonical));
+        }
+        owner[key] = new JsonArray(kept.ToArray());
     }
 
     private static readonly ProcessGate SaveGate = new("settings");

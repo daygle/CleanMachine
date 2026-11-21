@@ -178,10 +178,17 @@ public static class ScheduledTask
             ? $"Next run: {next:dddd d MMMM} at {next:t}."
             : "It will run the next time you sign in to Windows.";
 
-    /// <summary>True when the schedule actually has something to clean.</summary>
+    /// <summary>True when the schedule actually has something to clean. An id left
+    /// behind by a category a later build removed does not count: otherwise a
+    /// schedule whose only picks no longer exist would stay registered (and could
+    /// still apply its after-clean power action) while cleaning nothing.</summary>
     public static bool HasWork(CleanupSchedule schedule)
-        => schedule.WindowsCategoryIds.Count > 0 || schedule.CleanBrowserCache
-           || schedule.CleanAppTempFiles || schedule.RegistryCategories.Count > 0;
+        => schedule.WindowsCategoryIds.Any(id =>
+               WindowsCleanupService.Catalog.Any(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase)))
+           || schedule.CleanBrowserCache
+           || schedule.CleanAppTempFiles
+           || schedule.RegistryCategories.Any(id =>
+               QuickCleanService.RegistryCategories.Contains(id, StringComparer.OrdinalIgnoreCase));
 
     /// <summary>Whether a schedule id is built only from characters that are safe
     /// to embed in a task name and in a <c>cmd.exe</c> command line.
